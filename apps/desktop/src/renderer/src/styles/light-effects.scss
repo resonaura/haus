@@ -17,20 +17,23 @@
   --fx-beat-duration: 3.8s;
 }
 
-:root .accessory-tile.is-active[data-light-effect] {
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect] {
   --effect-c1: var(--device-color);
   --effect-c2: var(--device-color);
   --effect-c3: var(--device-color);
   overflow: hidden;
 }
 
-:root .accessory-tile.is-active[data-light-effect]::before {
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect]::before {
   opacity: 1;
   transform: scale(1);
 }
 
 /* ── Flicker (Fire, Candle, Hearth, Lava) ─────────────────────────────────── */
-:root .accessory-tile.is-active[data-light-effect='flicker']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='flicker']::before {
   background:
     radial-gradient(
       ellipse at 14% 12%,
@@ -46,16 +49,21 @@
   animation: haus-fx-flicker-wash var(--fx-flicker-duration) ease-in-out infinite;
 }
 
-:root .accessory-tile.is-active[data-light-effect='flicker'] {
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='flicker'] {
   animation: haus-fx-flicker-edge var(--fx-flicker-duration) ease-in-out infinite;
 }
 
-:root .accessory-tile.is-active[data-light-effect='flicker'] .accessory-icon {
+:root
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='flicker']
+  .accessory-icon {
   animation: haus-fx-flicker-orb var(--fx-flicker-duration) ease-in-out infinite;
 }
 
 /* ── Pulse (Breathing, Sunset, Sunrise, Romance, Forest, Night) ───────────── */
-:root .accessory-tile.is-active[data-light-effect='pulse']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='pulse']::before {
   background:
     radial-gradient(
       ellipse at 12% 10%,
@@ -71,12 +79,17 @@
   animation: haus-fx-pulse-wash var(--fx-pulse-duration) ease-in-out infinite;
 }
 
-:root .accessory-tile.is-active[data-light-effect='pulse'] .accessory-icon {
+:root
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='pulse']
+  .accessory-icon {
   animation: haus-fx-pulse-orb var(--fx-pulse-duration) ease-in-out infinite;
 }
 
 /* ── Rainbow (Rainbow, Prism, Spectrum, Colorloop) ────────────────────────── */
-:root .accessory-tile.is-active[data-light-effect='rainbow']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='rainbow']::before {
   background:
     radial-gradient(
       ellipse at 15% 15%,
@@ -96,13 +109,20 @@
   animation: haus-fx-rainbow-hue var(--fx-rainbow-duration) linear infinite;
 }
 
-:root .accessory-tile.is-active[data-light-effect='rainbow'] .accessory-icon,
-:root .accessory-tile.is-active[data-light-effect='rainbow'] .light-effect-badge {
+:root
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='rainbow']
+  .accessory-icon,
+:root
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='rainbow']
+  .light-effect-badge {
   animation: haus-fx-rainbow-hue var(--fx-rainbow-duration) linear infinite;
 }
 
 /* ── Aurora (Aurora, Cosmos, Galaxy, Nebula, Cinema, Gaming) ──────────────── */
-:root .accessory-tile.is-active[data-light-effect='aurora']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='aurora']::before {
   inset: -25%;
   background:
     radial-gradient(
@@ -124,7 +144,10 @@
 }
 
 /* ── Wave (Ocean, Underwater, Rain, Flowing, Chase) ───────────────────────── */
-:root .accessory-tile.is-active[data-light-effect='wave']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='wave']::before {
   inset: -18%;
   background:
     radial-gradient(
@@ -141,7 +164,10 @@
 }
 
 /* ── Sparkle (Stars, Twinkle, Snow, Opal, Glisten, Firefly) ───────────────── */
-:root .accessory-tile.is-active[data-light-effect='sparkle']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='sparkle']::before {
   background:
     radial-gradient(
       circle at 18% 20%,
@@ -161,12 +187,17 @@
   animation: haus-fx-sparkle-shimmer var(--fx-sparkle-duration) ease-in-out infinite;
 }
 
-:root .accessory-tile.is-active[data-light-effect='sparkle'] .light-effect-badge {
+:root
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='sparkle']
+  .light-effect-badge {
   animation: haus-fx-sparkle-orb var(--fx-sparkle-duration) ease-in-out infinite;
 }
 
 /* ── Beat (Party, Disco, Music, Storm, Strobe) ────────────────────────────── */
-:root .accessory-tile.is-active[data-light-effect='beat']::before {
+:root
+  .accessory-tile:not(
+    [data-haus-device-tile='shared']
+  ).is-active[data-light-effect='beat']::before {
   background:
     radial-gradient(
       ellipse at 18% 18%,
@@ -181,12 +212,14 @@
   animation: haus-fx-beat-wash var(--fx-beat-duration) ease-in-out infinite;
 }
 
-:root .accessory-tile.is-active[data-light-effect='beat'] .accessory-icon {
+:root
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect='beat']
+  .accessory-icon {
   animation: haus-fx-beat-orb var(--fx-beat-duration) ease-in-out infinite;
 }
 
 /* ── Tile Top-Right Active Effect Indicator ───────────────────────────────── */
-:root .tile-top .light-effect-badge {
+:root .accessory-tile:not([data-haus-device-tile='shared']) .tile-top .light-effect-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;

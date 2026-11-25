@@ -7,8 +7,11 @@
 
 export * from './contract.js';
 export * from './host.js';
+export * from './dom-glass-rim.js';
 export * from './dom-host.js';
 export * from './dom-liquid-glass.js';
+export * from './dom-popover.js';
+export * from './dom-reset.js';
 export * from './native-host.js';
 export * from './native-ir.js';
 export * from './react-dom.js';

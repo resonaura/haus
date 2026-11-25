@@ -1,7 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import type { ManagementPort } from '@haus/core/transport';
+import {
+  formatSceneTargetSetting,
+  parseRgbColorString,
+  type ManagementPort,
+} from '@haus/core/transport';
 import { lightColor } from '@haus/ha/light-color';
 import type { HassEntity, Snapshot } from '@haus/ha/types';
 import { normalizeHome } from '@haus/ha/view/normalize';
@@ -13,16 +17,10 @@ import {
   type PortableSceneTargetDetail,
   type SceneScopeOption,
 } from '@haus/ui/components';
+import type { GpuiPlatform } from '../platform.js';
 import { availableAction, type homeDashboard } from '../home/model.js';
 import { GpuiConfigEditor } from './config-editor.js';
-
-const isRec = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-function parseRgb(value: string | undefined): readonly [number, number, number] | undefined {
-  const match = /^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(value ?? '');
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
-}
+import { GpuiHaScenesImportModal } from './ha-scenes-import.js';
 
 export function GpuiScenePreviewModal({
   scene,
@@ -46,25 +44,21 @@ export function GpuiScenePreviewModal({
 
   const targets: PortableSceneTargetDetail[] = card.targets.map(({ id, setting }) => {
     const current = snapshot.states.find((s) => s.entity_id === id);
-    const values = isRec(setting) ? setting : undefined;
-    const attributes = isRec(values?.attributes) ? values.attributes : values;
-    const state = typeof setting === 'string' ? setting : values?.state;
-    const brightness = attributes?.brightness;
-    const color = attributes
-      ? parseRgb(lightColor({ entity_id: id, state: 'on', attributes, last_changed: '' }))
+    const { targetSummary, attributes } = formatSceneTargetSetting(setting);
+    const swatchRgb = attributes
+      ? parseRgbColorString(
+          lightColor({ entity_id: id, state: 'on', attributes, last_changed: '' }),
+        )
       : undefined;
-    const baseState = state !== undefined ? String(state) : 'Target setting not supplied';
-    const brightnessText =
-      typeof brightness === 'number' ? ` · ${Math.round(brightness / 2.55)}% brightness` : '';
     const friendlyName =
       typeof current?.attributes.friendly_name === 'string' ? current.attributes.friendly_name : id;
 
     return {
       id,
       name: friendlyName,
-      targetSummary: `${baseState}${brightnessText}`,
+      targetSummary,
       currentState: current?.state ?? 'No live state',
-      swatchRgb: color,
+      swatchRgb,
     };
   });
 
@@ -75,7 +69,9 @@ export function GpuiScenePreviewModal({
       source={card.source}
       targets={targets}
       applying={applying}
-      unavailable={scene.state === 'unavailable' || !availableAction(snapshot, scene.entity_id, 'run')}
+      unavailable={
+        scene.state === 'unavailable' || !availableAction(snapshot, scene.entity_id, 'run')
+      }
       canEdit={canEdit}
       onClose={onClose}
       onEdit={onEdit}
@@ -90,6 +86,7 @@ export function GpuiScenesView({
   home,
   demo,
   management,
+  openPaths,
   renderScenes,
   onApplyScene,
   onApplySceneEntities,
@@ -100,6 +97,7 @@ export function GpuiScenesView({
   readonly home: ReturnType<typeof homeDashboard>;
   readonly demo?: boolean;
   readonly management?: ManagementPort;
+  readonly openPaths?: GpuiPlatform['openPaths'];
   readonly renderScenes: (scenes: readonly HassEntity[], showAccessoryCount?: boolean) => ReactNode;
   readonly onApplyScene: (sceneId: string) => void;
   readonly onApplySceneEntities?: (entities: Record<string, unknown>) => Promise<void>;
@@ -107,14 +105,31 @@ export function GpuiScenesView({
 }) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState('all');
+  const [importOpen, setImportOpen] = useState(false);
   const [previewScene, setPreviewScene] = useState<HassEntity | null>(null);
   const [editingScene, setEditingScene] = useState<HassEntity | null | undefined>(undefined);
   const canEdit = Boolean(demo || snapshot.user.is_admin);
+  const canImportHa = Boolean(demo || snapshot.config.version === 'haus-hub');
 
   const model = useMemo(() => normalizeHome(snapshot), [snapshot]);
   const placements = useMemo(
     () => new Map(model.scenePlacements.map((p) => [p.sceneId, p.areaId])),
     [model.scenePlacements],
+  );
+  const existingIds = useMemo(
+    () =>
+      new Set(
+        scenes
+          .map((scene) =>
+            typeof scene.attributes.id === 'string'
+              ? scene.attributes.id
+              : scene.entity_id.startsWith('scene.')
+                ? scene.entity_id.slice(6)
+                : '',
+          )
+          .filter(Boolean),
+      ),
+    [scenes],
   );
 
   const scopeOptions = useMemo<SceneScopeOption[]>(
@@ -162,14 +177,28 @@ export function GpuiScenesView({
         scope={scope}
         scopeOptions={scopeOptions}
         canCreate={canEdit}
+        canImportHa={canImportHa}
         hasAnyScenes={scenes.length > 0}
         hasFilteredScenes={groups.length > 0}
         onQueryChange={setQuery}
         onScopeChange={setScope}
         onCreate={() => setEditingScene(null)}
+        onImportHa={() => setImportOpen(true)}
       >
         <SceneRooms groups={groups} />
       </ScenesLibraryView>
+
+      {importOpen && (
+        <GpuiHaScenesImportModal
+          demo={demo}
+          existingIds={existingIds}
+          rooms={model.rooms}
+          management={management}
+          openPaths={openPaths}
+          onClose={() => setImportOpen(false)}
+          onComplete={() => onSaved?.()}
+        />
+      )}
 
       {previewScene && (
         <GpuiScenePreviewModal

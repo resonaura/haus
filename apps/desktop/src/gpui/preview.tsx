@@ -8,7 +8,11 @@ import { createDemoSnapshot } from '@haus/ha/view/demo/snapshot';
 import { applyDemoAction } from '@haus/ha/view/demo/action';
 import type { SidebarBackdrop } from '../platform/sidebar.js';
 import type { GpuiPlatform } from './platform.js';
-import { availableAction, updateFavorite } from './home/model.js';
+import {
+  availableDeviceActions,
+  shouldTriggerControlHaptic,
+  updateFavorite,
+} from './home/model.js';
 import type { HomeSessionStatusInfo } from './home/settings-view.js';
 import { HomeWorkspace } from './home/workspace.js';
 
@@ -23,6 +27,7 @@ export function Preview({
   onToggleDemo,
   sessionMeta,
   systemTheme,
+  reducedTransparency,
 }: {
   platform: GpuiPlatform;
   sidebar?: SidebarBackdrop;
@@ -32,6 +37,7 @@ export function Preview({
   onToggleDemo?: (enabled: boolean) => void;
   sessionMeta?: HomeSessionStatusInfo;
   systemTheme?: 'light' | 'dark';
+  reducedTransparency?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState(createDemoSnapshot);
   const [preferences, setPreferences] = useState(defaults);
@@ -63,21 +69,21 @@ export function Preview({
       onDisconnect={onDisconnect}
       onToggleDemo={onToggleDemo}
       systemTheme={systemTheme}
-      onControl={(id, intent, value) => {
-        const action = availableAction(snapshot, id, intent, value);
-        if (!action) return;
-        setSnapshot((value) => applyDemoAction(value, action));
+      reducedTransparency={reducedTransparency}
+      onControl={(target, intent, value) => {
+        const actions = availableDeviceActions(snapshot, target, intent, value);
+        if (!actions.length) return;
+        setSnapshot((value) => actions.reduce(applyDemoAction, value));
         setPreferences((value) => {
-          const previous = value.manualUsage[id];
-          return {
-            ...value,
-            manualUsage: {
-              ...value.manualUsage,
-              [id]: { count: (previous?.count ?? 0) + 1, lastUsed: Date.now() },
-            },
-          };
+          const manualUsage = { ...value.manualUsage };
+          const lastUsed = Date.now();
+          for (const action of actions) {
+            const id = action.target.entity_id;
+            manualUsage[id] = { count: (manualUsage[id]?.count ?? 0) + 1, lastUsed };
+          }
+          return { ...value, manualUsage };
         });
-        platform.hapticFeedback?.('alignment');
+        if (shouldTriggerControlHaptic(intent)) platform.hapticFeedback?.('alignment');
       }}
       onFavorite={(id, favorite) =>
         setPreferences((value) => updateFavorite(snapshot, value, id, favorite) ?? value)
@@ -85,9 +91,7 @@ export function Preview({
       onTheme={(theme) => setPreferences((value) => ({ ...value, theme }))}
       onGrouping={(autoGroupLights) => setPreferences((value) => ({ ...value, autoGroupLights }))}
       onPreferencesPatch={(patch) => setPreferences((value) => ({ ...value, ...patch }))}
-      onResetLightGroups={() =>
-        setPreferences((value) => ({ ...value, disabledLightGroups: [] }))
-      }
+      onResetLightGroups={() => setPreferences((value) => ({ ...value, disabledLightGroups: [] }))}
     />
   );
 }

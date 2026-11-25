@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useEffect, useState } from 'react';
-import { render as gpuiRender, type KeyEvent } from '@gpuix/react';
+import { collectGarbageWhenIdle, render as gpuiRender, type KeyEvent } from '@gpuix/react';
 import { MediaRuntime } from '@haus/media/pipeline';
 import { CompactDashboard } from '@haus/ui/components';
 import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
@@ -14,6 +14,7 @@ import {
   type GpuiCredentialStore,
 } from '../platform/credentials.js';
 import { openDesktopAppearance } from '../platform/appearance.js';
+import { probeSystemReducedTransparency } from '../platform/backdrop.js';
 import { probeInitialLinuxMaterial } from '../platform/materials.js';
 import { buildGpuiWindowOptions } from '../platform/window-controls.js';
 import { GpuiHomeRuntime } from './home/runtime.js';
@@ -21,6 +22,7 @@ import { LiveHome } from './home/view.js';
 import { GpuiCameraStreams } from './camera/stream.js';
 import { GpuiWindow } from './window.js';
 import { requireGpuiBun } from './bun.js';
+import { resolveGpuiStartupOptions, resolveInitialGpuiSession } from './startup.js';
 
 interface GpuiSession {
   runtime: GpuiHomeRuntime;
@@ -32,10 +34,13 @@ declare global {
   var hausGpuiPlatform: Promise<GpuiPlatform> | undefined;
   var hausGpuiSession: Promise<GpuiSession> | undefined;
   var hausGpuiWindow: GpuiWindow | undefined;
+  var hausGpuiStopIdleGc: (() => void) | undefined;
 }
 
 const background = process.env.GPUIX_BACKGROUND === '1';
 requireGpuiBun();
+globalThis.hausGpuiStopIdleGc?.();
+globalThis.hausGpuiStopIdleGc = collectGarbageWhenIdle();
 if (process.argv.includes('--check-native')) {
   const { __napiBindingTarget, GpuixRenderer } = await import('@gpuix/native');
   if (__napiBindingTarget !== 'native') throw new Error('Expected a native GPUIX addon.');
@@ -44,7 +49,7 @@ if (process.argv.includes('--check-native')) {
   process.exit(0);
 }
 
-const live = process.argv.includes('--live');
+const startup = resolveGpuiStartupOptions(process.argv, process.env);
 const platform = await (globalThis.hausGpuiPlatform ??= createGpuiPlatform(background));
 
 function openSession() {
@@ -70,34 +75,47 @@ function openSession() {
   return globalThis.hausGpuiSession;
 }
 
-let initial: GpuiSession | undefined;
-let initialError: string | undefined;
-if (live || globalThis.hausGpuiSession) {
-  try {
-    initial = await openSession();
-  } catch (error) {
-    initialError = error instanceof Error ? error.message : 'The Hub session store is unavailable.';
-  }
-}
+const resolution = await resolveInitialGpuiSession({
+  ...startup,
+  hasExistingSession: Boolean(globalThis.hausGpuiSession),
+  openSession,
+  clearSessionCache: () => {
+    globalThis.hausGpuiSession = undefined;
+  },
+});
+const initial = resolution.initial;
+const initialError = resolution.initialError;
 
 const initialLinuxMaterial =
   process.platform === 'linux' ? await probeInitialLinuxMaterial() : undefined;
+const reduceTransparency = await probeSystemReducedTransparency();
 
-globalThis.hausGpuiWindow ??= new GpuiWindow({
-  ...buildGpuiWindowOptions({
-    title: live ? 'Haus' : 'Haus · GPUIX Preview',
-    width: 1280,
-    height: 900,
-    minWidth: 620,
-    minHeight: 410,
-    focus: !background,
-    linuxMaterial: initialLinuxMaterial,
-  }),
-  trafficLightX: 14,
-  trafficLightY: 16,
-});
+globalThis.hausGpuiWindow ??= new GpuiWindow(
+  {
+    ...buildGpuiWindowOptions({
+      title: resolution.showLive || startup.forceLive ? 'Haus' : 'Haus · GPUIX Preview',
+      width: 1280,
+      height: 900,
+      minWidth: 620,
+      minHeight: 410,
+      focus: !background,
+      reduceTransparency,
+      linuxMaterial: initialLinuxMaterial,
+    }),
+    trafficLightX: 14,
+    trafficLightY: 16,
+  },
+  undefined,
+  { initialLinuxMaterial, reduceTransparency },
+);
 const window = globalThis.hausGpuiWindow;
 const subscribeKeyDown = (listener: (event: KeyEvent) => void) => window.onWindowKeyDown(listener);
+
+const windowPlatform: GpuiPlatform = {
+  ...platform,
+  toggleFullscreen: () => void window.controls.perform('fullscreen'),
+  openPaths: (options) => window.openPaths(options),
+};
 
 function Desktop() {
   const [systemTheme, setSystemTheme] = useState(() => window.getSystemTheme());
@@ -106,7 +124,7 @@ function Desktop() {
     return () => clearInterval(timer);
   }, []);
   const [session, setSession] = useState(initial);
-  const [showLive, setShowLive] = useState(Boolean(initial));
+  const [showLive, setShowLive] = useState(resolution.showLive);
   const [error, setError] = useState(initialError);
   const [opening, setOpening] = useState(false);
   const connect = () => {
@@ -122,7 +140,9 @@ function Desktop() {
           setShowLive(true);
         },
         (error: unknown) => {
-          setError(error instanceof Error ? error.message : 'The Hub session store is unavailable.');
+          setError(
+            error instanceof Error ? error.message : 'The Hub session store is unavailable.',
+          );
         },
       )
       .finally(() => setOpening(false));
@@ -131,10 +151,11 @@ function Desktop() {
     return (
       <LiveHome
         runtime={session.runtime}
-        platform={platform}
+        platform={windowPlatform}
         streams={session.streams}
         sidebar={window.sidebar}
         systemTheme={systemTheme}
+        reducedTransparency={reduceTransparency}
         subscribeKeyDown={subscribeKeyDown}
         onExploreDemo={() => setShowLive(false)}
       />
@@ -159,20 +180,27 @@ function Desktop() {
     );
   return (
     <Preview
-      platform={platform}
+      platform={windowPlatform}
       sidebar={window.sidebar}
       subscribeKeyDown={subscribeKeyDown}
       onConnect={connect}
       systemTheme={systemTheme}
+      reducedTransparency={reduceTransparency}
     />
   );
 }
 
 window.mount(
-  <HausUiProvider contentHost={GPUIX_CONTENT_HOST} mode="dark">
+  <HausUiProvider
+    contentHost={GPUIX_CONTENT_HOST}
+    mode="dark"
+    reducedTransparency={reduceTransparency}
+  >
     <Desktop />
   </HausUiProvider>,
   async () => {
+    globalThis.hausGpuiStopIdleGc?.();
+    globalThis.hausGpuiStopIdleGc = undefined;
     const session = await globalThis.hausGpuiSession?.catch(() => undefined);
     if (!session) return;
     try {

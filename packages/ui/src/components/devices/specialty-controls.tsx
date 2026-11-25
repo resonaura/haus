@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
+import { colorToken, corners, insets, mixColor, pct, px, rgba } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
+import { useHausUi } from '../../primitives/context.js';
+import { resolveColorToCss } from '../../renderers/contract.js';
 import {
   Box,
   Grid,
@@ -180,45 +182,96 @@ export function PowerStripPanel({
   onToggle,
 }: {
   readonly outlets: readonly PortablePowerOutlet[];
-  readonly disabled: boolean;
+  readonly disabled?: boolean;
   readonly onToggle: (id: string) => void;
 }) {
+  const { theme } = useHausUi();
   return (
-    <Grid columns={2} gapPx={8}>
-      {outlets.map((outlet) => (
-        <Row
-          key={outlet.id}
-          align="center"
-          justify="between"
-          gapPx={8}
-          style={{
-            layout: { padding: insets(10, 12) },
-            material: new SolidMaterial(colorToken('surface')),
-            border: {
-              width: 1,
-              color: colorToken(outlet.active ? 'accent' : 'border'),
-            },
-            corners: corners(12),
-          }}
-        >
-          <Stack gapPx={2} style={{ layout: { minWidth: px(0), flexGrow: 1 } }}>
-            <Text size={12} weight={600}>
+    <Row
+      semantic="section"
+      ariaLabel="Individual outlets"
+      wrap
+      align="start"
+      justify="center"
+      style={{
+        layout: { width: pct(100), rowGap: px(24), columnGap: px(18), padding: insets(14, 0) },
+      }}
+    >
+      {outlets.map((outlet) => {
+        const ink = colorToken(outlet.active ? 'textPrimary' : 'textMuted');
+        const surface = colorToken('soft');
+        const available = !disabled && outlet.available;
+        return (
+          <Stack
+            key={outlet.id}
+            align="center"
+            gapPx={8}
+            style={{ layout: { width: px(125), flexGrow: 1 } }}
+          >
+            <Pressable
+              id={`outlet-${outlet.id}`}
+              ariaLabel={`${outlet.active ? 'Turn off' : 'Turn on'} ${outlet.label}`}
+              ariaPressed={outlet.active}
+              disabled={!available}
+              onActivate={() => onToggle(outlet.id)}
+              style={{
+                layout: {
+                  width: px(90),
+                  height: px(90),
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+                corners: corners(45, 'round'),
+                border: { width: 0.5, color: colorToken('border') },
+                material: new SolidMaterial(outlet.active ? mixColor(surface, ink, 0.12) : surface),
+                opacity: available ? 1 : 0.55,
+                transitionMs: 260,
+                shadows: outlet.active
+                  ? [
+                      {
+                        offsetX: 0,
+                        offsetY: 1,
+                        blurRadius: 1,
+                        color: colorToken('ink', 0.12),
+                        inset: true,
+                      },
+                      { offsetX: 0, offsetY: 0, blurRadius: 25, color: colorToken('ink', 0.04) },
+                    ]
+                  : undefined,
+                states: available
+                  ? {
+                      pressed: { transform: { scale: 0.96 } },
+                      hover: {
+                        material: new SolidMaterial(
+                          mixColor(surface, ink, outlet.active ? 0.17 : 0.08),
+                        ),
+                      },
+                    }
+                  : undefined,
+              }}
+            >
+              <UiIcon
+                name="power"
+                size={32}
+                strokeWidth={1.5}
+                color={resolveColorToCss(ink, theme, false)}
+              />
+            </Pressable>
+            <Text
+              semantic="strong"
+              size={12}
+              weight={500}
+              style={{ typography: { align: 'center' } }}
+            >
               {outlet.label}
             </Text>
-            <Text size={11} tone="muted">
+            <Text semantic="small" size={11} tone="muted">
               {!outlet.available ? 'No response' : outlet.active ? 'On' : 'Off'}
             </Text>
           </Stack>
-          <HausSwitch
-            id={`outlet-${outlet.id}`}
-            checked={outlet.active}
-            disabled={disabled || !outlet.available}
-            aria-label={`${outlet.active ? 'Turn off' : 'Turn on'} ${outlet.label}`}
-            onChange={() => onToggle(outlet.id)}
-          />
-        </Row>
-      ))}
-    </Grid>
+        );
+      })}
+    </Row>
   );
 }
 
@@ -386,11 +439,7 @@ export function NetworkDetailsPanel({
       )}
 
       {managementUrl && onManage && (
-        <HausButton
-          variant="outline"
-          size="sm"
-          onPress={() => onManage(managementUrl)}
-        >
+        <HausButton variant="outline" size="sm" onPress={() => onManage(managementUrl)}>
           Open in browser
         </HausButton>
       )}

@@ -6,6 +6,7 @@
  */
 
 import * as React from 'react';
+import { pct, px } from '../ir/geometry.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import { dialogStyles, fieldStyles } from '../styles/overlays.js';
 import { composeStyles } from '../styles/sheet.js';
@@ -22,6 +23,7 @@ import {
   Text,
   TextInput,
 } from './elements.js';
+import { GlassRim, type GlassRimProps } from './glass-rim.js';
 
 export interface HausScrollAreaProps {
   readonly id?: string;
@@ -86,6 +88,7 @@ export interface HausDialogProps {
   readonly chromeless?: boolean;
   readonly className?: string;
   readonly style?: UiStyleSpec;
+  readonly rim?: Omit<GlassRimProps, 'preset'> | false;
   readonly footer?: React.ReactNode;
   readonly onClose: () => void;
   readonly children?: React.ReactNode;
@@ -101,6 +104,7 @@ export function HausDialog({
   chromeless = false,
   className,
   style,
+  rim,
   footer,
   onClose,
   children,
@@ -128,17 +132,40 @@ export function HausDialog({
             </Text>
           )}
         </Stack>
-        <Pressable id="dialog-close" ariaLabel="Close dialog" style={styles.closeButton} onActivate={onClose}>
+        <Pressable
+          id="dialog-close"
+          ariaLabel="Close dialog"
+          style={styles.closeButton}
+          onActivate={onClose}
+        >
           ×
         </Pressable>
       </Row>
-      <Box className="modal__body">
+      <Box
+        className="modal__body"
+        style={
+          scrollable
+            ? {
+                layout: {
+                  display: 'flex',
+                  direction: 'column',
+                  flexGrow: 1,
+                  flexShrink: 1,
+                  minHeight: px(0),
+                  width: pct(100),
+                  overflow: 'hidden',
+                },
+              }
+            : undefined
+        }
+      >
         {scrollable ? (
           <HausScrollArea
             className="haus-dialog-scroll"
             orientation="vertical"
             size={24}
             hideScrollBar
+            style={{ layout: { width: pct(100), flexGrow: 1, flexShrink: 1, minHeight: px(0) } }}
           >
             {children}
           </HausScrollArea>
@@ -154,7 +181,22 @@ export function HausDialog({
     </>
   );
   const panel = composeStyles(styles.panel, style);
-  const content = chromeless ? children : context;
+  const rimLayer =
+    rim === false ? null : (
+      <GlassRim
+        preset="panel"
+        variant="panel"
+        zIndex={6}
+        opacity={0.74}
+        {...(typeof rim === 'object' ? rim : undefined)}
+      />
+    );
+  const content = (
+    <>
+      {chromeless ? children : context}
+      {rimLayer}
+    </>
+  );
   if (ctx.contentHost.renderDialogFrame) {
     return ctx.contentHost.renderDialogFrame(
       { title, onClose, backdrop: styles.backdrop, panel, children: content },
@@ -169,6 +211,7 @@ export function HausDialog({
         ariaModal
         ariaLabel={title}
         dataKind="modal"
+        dataAttrs={{ 'data-haus-glass-rim': 'managed' }}
         className={['haus-dialog', className].filter(Boolean).join(' ')}
         style={panel}
       >

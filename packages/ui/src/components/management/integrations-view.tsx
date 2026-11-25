@@ -6,7 +6,6 @@ import { SolidMaterial } from '../../ir/materials.js';
 import {
   Box,
   HausButton,
-  HausDialog,
   Heading,
   Pressable,
   Row,
@@ -65,6 +64,8 @@ export function IntegrationsOverviewView({
   onRefresh,
   onOpenRepairs,
   onOpenUpdates,
+  onOpenHacs,
+  onImportHa,
   onSelectDomain,
   onConfigureDiscovered,
   onAddDevice,
@@ -85,6 +86,8 @@ export function IntegrationsOverviewView({
   readonly onRefresh: () => void;
   readonly onOpenRepairs: () => void;
   readonly onOpenUpdates: () => void;
+  readonly onOpenHacs?: () => void;
+  readonly onImportHa?: () => void;
   readonly onSelectDomain: (domain: string) => void;
   readonly onConfigureDiscovered?: () => void;
   readonly onAddDevice?: () => void;
@@ -108,7 +111,12 @@ export function IntegrationsOverviewView({
         <Row align="center" gapPx={14} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
           <Box
             style={{
-              layout: { width: px(42), height: px(42), alignItems: 'center', justifyContent: 'center' },
+              layout: {
+                width: px(42),
+                height: px(42),
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
               material: new SolidMaterial(colorToken('surface')),
               border: { width: 1, color: colorToken('border') },
               corners: corners(12),
@@ -126,18 +134,58 @@ export function IntegrationsOverviewView({
           </Stack>
         </Row>
         <Row align="center" gapPx={8} wrap>
-          <HausButton id="integrations-open-repairs" variant="secondary" size="sm" onPress={onOpenRepairs}>
+          <HausButton
+            id="integrations-open-repairs"
+            variant="secondary"
+            size="sm"
+            onPress={onOpenRepairs}
+          >
             <UiIcon name="wrench" size={14} />
             <Text size={12.5}>{repairCount > 0 ? `Repairs (${repairCount})` : 'Repairs'}</Text>
           </HausButton>
-          <HausButton id="integrations-open-updates" variant="secondary" size="sm" onPress={onOpenUpdates}>
+          <HausButton
+            id="integrations-open-updates"
+            variant="secondary"
+            size="sm"
+            onPress={onOpenUpdates}
+          >
             <UiIcon name="arrow-up-circle" size={14} />
             <Text size={12.5}>{updateCount > 0 ? `Updates (${updateCount})` : 'Updates'}</Text>
           </HausButton>
+          {onOpenHacs && (
+            <HausButton
+              id="integrations-open-hacs"
+              variant="secondary"
+              size="sm"
+              onPress={onOpenHacs}
+            >
+              <UiIcon name="sparkles" size={14} />
+              <Text size={12.5}>Community</Text>
+            </HausButton>
+          )}
+          {onImportHa && (
+            <HausButton
+              id="integrations-import-ha"
+              variant="secondary"
+              size="sm"
+              onPress={onImportHa}
+            >
+              <UiIcon name="file-up" size={14} />
+              <Text size={12.5}>Import HA data</Text>
+            </HausButton>
+          )}
           {onAddDevice && (
-            <HausButton id="integrations-add-device" variant="primary" size="sm" onPress={onAddDevice}>
+            <HausButton
+              id="integrations-add-device"
+              variant="primary"
+              size="sm"
+              onPress={onAddDevice}
+            >
               <UiIcon name="plus" size={14} color={primaryFg} />
-              <Text size={12.5} style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}>
+              <Text
+                size={12.5}
+                style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
+              >
                 Add device
               </Text>
             </HausButton>
@@ -285,11 +333,22 @@ export function IntegrationsOverviewView({
                 states: { hover: { material: new SolidMaterial(colorToken('surfaceHover')) } },
               }}
             >
-              <Row align="start" justify="between" gapPx={10} style={{ layout: { width: pct(100) } }}>
+              <Row
+                align="start"
+                justify="between"
+                gapPx={10}
+                style={{ layout: { width: pct(100) } }}
+              >
                 <Row align="center" gapPx={10} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
                   <Box
                     style={{
-                      layout: { width: px(36), height: px(36), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+                      layout: {
+                        width: px(36),
+                        height: px(36),
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      },
                       material: new SolidMaterial(colorToken('surface')),
                       border: { width: 1, color: colorToken('border') },
                       corners: corners(10),
@@ -307,15 +366,29 @@ export function IntegrationsOverviewView({
                   </Stack>
                 </Row>
                 {card.hasAttention ? (
-                  <Box style={{ layout: { padding: insets(2, 8), flexShrink: 0 }, material: new SolidMaterial(rgba(251, 191, 36, 0.14)), corners: corners(999) }}>
+                  <Box
+                    style={{
+                      layout: { padding: insets(2, 8), flexShrink: 0 },
+                      material: new SolidMaterial(rgba(251, 191, 36, 0.14)),
+                      corners: corners(999),
+                    }}
+                  >
                     <Text size={10.5}>{card.attentionLabel}</Text>
                   </Box>
                 ) : card.hasUpdate ? (
-                  <Box style={{ layout: { padding: insets(2, 8), flexShrink: 0 }, material: new SolidMaterial(rgba(52, 211, 153, 0.14)), corners: corners(999) }}>
+                  <Box
+                    style={{
+                      layout: { padding: insets(2, 8), flexShrink: 0 },
+                      material: new SolidMaterial(rgba(52, 211, 153, 0.14)),
+                      corners: corners(999),
+                    }}
+                  >
                     <Text size={10.5}>Update</Text>
                   </Box>
                 ) : card.allDisabled ? (
-                  <Text size={11} tone="muted">Disabled</Text>
+                  <Text size={11} tone="muted">
+                    Disabled
+                  </Text>
                 ) : null}
               </Row>
 
@@ -353,135 +426,5 @@ export function IntegrationsOverviewView({
         </DashboardGrid>
       )}
     </Stack>
-  );
-}
-
-export function IntegrationDetailsModal({
-  title,
-  runtimeLabel,
-  iotClassLabel,
-  version,
-  deviceNames,
-  entries,
-  canManage,
-  busy,
-  error,
-  notice,
-  onReloadEntry,
-  onToggleDisabled,
-  onOpenDevice,
-  onClose,
-}: {
-  readonly title: string;
-  readonly runtimeLabel: string;
-  readonly iotClassLabel?: string;
-  readonly version?: string;
-  readonly deviceNames: readonly { readonly id: string; readonly name: string }[];
-  readonly entries: readonly PortableIntegrationEntryItem[];
-  readonly canManage: boolean;
-  readonly busy: boolean;
-  readonly error?: string;
-  readonly notice?: string;
-  readonly onReloadEntry: (entryId: string) => void;
-  readonly onToggleDisabled: (entryId: string, disabled: boolean) => void;
-  readonly onOpenDevice?: (deviceId: string) => void;
-  readonly onClose: () => void;
-}) {
-  return (
-    <HausDialog
-      size="md"
-      title={title}
-      subtitle={[runtimeLabel, iotClassLabel, version ? `v${version}` : undefined].filter(Boolean).join(' · ')}
-      scrollable
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-      footer={
-        <Row justify="end" style={{ layout: { width: pct(100) } }}>
-          <HausButton variant="secondary" disabled={busy} onPress={onClose}>
-            Done
-          </HausButton>
-        </Row>
-      }
-    >
-      <Stack gapPx={14} style={{ layout: { width: pct(100) } }}>
-        {notice && <Text size={12} tone="muted">{notice}</Text>}
-        {error && <Text size={12} tone="critical">{error}</Text>}
-
-        <Stack gapPx={8}>
-          <Text size={11} weight={600} tone="muted">
-            CONFIGURED INSTANCES
-          </Text>
-          {entries.map((entry) => (
-            <Row
-              key={entry.entryId}
-              align="center"
-              justify="between"
-              gapPx={12}
-              wrap
-              style={{
-                layout: { width: pct(100), padding: insets(12, 14) },
-                material: new SolidMaterial(colorToken('surfaceSecondary')),
-                border: { width: 1, color: colorToken('border') },
-                corners: corners(12),
-              }}
-            >
-              <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(160) } }}>
-                <Text size={13.5} weight={600}>
-                  {entry.title}
-                </Text>
-                <Text size={11.5} tone="muted">
-                  {entry.disabledBy ? 'Disabled' : entry.reason ? `${entry.state} · ${entry.reason}` : entry.state}
-                </Text>
-              </Stack>
-              {canManage && (
-                <Row align="center" gapPx={6}>
-                  <HausButton
-                    variant="outline"
-                    size="sm"
-                    disabled={busy || Boolean(entry.disabledBy)}
-                    onPress={() => onReloadEntry(entry.entryId)}
-                  >
-                    <UiIcon name="rotate-cw" size={13} />
-                    <Text size={12}>Reload</Text>
-                  </HausButton>
-                  <HausButton
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onPress={() => onToggleDisabled(entry.entryId, !entry.disabledBy)}
-                  >
-                    <Text size={12}>{entry.disabledBy ? 'Enable' : 'Disable'}</Text>
-                  </HausButton>
-                </Row>
-              )}
-            </Row>
-          ))}
-        </Stack>
-
-        {deviceNames.length > 0 && (
-          <Stack gapPx={8}>
-            <Text size={11} weight={600} tone="muted">
-              {`LINKED DEVICES (${deviceNames.length})`}
-            </Text>
-            <Row gapPx={8} wrap>
-              {deviceNames.slice(0, 12).map((device) => (
-                <HausButton
-                  key={device.id}
-                  variant="outline"
-                  size="sm"
-                  onPress={() => {
-                    onClose();
-                    onOpenDevice?.(device.id);
-                  }}
-                >
-                  <Text size={12}>{device.name}</Text>
-                </HausButton>
-              ))}
-            </Row>
-          </Stack>
-        )}
-      </Stack>
-    </HausDialog>
   );
 }

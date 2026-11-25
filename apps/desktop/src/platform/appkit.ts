@@ -10,6 +10,8 @@ export function appKitBridge(koffi: typeof import('koffi')) {
   const system = koffi.load('/usr/lib/libSystem.B.dylib');
   if (!system.func('int pthread_main_np(void)')())
     throw new Error('AppKit requires the main thread.');
+  const pushAutoreleasePool = objc.func('void *objc_autoreleasePoolPush(void)');
+  const popAutoreleasePool = objc.func('void objc_autoreleasePoolPop(void *)');
   const klass = objc.func('void *objc_lookUpClass(const char *name)');
   const selector = objc.func('void *sel_registerName(const char *name)');
   const selectors = new Map<string, Pointer>();
@@ -98,6 +100,14 @@ export function appKitBridge(koffi: typeof import('koffi')) {
       const value = {};
       boundsMessage(value, object, sel('bounds'));
       return value as Rect;
+    },
+    withAutoreleasePool: <T>(run: () => T): T => {
+      const pool = pushAutoreleasePool();
+      try {
+        return run();
+      } finally {
+        popAutoreleasePool(pool);
+      }
     },
   };
 }

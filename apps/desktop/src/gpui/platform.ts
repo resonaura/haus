@@ -2,6 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { PathPromptOptions } from '@gpuix/react';
 import { macPerformer, NativeHaptics } from '../platform/haptics.js';
 import { NativeClipboard } from '../platform/clipboard.js';
 import { NativeMenuService } from '../platform/menus.js';
@@ -9,8 +10,10 @@ import type { ContextMenuItem, HapticPattern } from '../shared/native.js';
 import { validateExternalUrl } from '../main/validation.js';
 
 export interface GpuiPlatform {
+  readonly toggleFullscreen?: () => void;
   readonly hapticFeedback?: (pattern: HapticPattern) => boolean;
   readonly openExternal?: (url: string, hub: string) => Promise<void>;
+  readonly openPaths?: (options?: PathPromptOptions) => Promise<readonly string[] | null>;
   readonly clipboard?: Pick<NativeClipboard, 'readText' | 'writeText'>;
   readonly showContextMenu?: (items: readonly ContextMenuItem[]) => Promise<string | null>;
 }

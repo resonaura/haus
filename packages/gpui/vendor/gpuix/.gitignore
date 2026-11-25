@@ -1,0 +1,10 @@
+.npmrc
+node_modules/
+target/
+dist/
+*.tsbuildinfo
+*.node
+.DS_Store
+opensrc
+tmp/
+packages/native/wasm/

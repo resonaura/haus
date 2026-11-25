@@ -6,108 +6,12 @@
  */
 
 /* Camera content stays clear; metadata floats above the image only when needed. */
-:root .camera-card {
+:root .camera-card:not([data-haus-camera-tile='shared']) {
   border: 1px solid rgb(255 255 255 / 5.5%);
   box-shadow:
     0 3px 12px rgb(0 0 0 / 8%),
     inset 0 0 0 0.5px rgb(255 255 255 / 3%);
   --material-edge: rgb(255 255 255 / 5.5%);
-}
-:root .camera-age-badge {
-  position: absolute;
-  z-index: 4;
-  top: 10px;
-  right: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
-  min-height: 24px;
-  border-radius: 9px;
-  corner-shape: var(--continuous-corner);
-  background: rgb(12 12 12 / 36%);
-  border: 0.5px solid rgb(255 255 255 / 10%);
-  box-shadow:
-    inset 0 0.5px 0 rgb(255 255 255 / 9%),
-    0 2px 6px rgb(0 0 0 / 12%);
-  backdrop-filter: blur(14px) saturate(1.1);
-  -webkit-backdrop-filter: blur(14px) saturate(1.1);
-  color: #fff;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-}
-.camera-age-badge > span {
-  font-size: 9px;
-  opacity: 0.75;
-}
-:root .camera-label {
-  right: 40px;
-  bottom: 15px;
-  z-index: 3;
-  opacity: 0;
-  transform: translateY(6px);
-  transition:
-    opacity 240ms ease,
-    transform 300ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-:root .camera-expand {
-  z-index: 3;
-  opacity: 0;
-  transform: translateX(-3px);
-  transition:
-    opacity 240ms ease,
-    transform 300ms ease;
-}
-:root .camera-card .camera-shade {
-  z-index: 2;
-  position: absolute;
-  inset: 0;
-  height: auto;
-  background: linear-gradient(0deg, rgb(0 0 0 / 48%), transparent 55%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 280ms ease;
-}
-.smooth-image-blur {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 280ms ease;
-}
-.smooth-image-blur > img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.blur-2 {
-  mask-image: linear-gradient(transparent 40%, #000 80%);
-}
-.blur-6 {
-  mask-image: linear-gradient(transparent 60%, #000 92%);
-}
-.blur-12 {
-  mask-image: linear-gradient(transparent 76%, #000);
-}
-:root .camera-card .blur-2 > img {
-  filter: blur(2px);
-}
-:root .camera-card .blur-6 > img {
-  filter: blur(6px);
-}
-:root .camera-card .blur-12 > img {
-  filter: blur(12px);
-}
-:root .camera-card:is(:hover, :focus-visible, :focus-within) :is(.camera-label, .camera-expand) {
-  opacity: 1;
-  transform: translate(0);
-}
-:root .camera-card:is(:hover, :focus-visible, :focus-within) .camera-shade,
-:root .camera-card:is(:hover, :focus-visible, :focus-within) .smooth-image-blur {
-  opacity: 1;
 }
 .camera-toolbar[hidden] {
   display: none;
@@ -185,35 +89,17 @@
     transform: scale(1);
   }
 }
-@media (hover: none) {
-  :root .camera-label,
-  :root .camera-shade,
-  :root .camera-card .smooth-image-blur {
-    opacity: 1;
-    transform: none;
-  }
-}
 .device-source-badge {
   margin-left: 7px;
   vertical-align: middle;
 }
 @media (prefers-reduced-motion: reduce) {
-  :root :is(.camera-label, .camera-expand, .camera-shade) {
-    transition: none;
-  }
   .device-state-icon,
   .camera-player > .camera-recorded-video {
     animation: none;
   }
 }
 
-:root .camera-label .camera-room-label {
-  display: block;
-  font-size: 9px;
-  letter-spacing: 0;
-  margin: 0 0 3px;
-  color: rgb(255 255 255 / 70%);
-}
 .camera-modal-room {
   color: var(--muted-ink);
   font-size: 10px;
@@ -242,9 +128,6 @@
 .camera-dialog[data-camera-view='events'] .camera-player {
   width: min(100%, calc(min(56dvh, 100dvh - 390px) * 16 / 9));
   max-height: 56dvh;
-}
-.camera-view-picker {
-  margin-bottom: 10px;
 }
 .camera-timeline-inline .recording-empty {
   min-height: 0;
@@ -861,14 +744,14 @@
 .recording-selected-date {
   animation: recording-date-enter 180ms ease-out;
 }
-.camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button {
+.camera-viewer :is(.camera-toolbar, .recording-day) .button {
   transition:
     background-color 180ms ease,
     color 180ms ease,
     opacity 180ms ease,
     scale 180ms cubic-bezier(0.2, 0.75, 0.25, 1);
 }
-.camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button[data-pressed] {
+.camera-viewer :is(.camera-toolbar, .recording-day) .button[data-pressed] {
   scale: 0.95;
 }
 @keyframes recording-calendar-enter {
@@ -903,7 +786,7 @@
 @media (prefers-reduced-motion: reduce) {
   .recording-calendar-popover,
   .recording-selected-date,
-  .camera-viewer :is(.camera-toolbar, .camera-view-picker, .recording-day) .button {
+  .camera-viewer :is(.camera-toolbar, .recording-day) .button {
     animation: none !important;
     transition: none !important;
   }

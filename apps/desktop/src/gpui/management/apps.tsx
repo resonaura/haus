@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  buildDemoAppConfig,
   buildDemoAppsState,
   countAppFilters,
   filterCatalogApps,
@@ -14,14 +15,28 @@ import {
   type AppsTabId,
   type CatalogAppRecord,
   type InstalledAppRecord,
+  type LoadedAppConfigInfo,
   type ManagementPort,
 } from '@haus/core/transport';
 import type { Snapshot } from '@haus/ha/types';
 import {
+  AppConfigEditorPanel,
   AppDetailsModal,
   AppsWorkspaceView,
   type PortableAppFilterTab,
 } from '@haus/ui/components';
+import {
+  applyDemoConfigSave,
+  executeHubAppAction,
+  fetchHubAppLogs,
+  installHubCatalogApp,
+  loadHubAppConfig,
+  removeHubApp,
+  saveHubAppConfig,
+  toAppConfigState,
+  type AppConfigState,
+} from './apps-config.js';
+import { GpuiAppRepositoriesModal } from './apps-repos.js';
 import type { GpuiRpcRequest } from './integrations.js';
 
 export function GpuiAppsView({
@@ -31,6 +46,7 @@ export function GpuiAppsView({
   sessionKind,
   management,
   requestRpc,
+  openExternal,
   onSaved,
 }: {
   readonly snapshot: Snapshot;
@@ -39,6 +55,7 @@ export function GpuiAppsView({
   readonly sessionKind?: 'haus-hub' | 'home-assistant';
   readonly management?: ManagementPort;
   readonly requestRpc?: GpuiRpcRequest;
+  readonly openExternal?: (url: string) => void;
   readonly onSaved?: () => void;
 }) {
   const demoInitial = useMemo(() => (demo ? buildDemoAppsState() : undefined), [demo]);
@@ -54,9 +71,18 @@ export function GpuiAppsView({
   const [demoLogs, setDemoLogs] = useState<Readonly<Record<string, string>>>(
     () => demoInitial?.logsById ?? {},
   );
+  const [demoConfigs, setDemoConfigs] = useState<Readonly<Record<string, LoadedAppConfigInfo>>>({});
   const [activeAppId, setActiveAppId] = useState<string | undefined>(undefined);
   const [logsText, setLogsText] = useState('');
   const [logsLoading, setLogsLoading] = useState(false);
+  const [configState, setConfigState] = useState<AppConfigState>({
+    values: {},
+    configuredSecrets: new Set(),
+  });
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configSaved, setConfigSaved] = useState(false);
+  const [reposOpen, setReposOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyAppId, setBusyAppId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -96,7 +122,9 @@ export function GpuiAppsView({
       try {
         const [addonsRaw, storeRaw] = await Promise.all([
           requestRpc({ type: 'supervisor/api', endpoint: '/addons', method: 'get' }),
-          requestRpc({ type: 'supervisor/api', endpoint: '/store', method: 'get' }).catch(() => undefined),
+          requestRpc({ type: 'supervisor/api', endpoint: '/store', method: 'get' }).catch(
+            () => undefined,
+          ),
         ]);
         const parsed = parseSupervisorAddonsPayload(addonsRaw, storeRaw);
         setInstalled(parsed.installed);
@@ -130,7 +158,65 @@ export function GpuiAppsView({
     [filter, installed, query],
   );
   const visibleCatalog = useMemo(() => filterCatalogApps(catalog, query), [catalog, query]);
+  const installedIds = useMemo(() => new Set(installed.map((item) => item.id)), [installed]);
   const activeApp = activeAppId ? installed.find((item) => item.id === activeAppId) : undefined;
+
+  const loadConfig = useCallback(
+    async (app: InstalledAppRecord) => {
+      if (demo) {
+        const current = demoConfigs[app.id] ?? buildDemoAppConfig(app.id);
+        setConfigState(toAppConfigState(current));
+        setConfigLoaded(true);
+        setConfigSaved(false);
+        return;
+      }
+      if (isHaSession || !management) return;
+      setConfigLoading(true);
+      setError('');
+      try {
+        setConfigState(await loadHubAppConfig(management, app));
+        setConfigLoaded(true);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Could not load App configuration.');
+      } finally {
+        setConfigLoading(false);
+      }
+    },
+    [demo, demoConfigs, isHaSession, management],
+  );
+
+  const saveConfig = async (
+    app: InstalledAppRecord,
+    options: Record<string, unknown>,
+    restartAfter: boolean,
+  ) => {
+    if (demo) {
+      const current = demoConfigs[app.id] ?? buildDemoAppConfig(app.id);
+      const updated = applyDemoConfigSave(current, options);
+      setDemoConfigs((prev) => ({ ...prev, [app.id]: updated }));
+      setConfigState(toAppConfigState(updated));
+      setConfigLoaded(true);
+      setConfigSaved(true);
+      setNotice(`${app.name}: configuration saved${restartAfter ? ' and restarted' : ''}.`);
+      return;
+    }
+    if (isHaSession || !management) return;
+    setBusyAppId(app.id);
+    setError('');
+    setConfigSaved(false);
+    try {
+      await saveHubAppConfig(management, app, options, restartAfter);
+      setConfigState(await loadHubAppConfig(management, app));
+      setConfigLoaded(true);
+      setConfigSaved(true);
+      onSaved?.();
+      await load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not save App configuration.');
+    } finally {
+      setBusyAppId(null);
+    }
+  };
 
   const refreshLogs = useCallback(
     async (app: InstalledAppRecord) => {
@@ -141,11 +227,7 @@ export function GpuiAppsView({
       setLogsLoading(true);
       try {
         if (!isHaSession && management) {
-          const payload = await management.management<{ logs?: string } | string>({
-            method: 'GET',
-            path: `apps/${encodeURIComponent(app.id)}/logs`,
-          });
-          setLogsText(typeof payload === 'string' ? payload : String(payload?.logs ?? ''));
+          setLogsText(await fetchHubAppLogs(management, app.id, 400));
         } else if (isHaSession && requestRpc) {
           const payload = await requestRpc<string>({
             type: 'supervisor/api',
@@ -184,10 +266,7 @@ export function GpuiAppsView({
     setError('');
     const op =
       !isHaSession && management
-        ? management.management({
-            method: 'POST',
-            path: `apps/${encodeURIComponent(app.id)}/${action}`,
-          })
+        ? executeHubAppAction(management, app.id, action)
         : isHaSession && requestRpc
           ? requestRpc({
               type: 'supervisor/api',
@@ -205,7 +284,35 @@ export function GpuiAppsView({
         onSaved?.();
         return load();
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'App operation failed.'))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'App operation failed.'),
+      )
+      .finally(() => setBusyAppId(null));
+  };
+
+  const handleRemoveApp = (app: InstalledAppRecord) => {
+    if (demo) {
+      setInstalled((prev) => prev.filter((item) => item.id !== app.id));
+      setCatalog((prev) =>
+        prev.map((item) => (item.id === app.id ? { ...item, installed: false } : item)),
+      );
+      setNotice(`Removed ${app.name}.`);
+      setActiveAppId(undefined);
+      return;
+    }
+    if (isHaSession || !management) return;
+    setBusyAppId(app.id);
+    setError('');
+    void removeHubApp(management, app.id)
+      .then(() => {
+        setNotice(`Removed ${app.name}.`);
+        setActiveAppId(undefined);
+        onSaved?.();
+        return load();
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Could not remove App.'),
+      )
       .finally(() => setBusyAppId(null));
   };
 
@@ -238,7 +345,7 @@ export function GpuiAppsView({
     setError('');
     const op =
       !isHaSession && management
-        ? management.management({ method: 'POST', path: 'apps/install', data: { id: entry.id } })
+        ? installHubCatalogApp(management, entry.id)
         : isHaSession && requestRpc
           ? requestRpc({
               type: 'supervisor/api',
@@ -280,9 +387,15 @@ export function GpuiAppsView({
         onQueryChange={setQuery}
         onFilterChange={setFilter}
         onRefresh={() => void load()}
+        onOpenRepositories={
+          !isHaSession && (demo || management) ? () => setReposOpen(true) : undefined
+        }
         onManageApp={(app) => {
           setError('');
           setLogsText(demo ? (demoLogs[app.id] ?? '') : '');
+          setConfigState({ values: {}, configuredSecrets: new Set() });
+          setConfigLoaded(false);
+          setConfigSaved(false);
           setActiveAppId(app.id);
         }}
         onInstallCatalogApp={installCatalogApp}
@@ -295,11 +408,44 @@ export function GpuiAppsView({
           canManage={canManage}
           busy={busyAppId === activeApp.id}
           error={error || undefined}
+          configSlot={
+            !isHaSession && (demo || management) ? (
+              <AppConfigEditorPanel
+                values={configState.values}
+                configuredSecrets={configState.configuredSecrets}
+                fieldMeta={configState.fieldMeta}
+                appRunning={activeApp.state === 'running'}
+                loading={configLoading}
+                loaded={configLoaded}
+                busy={busyAppId === activeApp.id}
+                saved={configSaved}
+                error={error || undefined}
+                onReload={() => void loadConfig(activeApp)}
+                onSave={(options, restartAfter) =>
+                  void saveConfig(activeApp, options, restartAfter)
+                }
+              />
+            ) : undefined
+          }
           onAction={(action) => runAction(activeApp, action)}
           onRefreshLogs={() => void refreshLogs(activeApp)}
+          onOpenConfig={() => void loadConfig(activeApp)}
+          onRemove={
+            !isHaSession && (demo || management) ? () => handleRemoveApp(activeApp) : undefined
+          }
           onClose={() => setActiveAppId(undefined)}
         />
       )}
+      <GpuiAppRepositoriesModal
+        open={reposOpen}
+        canManage={canManage}
+        demo={demo}
+        installedIds={installedIds}
+        management={management}
+        onOpenExternal={openExternal}
+        onCatalogChanged={load}
+        onClose={() => setReposOpen(false)}
+      />
     </>
   );
 }

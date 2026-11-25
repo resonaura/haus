@@ -61,47 +61,49 @@ export class AppKitSidebar implements SidebarBackdrop {
 
   private refresh(widthChanged = false, themeChanged = false): void {
     const bridge = this.bridge;
-    try {
-      const workspace = bridge.id(bridge.klass('NSWorkspace'), 'sharedWorkspace');
-      if (bridge.readFlag(workspace, 'accessibilityDisplayShouldReduceTransparency')) {
-        this.detach();
-        return;
-      }
-      if (!this.root) {
-        const root = bridge.id(findAppKitWindow(bridge, this.title), 'contentView');
-        if (!root) return;
-        bridge.send(root, 'retain');
-        this.root = root;
-      }
-      if (this.effect) {
-        if (widthChanged) bridge.frame(this.effect, this.frame(this.root));
-        if (themeChanged) this.appearance(this.material);
-        return;
-      }
+    bridge.withAutoreleasePool(() => {
+      try {
+        const workspace = bridge.id(bridge.klass('NSWorkspace'), 'sharedWorkspace');
+        if (bridge.readFlag(workspace, 'accessibilityDisplayShouldReduceTransparency')) {
+          this.detach();
+          return;
+        }
+        if (!this.root) {
+          const root = bridge.id(findAppKitWindow(bridge, this.title), 'contentView');
+          if (!root) return;
+          bridge.send(root, 'retain');
+          this.root = root;
+        }
+        if (this.effect) {
+          if (widthChanged) bridge.frame(this.effect, this.frame(this.root));
+          if (themeChanged) this.appearance(this.material);
+          return;
+        }
 
-      const frame = this.frame(this.root);
-      const glass = bridge.klass('NSGlassEffectView');
-      this.effect = bridge.init(bridge.id(glass, 'alloc'), frame);
-      const material = this.effect ? 'liquid-glass' : 'vibrancy';
-      if (this.effect) {
-        bridge.integer(this.effect, 'setStyle:', 0); // NSGlassEffectViewStyleRegular
-        bridge.double(this.effect, 'setCornerRadius:', 0);
-      } else {
-        this.effect = bridge.init(bridge.id(bridge.klass('NSVisualEffectView'), 'alloc'), frame);
-        if (!this.effect) throw new Error('AppKit could not create a sidebar material.');
-        bridge.integer(this.effect, 'setMaterial:', 7); // NSVisualEffectMaterialSidebar
-        bridge.integer(this.effect, 'setBlendingMode:', 0); // NSVisualEffectBlendingModeBehindWindow
-        bridge.integer(this.effect, 'setState:', 1); // NSVisualEffectStateActive
+        const frame = this.frame(this.root);
+        const glass = bridge.klass('NSGlassEffectView');
+        this.effect = bridge.init(bridge.id(glass, 'alloc'), frame);
+        const material = this.effect ? 'liquid-glass' : 'vibrancy';
+        if (this.effect) {
+          bridge.integer(this.effect, 'setStyle:', 0); // NSGlassEffectViewStyleRegular
+          bridge.double(this.effect, 'setCornerRadius:', 0);
+        } else {
+          this.effect = bridge.init(bridge.id(bridge.klass('NSVisualEffectView'), 'alloc'), frame);
+          if (!this.effect) throw new Error('AppKit could not create a sidebar material.');
+          bridge.integer(this.effect, 'setMaterial:', 7); // NSVisualEffectMaterialSidebar
+          bridge.integer(this.effect, 'setBlendingMode:', 0); // NSVisualEffectBlendingModeBehindWindow
+          bridge.integer(this.effect, 'setState:', 1); // NSVisualEffectStateActive
+        }
+        this.appearance(material);
+        bridge.behind(this.root, this.effect);
+        bridge.integer(this.effect, 'setAutoresizingMask:', 16); // NSViewHeightSizable
+        this.setMaterial(material);
+      } catch (error) {
+        this.unavailable = true;
+        this.dispose();
+        console.warn('Sidebar material unavailable. Using an opaque background.', error);
       }
-      this.appearance(material);
-      bridge.behind(this.root, this.effect);
-      bridge.integer(this.effect, 'setAutoresizingMask:', 16); // NSViewHeightSizable
-      this.setMaterial(material);
-    } catch (error) {
-      this.unavailable = true;
-      this.dispose();
-      console.warn('Sidebar material unavailable. Using an opaque background.', error);
-    }
+    });
   }
 
   private frame(root: NonNullable<Pointer>) {

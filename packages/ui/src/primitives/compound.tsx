@@ -106,7 +106,7 @@ function TabsTab({
       selected={selected}
       className={['tabs__tab', selected ? 'is-selected' : '', className].filter(Boolean).join(' ')}
       style={styles.option}
-      onPress={() => ctx?.onSelect(id)}
+      onActivate={() => ctx?.onSelect(id)}
     >
       {children}
     </Pressable>

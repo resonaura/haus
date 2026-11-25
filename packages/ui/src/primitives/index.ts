@@ -17,6 +17,7 @@ export * from './compound.js';
 export * from './color.js';
 export * from './calendar.js';
 export * from './feedback.js';
+export * from './glass-rim.js';
 export * from './modal-overlay.js';
 export * from './overlays.js';
 export * from './react.js';

@@ -185,7 +185,7 @@
   background: var(--danger-wash);
   color: var(--danger-ink);
 }
-.camera-card {
+.camera-card:not([data-haus-camera-tile='shared']) {
   background: var(--soft);
 }
 .camera-shade {

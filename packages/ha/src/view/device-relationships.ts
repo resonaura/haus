@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { orderPowerStripOutlets } from '@haus/core/transport';
+import { deviceDisplayName } from './device-name.js';
 import type { Device, HassEntity, Snapshot } from './types.js';
 
 const key = (value: unknown) =>
@@ -96,6 +98,20 @@ export function stripOutlets(accessory: import('./types.js').HausAccessory) {
   if (individual.length > 0) return individual;
   const nonMaster = switches.filter((entity) => entity.attributes.haus_outlet_role !== 'master');
   return nonMaster.length > 0 ? nonMaster : switches;
+}
+
+export function presentPowerOutlets(entities: readonly HassEntity[], name: string) {
+  return orderPowerStripOutlets(entities, name).map((outlet) => ({
+    ...outlet,
+    id: outlet.entity.entity_id,
+    label: outlet.isMaster
+      ? outlet.label
+      : deviceDisplayName(
+          String(outlet.entity.attributes.friendly_name ?? outlet.entity.entity_id),
+          name,
+          'Outlet',
+        ),
+  }));
 }
 
 export function stripMasterOutlet(accessory: import('./types.js').HausAccessory) {

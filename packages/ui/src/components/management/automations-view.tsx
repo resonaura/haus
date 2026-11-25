@@ -22,6 +22,7 @@ export interface PortableAutomationItem {
   readonly enabled: boolean;
   readonly toggleDisabled: boolean;
   readonly canEdit: boolean;
+  readonly cutoverDisabled?: boolean;
   readonly needsCutover: boolean;
   readonly cuttingOver: boolean;
 }
@@ -61,7 +62,10 @@ export function AutomationsListView({
           onPress={onCreate}
         >
           <UiIcon name="plus" size={14} color={primaryFg} />
-          <Text size={12.5} style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}>
+          <Text
+            size={12.5}
+            style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
+          >
             Create automation
           </Text>
         </HausButton>
@@ -139,7 +143,7 @@ export function AutomationsListView({
                     id={`automation-cutover-${item.entityId}`}
                     variant="ghost"
                     size="sm"
-                    disabled={item.cuttingOver || !item.canEdit}
+                    disabled={item.cuttingOver || (item.cutoverDisabled ?? !item.canEdit)}
                     onPress={() => onCutover(item)}
                   >
                     <Text size={12}>

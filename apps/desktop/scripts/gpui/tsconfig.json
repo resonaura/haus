@@ -1,7 +1,12 @@
 {
   "extends": "../../tsconfig.json",
   "include": [
+    "bench.ts",
     "build.ts",
+    "check-camera-modal.tsx",
+    "check-home-scroll.tsx",
+    "check-scroll.ts",
+    "dev.ts",
     "packed.ts",
     "reopen.tsx",
     "sidebar.tsx",

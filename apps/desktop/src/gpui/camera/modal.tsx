@@ -21,6 +21,7 @@ import {
   CameraModalView,
   CameraOverlayTimeline,
   CameraPtzPanel,
+  CameraRecordingCalendar,
   type CameraPtzControlAvailability,
   type CameraViewMode,
   type PortableCameraEventItem,
@@ -32,7 +33,6 @@ import {
   CameraModalViewport,
   cameraStatusTag,
   formatEventDuration,
-  shiftCameraDay,
   type CameraLiveState,
 } from './modal-stage.js';
 import { demoCameraPreviewSrc } from './preview-image.js';
@@ -52,6 +52,7 @@ export function GpuiCameraModal({
   onControl,
   onPreferencesPatch,
   onClose,
+  onToggleFullscreen,
 }: {
   readonly cameraId: string;
   readonly snapshot: Snapshot;
@@ -65,6 +66,7 @@ export function GpuiCameraModal({
   readonly onControl: DeviceControl;
   readonly onPreferencesPatch?: (patch: Partial<Preferences>) => void;
   readonly onClose: () => void;
+  readonly onToggleFullscreen?: () => void;
 }) {
   const cameraEntity = snapshot.states.find((item) => item.entity_id === cameraId);
   const cameraAccessory = allAccessories.find(
@@ -108,7 +110,20 @@ export function GpuiCameraModal({
   const [snapshotSrc, setSnapshotSrc] = useState<string | null>(null);
 
   const today = recordingDay(Date.now());
-  const canGoNext = day < today;
+  const loadRecordingMonth = useMemo(
+    () =>
+      cameraApi && !demo ? (month: string) => cameraApi.recordedDays(cameraId, month) : undefined,
+    [cameraApi, cameraId, demo],
+  );
+  const markedDays = useMemo(
+    () =>
+      new Set(
+        events
+          .filter((event) => event.status === 'ready')
+          .map((event) => recordingDay(event.startAt)),
+      ),
+    [events],
+  );
 
   const relatedAccessories = useMemo(() => {
     if (!cameraAccessory) return [];
@@ -215,23 +230,27 @@ export function GpuiCameraModal({
     };
   }, [demo, cameraApi, cameraId]);
 
+  const hub = streaming?.hub;
+  const streams = streaming?.streams;
+  const recordingId = selectedRecording?.id;
+  const original = selectedRecording ? canPlayOriginalImmediately(selectedRecording) : false;
   const liveFrames = useCallback(
     (signal: AbortSignal) => {
-      if (!streaming) throw new Error('Streaming unavailable.');
-      return streaming.streams.open(streaming.hub, cameraId, signal, setLiveState);
+      if (!streams || !hub) throw new Error('Streaming unavailable.');
+      return streams.open(hub, cameraId, signal, setLiveState);
     },
-    [streaming, cameraId],
+    [hub, streams, cameraId],
   );
 
   const recordingFrames = useCallback(
     (signal: AbortSignal) => {
-      if (!streaming || !selectedRecording) throw new Error('Recording unavailable.');
-      return streaming.streams.openRecording(streaming.hub, selectedRecording.id, signal, {
-        original: canPlayOriginalImmediately(selectedRecording),
+      if (!streams || !hub || !recordingId) throw new Error('Recording unavailable.');
+      return streams.openRecording(hub, recordingId, signal, {
+        original,
         onStatus: setLiveState,
       });
     },
-    [streaming, selectedRecording],
+    [hub, streams, recordingId, original],
   );
 
   if (!cameraEntity) return null;
@@ -277,7 +296,10 @@ export function GpuiCameraModal({
     id: event.id,
     startAt: event.startAt,
     endAt: event.endAt,
-    timeLabel: new Date(event.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    timeLabel: new Date(event.startAt).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     durationLabel: formatEventDuration(event.duration),
     kinds: event.kinds.map(formatEventKindLabel),
     status: event.status,
@@ -351,7 +373,9 @@ export function GpuiCameraModal({
       error={eventsError}
       unavailableMessage={unavailableMessage}
       recordingBusy={recordBusy}
-      canRecord={Boolean(!demo && cameraApi && availability?.installed && availability.state === 'started')}
+      canRecord={Boolean(
+        !demo && cameraApi && availability?.installed && availability.state === 'started',
+      )}
       selectedEvent={activePortableEvent}
       onSelectKind={setKind}
       onRecordNow={() => {
@@ -395,8 +419,15 @@ export function GpuiCameraModal({
       statusTag={statusTag}
       view={view}
       hasSelection={Boolean(selectedRecording)}
-      dayLabel={dayLabel}
-      canGoNext={canGoNext}
+      calendar={
+        <CameraRecordingCalendar
+          day={day}
+          today={today}
+          markedDays={markedDays}
+          loadMonth={loadRecordingMonth}
+          onChange={setDay}
+        />
+      }
       playing={playing}
       muted={muted}
       muteDisabled={demo || (!selectedRecording && liveState !== 'playing')}
@@ -433,11 +464,8 @@ export function GpuiCameraModal({
           setSelectedRecording(undefined);
         }
       }}
-      onPrevDay={() => setDay((prev) => shiftCameraDay(prev, -1))}
-      onNextDay={() => {
-        if (canGoNext) setDay((prev) => shiftCameraDay(prev, 1));
-      }}
       onTogglePlay={() => setPlaying((prev) => !prev)}
+      onToggleFullscreen={onToggleFullscreen}
       onTogglePtz={() => {
         setSettingsOpen(false);
         setPtzOpen((prev) => !prev);

@@ -5,6 +5,21 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@gpuix/native#build:js": {
+      "outputs": ["dist/**"]
+    },
+    "@gpuix/react#build": {
+      "dependsOn": ["@gpuix/native#build:js"],
+      "outputs": ["dist/**"]
+    },
+    "@haus/gpui#build": {
+      "dependsOn": ["@gpuix/react#build"],
+      "outputs": ["dist/**"]
+    },
+    "@haus/ui#build": {
+      "dependsOn": ["@haus/core#build", "@haus/gpui#build", "@gpuix/react#build"],
+      "outputs": ["dist/**"]
+    },
     "@haus/desktop#build": {
       "dependsOn": ["@haus/core#build", "@haus/ipc#build"],
       "outputs": ["out/**"],

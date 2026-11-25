@@ -1,8 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { useEffect, useState } from 'react';
+import {
+  buildDemoBridgeSuggestions,
+  fetchBridgeSuggestions,
+  type BridgeSuggestion,
+  type ManagementPort,
+} from '@haus/core/transport';
 import type { Preferences } from '@haus/ha/view/preferences';
 import { ICON_APPEARANCES, ICON_TINT_COLORS, ICON_VARIATIONS } from '@haus/icons';
 import {
+  BridgeSuggestionsPanel,
   IconStylePanel,
   LiquidGlassSettingsPanel,
   SettingsPanel,
@@ -26,6 +34,8 @@ export function SettingsView({
   disabled = false,
   canEditPreferences = true,
   sessionMeta,
+  management,
+  sessionKind,
   onToggleDemo,
   onConnect,
   onDisconnect,
@@ -42,6 +52,8 @@ export function SettingsView({
   disabled?: boolean;
   canEditPreferences?: boolean;
   sessionMeta?: HomeSessionStatusInfo;
+  management?: ManagementPort;
+  sessionKind?: 'haus-hub' | 'home-assistant';
   onToggleDemo?: (enabled: boolean) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -51,6 +63,40 @@ export function SettingsView({
   onResetLightGroups?: () => void;
   onNavigate?: (destination: SettingsDestination) => void;
 }) {
+  const effectiveKind = sessionKind ?? sessionMeta?.kind;
+  const shouldLoadBridges = demo || (effectiveKind === 'haus-hub' && Boolean(management));
+  const [bridgeAttempt, setBridgeAttempt] = useState(0);
+  const [bridgeState, setBridgeState] = useState<
+    | { readonly status: 'loading' | 'failed'; readonly suggestions: readonly BridgeSuggestion[] }
+    | { readonly status: 'loaded'; readonly suggestions: readonly BridgeSuggestion[] }
+  >(() =>
+    demo
+      ? { status: 'loaded', suggestions: buildDemoBridgeSuggestions() }
+      : { status: 'loading', suggestions: [] },
+  );
+
+  useEffect(() => {
+    if (demo) {
+      setBridgeState({ status: 'loaded', suggestions: buildDemoBridgeSuggestions() });
+      return;
+    }
+    if (effectiveKind !== 'haus-hub' || !management) {
+      return;
+    }
+    let active = true;
+    setBridgeState({ status: 'loading', suggestions: [] });
+    void fetchBridgeSuggestions(management)
+      .then((suggestions) => {
+        if (active) setBridgeState({ status: 'loaded', suggestions });
+      })
+      .catch(() => {
+        if (active) setBridgeState({ status: 'failed', suggestions: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, [bridgeAttempt, demo, effectiveKind, management, sessionMeta?.url]);
+
   const hasSession = sessionMeta?.hasSession ?? !demo;
   const statusText = demo
     ? hasSession
@@ -74,9 +120,7 @@ export function SettingsView({
       statusText={statusText}
       address={sessionMeta?.url}
       versionText={versionText ?? (demo && !hasSession ? 'Demo' : 'Connected')}
-      serverKindLabel={
-        sessionMeta?.kind === 'home-assistant' ? 'Home Assistant' : 'Haus Hub'
-      }
+      serverKindLabel={sessionMeta?.kind === 'home-assistant' ? 'Home Assistant' : 'Haus Hub'}
       hasSession={hasSession}
       theme={preferences.theme}
       autoGroupLights={preferences.autoGroupLights !== false}
@@ -112,6 +156,15 @@ export function SettingsView({
           <LiquidGlassSettingsPanel
             value={preferences.liquidGlass}
             onChange={(liquidGlass) => onPreferencesPatch({ liquidGlass })}
+          />
+        ) : undefined
+      }
+      extra={
+        shouldLoadBridges ? (
+          <BridgeSuggestionsPanel
+            status={bridgeState.status}
+            suggestions={bridgeState.suggestions}
+            onRetry={() => setBridgeAttempt((previous) => previous + 1)}
           />
         ) : undefined
       }

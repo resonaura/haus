@@ -101,11 +101,11 @@ export function HausCalendar({
             typography: { size: 14, color: colorToken('textPrimary') },
             cursor: 'pointer',
           }}
-          onPress={() => shiftMonth(-1)}
+          onActivate={() => shiftMonth(-1)}
         >
           ‹
         </Pressable>
-        <Text size={13} weight={600}>
+        <Text tone="primary" size={13} weight={600}>
           {monthLabel}
         </Text>
         <Pressable
@@ -124,7 +124,7 @@ export function HausCalendar({
             typography: { size: 14, color: colorToken('textPrimary') },
             cursor: 'pointer',
           }}
-          onPress={() => shiftMonth(1)}
+          onActivate={() => shiftMonth(1)}
         >
           ›
         </Pressable>
@@ -187,7 +187,7 @@ export function HausCalendar({
                     : { material: new SolidMaterial(rgba(128, 128, 128, 0.14)) },
                 },
               }}
-              onPress={() => onChange(cell.ymd!)}
+              onActivate={() => onChange(cell.ymd!)}
             >
               <Text
                 size={12}

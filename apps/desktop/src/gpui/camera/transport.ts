@@ -7,6 +7,7 @@ import type {
   CameraHomeKitStatus,
   CameraOperatingControl,
 } from '@haus/core/transport';
+import { recordingDay, recordingMonthBoundaries } from '@haus/core/transport';
 import type { HausHelper } from '../../main/helper.js';
 import { isRecord } from '../../main/hub/types.js';
 
@@ -24,7 +25,9 @@ export interface CameraEventsQuery {
 }
 
 function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function parseEvent(raw: unknown): CameraEvent | undefined {
@@ -132,6 +135,7 @@ function parseCameraConfig(raw: unknown): CameraDeviceConfig | undefined {
 export interface GpuiCameraApi {
   availability(): Promise<CameraServiceAvailability>;
   listEvents(cameraId: string, query: CameraEventsQuery): Promise<CameraEvent[]>;
+  recordedDays(cameraId: string, month: string): Promise<readonly string[]>;
   loadSettings(cameraId: string): Promise<CameraDeviceConfig | undefined>;
   patchSettings(
     cameraId: string,
@@ -146,7 +150,9 @@ export interface GpuiCameraApi {
     value: boolean,
   ): Promise<void>;
   setHomeKit(cameraId: string, enabled: boolean, processor?: string): Promise<void>;
-  startHomeKitPairing(cameraId: string): Promise<{ readonly paired: boolean; readonly code?: string }>;
+  startHomeKitPairing(
+    cameraId: string,
+  ): Promise<{ readonly paired: boolean; readonly code?: string }>;
   resetHomeKitPairing(cameraId: string): Promise<void>;
   clear(): void;
 }
@@ -189,6 +195,21 @@ export function createGpuiCameraApi(
         const parsed = parseEvent(entry);
         return parsed ? [parsed] : [];
       });
+    },
+    async recordedDays(cameraId, month) {
+      const params = new URLSearchParams({
+        camera_id: cameraId,
+        boundaries: recordingMonthBoundaries(month).join(','),
+      });
+      const res = await viewer().request({ method: 'GET', path: `/api/events/calendar?${params}` });
+      if (
+        !isRecord(res) ||
+        !Array.isArray(res.days) ||
+        !res.days.every((day): day is number => typeof day === 'number' && Number.isFinite(day))
+      ) {
+        throw new Error('The Hub returned invalid recording dates.');
+      }
+      return res.days.map((day) => recordingDay(day));
     },
     async loadSettings(cameraId) {
       const res = await viewer().request({ method: 'GET', path: '/api/cameras' });

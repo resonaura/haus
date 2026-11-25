@@ -6,9 +6,10 @@
  */
 
 .camera-collection-item {
+  position: relative;
   min-width: 0;
   cursor: grab;
-  border-radius: 17px;
+  border-radius: 26px;
   transition: opacity 160ms ease;
 
   &.is-dragging {
@@ -19,7 +20,7 @@
 
   > button.camera-card {
     width: 100%;
-    display: block;
+    display: flex;
   }
 }
 

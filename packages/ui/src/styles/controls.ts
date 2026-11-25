@@ -234,6 +234,7 @@ export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyl
       ),
       corners: corners(999, 'round'),
       shadows: [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: rgba(0, 0, 0, 0.28) }],
+      pointerEvents: 'none',
       transitionMs: 180,
     },
     label: {

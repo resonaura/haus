@@ -3,9 +3,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createElement, useState } from 'react';
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useSpring,
+  useTransform,
+  type MotionValue,
+} from '@gpuix/react';
 import { createTestRoot } from '@gpuix/react/testing';
 import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
-import { HausUiProvider } from '@haus/ui/primitives';
+import { corners, LiquidGlassMaterial, px, rgba, SolidMaterial } from '@haus/ui/ir';
+import { Box, HausUiProvider, Pressable } from '@haus/ui/primitives';
 import { Preview } from '../../src/gpui/preview.js';
 import { requireGpuiBun } from '../../src/gpui/bun.js';
 
@@ -67,7 +76,7 @@ function benchPreviewHome(): BenchResult[] {
     createElement(HausUiProvider, {
       contentHost: GPUIX_CONTENT_HOST,
       mode: 'dark',
-      children: createElement(Preview, {}),
+      children: createElement(Preview, { platform: {} }),
     }),
   );
   renderer.flush();
@@ -75,11 +84,19 @@ function benchPreviewHome(): BenchResult[] {
 
   const divs = renderer.findByType('div');
   const mainScroller = divs
-    .map((d) => ({ id: d.id, b: renderer.getElementBounds(d.id), so: renderer.getScrollOffset(d.id) }))
+    .map((d) => ({
+      id: d.id,
+      b: renderer.getElementBounds(d.id),
+      so: renderer.getScrollOffset(d.id),
+    }))
     .filter((x) => x.b && x.so !== null && x.b.width > 700 && x.b.height > 500)
     .at(-1);
   const railScroller = divs
-    .map((d) => ({ id: d.id, b: renderer.getElementBounds(d.id), so: renderer.getScrollOffset(d.id) }))
+    .map((d) => ({
+      id: d.id,
+      b: renderer.getElementBounds(d.id),
+      so: renderer.getScrollOffset(d.id),
+    }))
     .find((x) => x.b && x.so !== null && x.b.width > 500 && x.b.height >= 40 && x.b.height <= 90);
 
   results.push({
@@ -111,20 +128,9 @@ function benchPreviewHome(): BenchResult[] {
       stats: statsFor([0]),
       extra: { mainOffsetAfterPureHoriz: afterPureHoriz },
     });
-
-    const wheelStats = measureSteps(40, () => {
-      renderer.nativeSimulateScrollWheel(cx, cy, 0, -24);
-      renderer.dispatchNativeEvents();
-      renderer.flush();
-    });
-    results.push({
-      name: 'preview_home_vertical_scroll',
-      samples: 40,
-      stats: wheelStats,
-      extra: { rssMb: readRssMb() },
-    });
   }
 
+  // Test horizontal-dominant diagonal over rail BEFORE scrolling main down
   if (railScroller?.b && mainScroller) {
     const rx = railScroller.b.x + 120;
     const ry = railScroller.b.y + railScroller.b.height / 2;
@@ -146,12 +152,30 @@ function benchPreviewHome(): BenchResult[] {
     });
   }
 
+  if (mainScroller?.b) {
+    const cx = mainScroller.b.x + mainScroller.b.width / 2;
+    const cy = mainScroller.b.y + mainScroller.b.height / 2;
+    renderer.resetPerfMetrics();
+    const wheelStats = measureSteps(40, () => {
+      renderer.nativeSimulateScrollWheel(cx, cy, 0, -24);
+      renderer.dispatchNativeEvents();
+      renderer.flush();
+    });
+    results.push({
+      name: 'preview_home_vertical_scroll',
+      samples: 40,
+      stats: wheelStats,
+      extra: { rssMb: readRssMb(), perf: renderer.getPerfMetrics() },
+    });
+  }
+
   // Hover sweep across pressables in Preview
   const buttons = renderer.findByType('div').slice(0, 30);
   const points = buttons
     .map((b) => renderer.getElementBounds(b.id))
     .filter((b): b is NonNullable<typeof b> => b !== null && b.width > 20 && b.height > 20);
   if (points.length > 0) {
+    renderer.resetPerfMetrics();
     const hoverStats = measureSteps(30, (i) => {
       const box = points[i % points.length];
       if (!box) return;
@@ -163,12 +187,75 @@ function benchPreviewHome(): BenchResult[] {
       name: 'preview_hover_sweep',
       samples: 30,
       stats: hoverStats,
-      extra: { rssMb: readRssMb() },
+      extra: { rssMb: readRssMb(), perf: renderer.getPerfMetrics() },
     });
   }
 
   unmount();
   return results;
+}
+
+function benchHoverNativeSynthetic(): BenchResult {
+  let commits = 0;
+  function NativeInteractiveRows() {
+    commits++;
+    return createElement(
+      'div',
+      {
+        style: {
+          width: 1000,
+          height: 700,
+          overflowY: 'scroll',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        },
+      },
+      Array.from({ length: 120 }, (_, i) =>
+        createElement(
+          Pressable,
+          {
+            key: i,
+            style: {
+              layout: { height: px(44) },
+              corners: corners(10),
+              material: new SolidMaterial(rgba(24, 28, 36)),
+              states: {
+                hover: {
+                  material: new SolidMaterial(rgba(42, 51, 66)),
+                },
+              },
+            },
+          },
+          `Item ${i}`,
+        ),
+      ),
+    );
+  }
+  const { renderer, render, unmount } = createTestRoot({ width: 1000, height: 700 });
+  render(
+    createElement(HausUiProvider, {
+      contentHost: GPUIX_CONTENT_HOST,
+      mode: 'dark',
+      children: createElement(NativeInteractiveRows),
+    }),
+  );
+  renderer.flush();
+  commits = 0;
+  renderer.resetPerfMetrics();
+  const stats = measureSteps(24, (i) => {
+    renderer.nativeSimulateMouseMove(200, 20 + (i % 12) * 50);
+    renderer.dispatchNativeEvents();
+    renderer.flush();
+  });
+  const perf = renderer.getPerfMetrics();
+  unmount();
+  return {
+    name: 'synthetic_hover_120_cards_native',
+    samples: 24,
+    stats,
+    extra: { commits, perf },
+  };
 }
 
 function benchHoverRoundTripSynthetic(): BenchResult {
@@ -177,7 +264,16 @@ function benchHoverRoundTripSynthetic(): BenchResult {
     const [hoveredIndex, setHoveredIndex] = useState(-1);
     return createElement(
       'div',
-      { style: { width: 1000, height: 700, overflowY: 'scroll', display: 'flex', flexDirection: 'column', gap: 6 } },
+      {
+        style: {
+          width: 1000,
+          height: 700,
+          overflowY: 'scroll',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        },
+      },
       Array.from({ length: 120 }, (_, i) =>
         createElement(
           'div',
@@ -201,13 +297,20 @@ function benchHoverRoundTripSynthetic(): BenchResult {
   const { renderer, render, unmount } = createTestRoot({ width: 1000, height: 700 });
   render(createElement(InteractiveRows));
   renderer.flush();
+  renderer.resetPerfMetrics();
   const stats = measureSteps(24, (i) => {
     renderer.nativeSimulateMouseMove(200, 20 + (i % 12) * 50);
     renderer.dispatchNativeEvents();
     renderer.flush();
   });
+  const perf = renderer.getPerfMetrics();
   unmount();
-  return { name: 'synthetic_hover_120_cards_js_state', samples: 24, stats, extra: { commits } };
+  return {
+    name: 'synthetic_hover_120_cards_js_state',
+    samples: 24,
+    stats,
+    extra: { commits, perf },
+  };
 }
 
 function benchLongList(itemCount: number): BenchResult {
@@ -215,29 +318,171 @@ function benchLongList(itemCount: number): BenchResult {
   render(
     createElement(
       'div',
-      { style: { width: 1000, height: 800, overflowY: 'scroll', display: 'flex', flexDirection: 'column', gap: 4 } },
+      {
+        style: {
+          width: 1000,
+          height: 800,
+          overflowY: 'scroll',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+        },
+      },
       Array.from({ length: itemCount }, (_, i) =>
-        createElement('div', { key: i, style: { height: 36, backgroundColor: '#1a1e26' } }, `Row ${i} · Active`),
+        createElement(
+          'div',
+          { key: i, style: { height: 36, backgroundColor: '#1a1e26' } },
+          `Row ${i} · Active`,
+        ),
       ),
     ),
   );
   renderer.flush();
+  renderer.resetPerfMetrics();
   const stats = measureSteps(30, () => {
     renderer.nativeSimulateScrollWheel(400, 300, 0, -48);
     renderer.dispatchNativeEvents();
     renderer.flush();
   });
+  const perf = renderer.getPerfMetrics();
   const rssMb = readRssMb();
   unmount();
-  return { name: `scroll_long_list_${itemCount}`, samples: 30, stats, extra: { rssMb } };
+  return { name: `scroll_long_list_${itemCount}`, samples: 30, stats, extra: { rssMb, perf } };
+}
+
+function benchCompositorLiquidGlassPanel(): BenchResult {
+  const { renderer, render, unmount } = createTestRoot({ width: 1200, height: 800 });
+  render(
+    createElement(HausUiProvider, {
+      contentHost: GPUIX_CONTENT_HOST,
+      mode: 'dark',
+      children: createElement(
+        'div',
+        {
+          style: {
+            width: 1200,
+            height: 800,
+            position: 'relative',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 12,
+            padding: 20,
+            backgroundColor: '#11161f',
+          },
+        },
+        Array.from({ length: 48 }, (_, i) =>
+          createElement('div', {
+            key: i,
+            style: {
+              width: 180,
+              height: 100,
+              borderRadius: 16,
+              cornerSmoothing: 1,
+              backgroundColor: i % 2 === 0 ? '#1f2937' : '#263449',
+            },
+          }),
+        ),
+        createElement(Box, {
+          style: {
+            layout: {
+              position: 'absolute',
+              width: px(640),
+              height: px(420),
+              inset: { top: px(190), left: px(280) },
+            },
+            corners: corners(28, 'superellipse', 1.4),
+            material: new LiquidGlassMaterial({
+              blurRadius: 20,
+              refractionStrength: 18,
+              chromaticDispersion: 0.65,
+              rimPreset: 'panel',
+            }),
+          },
+        }),
+      ),
+    }),
+  );
+  renderer.flush();
+  renderer.resetPerfMetrics();
+  const stats = measureSteps(20, (i) => {
+    renderer.nativeSimulateMouseMove(350 + i * 8, 280);
+    renderer.dispatchNativeEvents();
+    renderer.flush();
+  });
+  const perf = renderer.getPerfMetrics();
+  const rssMb = readRssMb();
+  unmount();
+  return {
+    name: 'compositor_liquid_glass_panel',
+    samples: 20,
+    stats,
+    extra: { rssMb, perf },
+  };
+}
+
+function benchNativeMotionSpringTransforms(): BenchResult {
+  let commits = 0;
+  let driver!: MotionValue;
+  function MotionGrid() {
+    commits++;
+    driver = useMotionValue(0);
+    const derived = useTransform(driver, [0, 100], [0, 120]);
+    const spring = useSpring(driver, { stiffness: 300, damping: 24 });
+    return createElement(
+      'div',
+      { style: { width: 1000, height: 700, display: 'flex', flexWrap: 'wrap', gap: 10 } },
+      Array.from({ length: 24 }, (_, i) =>
+        createElement(motion.div, {
+          key: i,
+          initial: { x: 0, scale: 0.92, rotate: -6, opacity: 0.5 },
+          animate: { x: 32, scale: 1.0, rotate: 0, opacity: 1.0 },
+          transition: { type: 'spring', stiffness: 280, damping: 22, delay: i * 0.005 },
+          style: {
+            width: 140,
+            height: 80,
+            borderRadius: 14,
+            backgroundColor: '#1f2937',
+            motionBind: [
+              derived.bind('y'),
+              spring.bind('scale', { inputRange: [0, 100], outputRange: [1, 1.08] }),
+            ],
+          },
+        }),
+      ),
+    );
+  }
+  const { renderer, render, unmount } = createTestRoot({ width: 1000, height: 700 });
+  renderer.clockPause();
+  render(createElement(MotionGrid));
+  renderer.flush();
+  commits = 0;
+  animate(driver, 100, { type: 'spring', stiffness: 260, damping: 22 });
+  renderer.resetPerfMetrics();
+  const stats = measureSteps(30, () => {
+    renderer.clockFastForward(16.67);
+    renderer.flush();
+  });
+  const perf = renderer.getPerfMetrics();
+  const rssMb = readRssMb();
+  renderer.clockResume();
+  unmount();
+  return {
+    name: 'native_motion_spring_transforms_0_commits',
+    samples: 30,
+    stats,
+    extra: { commits, rssMb, perf },
+  };
 }
 
 const outPath = resolve(process.argv[2] ?? '../../artifacts/gpui-bench-baseline.json');
 const results: BenchResult[] = [
   ...benchPreviewHome(),
+  benchHoverNativeSynthetic(),
   benchHoverRoundTripSynthetic(),
   benchLongList(1000),
   benchLongList(5000),
+  benchCompositorLiquidGlassPanel(),
+  benchNativeMotionSpringTransforms(),
 ];
 
 const report = {

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./js",
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["js/**/*.ts"],
+  "exclude": ["js/__tests__"]
+}

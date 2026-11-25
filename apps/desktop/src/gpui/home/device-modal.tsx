@@ -20,13 +20,13 @@ import {
   DeviceDetailsTab,
   DeviceHistoryPanel,
   DeviceSettingsTab,
-  Dialog,
   UiIcon,
+  parseCssColor,
   type DeviceDetailTabKey,
   type SecondaryEntityControlItem,
   type TrendPoint,
 } from '@haus/ui/components';
-import { HausButton, Row, Stack, Text } from '@haus/ui/primitives';
+import { HausButton, HausDialog, Row, Stack, Text, type GlassRimProps } from '@haus/ui/primitives';
 import { isRecord } from '../../main/hub/types.js';
 import type { DeviceControl } from './cards.js';
 import { DeviceControls } from './controls.js';
@@ -214,7 +214,8 @@ export function DeviceDetailsModal({
       ? entity.attributes.options.filter((opt): opt is string => typeof opt === 'string')
       : undefined;
     const kind: SecondaryEntityControlItem['kind'] =
-      (domain === 'switch' || domain === 'input_boolean') && availableAction(snapshot, eid, 'toggle')
+      (domain === 'switch' || domain === 'input_boolean') &&
+      availableAction(snapshot, eid, 'toggle')
         ? 'switch'
         : (domain === 'button' || domain === 'input_button') &&
             availableAction(snapshot, eid, 'press')
@@ -370,8 +371,33 @@ export function DeviceDetailsModal({
     </Stack>
   );
 
+  const activeEffect = device.active ? device.lightEffect : undefined;
+  const accentColor = parseCssColor(device.accent);
+  const modalRim: Omit<GlassRimProps, 'preset'> | undefined = device.active
+    ? activeEffect
+      ? {
+          opacity: 0.82,
+          effectColors: [
+            parseCssColor(activeEffect.palette[0]) ?? accentColor,
+            parseCssColor(activeEffect.palette[1]),
+            parseCssColor(activeEffect.palette[2]),
+          ],
+          effectMotion: activeEffect.motion,
+        }
+      : accentColor
+        ? { opacity: 0.78, tintColor: accentColor }
+        : undefined
+    : undefined;
+
   return (
-    <Dialog title={device.name} onClose={onClose}>
+    <HausDialog
+      title={device.name}
+      onClose={onClose}
+      size={accessory.powerStrip ? 'lg' : undefined}
+      backdrop="blur"
+      rim={modalRim}
+      scrollable
+    >
       <DeviceDetailTabs
         activeTab={tab}
         onSelectTab={setTab}
@@ -380,6 +406,6 @@ export function DeviceDetailsModal({
         details={detailsContent}
         settings={settingsContent}
       />
-    </Dialog>
+    </HausDialog>
   );
 }

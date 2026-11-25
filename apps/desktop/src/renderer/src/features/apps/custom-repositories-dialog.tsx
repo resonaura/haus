@@ -6,74 +6,18 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import {
+  formatAddonRepositoryError,
+  parseAddonRepositories,
+  type AddonRepositorySummary,
+} from '@haus/core/transport';
 import { Box, HausButton, HausCode, HausForm, Heading, Text, TextInput } from '@haus/ui';
 import { ExternalLink, FolderGit2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Dialog } from '@haus/ui/components';
 import { nativeApi } from '../../ha/management';
-import { appRequest, record } from './api';
+import { appRequest } from './api';
 
-export interface AddonRepositorySummary {
-  readonly id: string;
-  readonly url: string;
-  readonly branch?: string;
-  readonly name: string;
-  readonly maintainer?: string;
-  readonly infoUrl?: string;
-  readonly addonIds: readonly string[];
-  readonly updatedAt: string;
-}
-
-export function parseAddonRepositories(raw: unknown): AddonRepositorySummary[] {
-  if (!record(raw) || !Array.isArray(raw.repositories)) return [];
-  const out: AddonRepositorySummary[] = [];
-  for (const item of raw.repositories) {
-    if (!record(item) || typeof item.id !== 'string' || typeof item.url !== 'string') continue;
-    const addonIds = Array.isArray(item.addonIds)
-      ? item.addonIds.filter((v): v is string => typeof v === 'string')
-      : [];
-    out.push({
-      id: item.id,
-      url: item.url,
-      ...(typeof item.branch === 'string' ? { branch: item.branch } : {}),
-      name: typeof item.name === 'string' && item.name ? item.name : item.url,
-      ...(typeof item.maintainer === 'string' ? { maintainer: item.maintainer } : {}),
-      ...(typeof item.infoUrl === 'string' ? { infoUrl: item.infoUrl } : {}),
-      addonIds,
-      updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : '',
-    });
-  }
-  return out;
-}
-
-export function formatAddonRepositoryError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err ?? '');
-  if (raw.includes('addon_repository_is_hacs_repo')) {
-    return 'This is a HACS integration repository, not a Home Assistant Add-on repository. Add it under Integrations → Custom repository or Community (HACS).';
-  }
-  if (raw.includes('invalid_addon_repository_missing_repository_yaml')) {
-    return 'Not a valid Home Assistant Add-on repository: root repository.yaml or repository.json was not found.';
-  }
-  if (raw.includes('addon_repository_already_exists')) {
-    return 'This add-on repository is already added.';
-  }
-  if (raw.includes('addon_repository_in_use:')) {
-    const slugs = raw.split('addon_repository_in_use:')[1]?.trim() ?? '';
-    return `Cannot remove this repository while its add-ons are installed (${slugs}). Uninstall them first.`;
-  }
-  if (
-    raw.includes('unsupported_addon_repository_host') ||
-    raw.includes('invalid_addon_repository_url')
-  ) {
-    return 'Enter a valid GitHub repository URL (e.g. https://github.com/owner/repository or https://github.com/owner/repository#branch).';
-  }
-  if (raw.includes('addon_repository_not_found')) {
-    return 'Repository was not found on GitHub. Check the URL and ensure the repository is public.';
-  }
-  if (raw.includes('github_rate_limited')) {
-    return 'GitHub API rate limit reached. Please wait a minute and try again.';
-  }
-  return raw || 'Could not update custom add-on repositories.';
-}
+export { formatAddonRepositoryError, parseAddonRepositories, type AddonRepositorySummary };
 
 export function CustomRepositoriesDialog({
   admin,

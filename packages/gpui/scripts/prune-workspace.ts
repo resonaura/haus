@@ -25,13 +25,11 @@ export const GPUI_WORKSPACE_MEMBERS: readonly string[] = [
   'crates/http_client',
   'crates/http_client_tls',
   'crates/media',
-  'crates/path',
   'crates/refineable',
   'crates/refineable/derive_refineable',
   'crates/reqwest_client',
   'crates/scheduler',
   'crates/sum_tree',
-  'crates/util',
   'crates/util_macros',
   'crates/zlog',
   'crates/ztracing',
@@ -62,12 +60,10 @@ export const GPUI_SPARSE_PATHS: readonly string[] = [
   '/crates/http_client/',
   '/crates/http_client_tls/',
   '/crates/media/',
-  '/crates/path/',
   '/crates/refineable/',
   '/crates/reqwest_client/',
   '/crates/scheduler/',
   '/crates/sum_tree/',
-  '/crates/util/',
   '/crates/util_macros/',
   '/crates/zlog/',
   '/crates/ztracing/',
@@ -76,15 +72,46 @@ export const GPUI_SPARSE_PATHS: readonly string[] = [
 ];
 
 const KEPT_PATCHES = new Set(['async-process', 'async-task', 'calloop', 'windows-capture']);
-const EXTRA_KEPT_DEV_PROFILE_CRATES = new Set(['quote', 'syn', 'proc-macro2', 'taffy', 'resvg', 'serde_json']);
-const DISALLOWED_ZED_CRATES = ['crates/zed', 'crates/editor', 'crates/agent', 'crates/lsp', 'crates/collab'];
+const EXTRA_KEPT_DEV_PROFILE_CRATES = new Set([
+  'quote',
+  'syn',
+  'proc-macro2',
+  'taffy',
+  'resvg',
+  'serde_json',
+]);
+const DISALLOWED_ZED_CRATES = [
+  'crates/zed',
+  'crates/editor',
+  'crates/agent',
+  'crates/lsp',
+  'crates/collab',
+  'crates/util',
+  'crates/path',
+];
+const HAUS_EXTRA_WORKSPACE_DEPS: Readonly<Record<string, string>> = {
+  naga: 'naga = { version = "29.0.4", default-features = false }',
+  'web-time': 'web-time = "1.1.0"',
+};
 
-function gitShow(gpuiDir: string, spec: string): string {
-  const res = spawnSync('git', ['show', spec], { cwd: gpuiDir, encoding: 'utf8' });
-  if (res.status !== 0) {
-    throw new Error(`git show ${spec} failed in ${gpuiDir}: ${res.stderr}`);
+function readSourceCargoToml(
+  gpuiDir: string,
+  baseCommit: string,
+  sourceCargoTomlPath?: string,
+): string {
+  if (sourceCargoTomlPath) {
+    return readFileSync(sourceCargoTomlPath, 'utf8');
   }
-  return res.stdout;
+  if (existsSync(resolve(gpuiDir, '.git'))) {
+    const res = spawnSync('git', ['show', `${baseCommit}:Cargo.toml`], {
+      cwd: gpuiDir,
+      encoding: 'utf8',
+    });
+    if (res.status === 0) {
+      return res.stdout;
+    }
+  }
+  return readFileSync(resolve(gpuiDir, 'Cargo.toml'), 'utf8');
 }
 
 function stripLineComment(line: string): string {
@@ -123,11 +150,42 @@ function isDependencyTableHeader(header: string): boolean {
     header === 'dev-dependencies' ||
     /^target\.[^.]+\.(dependencies|build-dependencies|dev-dependencies)$/.test(header) ||
     /^(dependencies|build-dependencies|dev-dependencies)\.[A-Za-z0-9_-]+$/.test(header) ||
-    /^target\.[^.]+\.(dependencies|build-dependencies|dev-dependencies)\.[A-Za-z0-9_-]+$/.test(header)
+    /^target\.[^.]+\.(dependencies|build-dependencies|dev-dependencies)\.[A-Za-z0-9_-]+$/.test(
+      header,
+    )
   );
 }
 
-function collectWorkspaceDepsFromMember(tomlText: string, needed: Set<string>, memberNames: Set<string>): void {
+function updateDelimiterDepth(clean: string, startDepth: number): number {
+  let depth = startDepth;
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+  for (let i = 0; i < clean.length; i += 1) {
+    const ch = clean[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inDouble && ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"' && !inSingle) inDouble = !inDouble;
+    else if (ch === "'" && !inDouble) inSingle = !inSingle;
+    else if (!inSingle && !inDouble) {
+      if (ch === '{' || ch === '[') depth += 1;
+      else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
+    }
+  }
+  return depth;
+}
+
+function collectWorkspaceDepsFromMember(
+  tomlText: string,
+  needed: Set<string>,
+  memberNames: Set<string>,
+): void {
   const lines = tomlText.split('\n');
   let section = '';
   let depth = 0;
@@ -151,7 +209,9 @@ function collectWorkspaceDepsFromMember(tomlText: string, needed: Set<string>, m
       needed.add(dotted[1]);
       return;
     }
-    const subtableKey = section.match(/\.(dependencies|build-dependencies|dev-dependencies)\.([A-Za-z0-9_-]+)$/);
+    const subtableKey = section.match(
+      /\.(dependencies|build-dependencies|dev-dependencies)\.([A-Za-z0-9_-]+)$/,
+    );
     if (lhs === 'workspace' && subtableKey?.[2]) {
       needed.add(subtableKey[2]);
       return;
@@ -164,10 +224,9 @@ function collectWorkspaceDepsFromMember(tomlText: string, needed: Set<string>, m
   for (const rawLine of lines) {
     const clean = stripLineComment(rawLine);
     const trimmedClean = clean.trim();
-    if (depth === 0 && /^\[([^\[\]]+)\]$/.test(trimmedClean)) {
+    if (depth === 0 && /^\[([^[\]]+)\]$/.test(trimmedClean)) {
       flushEntry();
       section = trimmedClean.slice(1, -1).trim();
-      if (section === 'package') continue;
       continue;
     }
     if (section === 'package') {
@@ -179,26 +238,7 @@ function collectWorkspaceDepsFromMember(tomlText: string, needed: Set<string>, m
     if (!trimmedClean && depth === 0) continue;
 
     block = block ? `${block}\n${clean}` : clean;
-    let inSingle = false;
-    let inDouble = false;
-    let escaped = false;
-    for (let i = 0; i < clean.length; i += 1) {
-      const ch = clean[i];
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (inDouble && ch === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (ch === '"' && !inSingle) inDouble = !inDouble;
-      else if (ch === "'" && !inDouble) inSingle = !inSingle;
-      else if (!inSingle && !inDouble) {
-        if (ch === '{' || ch === '[') depth += 1;
-        else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
-      }
-    }
+    depth = updateDelimiterDepth(clean, depth);
     if (depth === 0) flushEntry();
   }
   flushEntry();
@@ -217,32 +257,13 @@ function splitSections(tomlText: string): TomlSection[] {
   for (const rawLine of tomlText.split('\n')) {
     const clean = stripLineComment(rawLine);
     const trimmed = clean.trim();
-    if (depth === 0 && /^\[[^\[\]]+\]$/.test(trimmed)) {
+    if (depth === 0 && /^\[[^[\]]+\]$/.test(trimmed)) {
       sections.push(current);
       current = { header: trimmed.slice(1, -1).trim(), bodyLines: [] };
       continue;
     }
     current.bodyLines.push(rawLine);
-    let inSingle = false;
-    let inDouble = false;
-    let escaped = false;
-    for (let i = 0; i < clean.length; i += 1) {
-      const ch = clean[i];
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (inDouble && ch === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (ch === '"' && !inSingle) inDouble = !inDouble;
-      else if (ch === "'" && !inDouble) inSingle = !inSingle;
-      else if (!inSingle && !inDouble) {
-        if (ch === '{' || ch === '[') depth += 1;
-        else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
-      }
-    }
+    depth = updateDelimiterDepth(clean, depth);
   }
   sections.push(current);
   return sections;
@@ -272,26 +293,7 @@ function splitKeyEntries(bodyLines: readonly string[]): { key: string; text: str
       continue;
     }
     buf.push(rawLine);
-    let inSingle = false;
-    let inDouble = false;
-    let escaped = false;
-    for (let i = 0; i < clean.length; i += 1) {
-      const ch = clean[i];
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (inDouble && ch === '\\') {
-        escaped = true;
-        continue;
-      }
-      if (ch === '"' && !inSingle) inDouble = !inDouble;
-      else if (ch === "'" && !inDouble) inSingle = !inSingle;
-      else if (!inSingle && !inDouble) {
-        if (ch === '{' || ch === '[') depth += 1;
-        else if (ch === '}' || ch === ']') depth = Math.max(0, depth - 1);
-      }
-    }
+    depth = updateDelimiterDepth(clean, depth);
     if (depth === 0) flush();
   }
   flush();
@@ -324,7 +326,12 @@ function renderToolchainToml(rustToolchain: string): string {
   ].join('\n');
 }
 
-export function pruneGpuiWorkspace(gpuiDir: string, baseCommit: string, rustToolchain: string): void {
+export function pruneGpuiWorkspace(
+  gpuiDir: string,
+  baseCommit: string,
+  rustToolchain: string,
+  sourceCargoTomlPath?: string,
+): void {
   for (const bad of DISALLOWED_ZED_CRATES) {
     if (existsSync(resolve(gpuiDir, bad))) {
       throw new Error(`Disallowed full-Zed directory still present: ${bad}`);
@@ -344,7 +351,7 @@ export function pruneGpuiWorkspace(gpuiDir: string, baseCommit: string, rustTool
     collectWorkspaceDepsFromMember(text, neededWsDeps, memberNames);
   }
 
-  const upstreamCargo = gitShow(gpuiDir, `${baseCommit}:Cargo.toml`);
+  const upstreamCargo = readSourceCargoToml(gpuiDir, baseCommit, sourceCargoTomlPath);
   const sections = splitSections(upstreamCargo);
 
   const out: string[] = [
@@ -362,8 +369,24 @@ export function pruneGpuiWorkspace(gpuiDir: string, baseCommit: string, rustTool
   const seenExternalDeps = new Set<string>();
 
   for (const sec of sections) {
-    if (sec.header === 'workspace.package' || sec.header === 'profile.dev' || sec.header === 'profile.dev.build-override' || sec.header === 'profile.dbg' || sec.header === 'profile.dbg.build-override' || sec.header === 'profile.release' || sec.header === 'profile.release-fast' || sec.header === 'workspace.lints.rust' || sec.header === 'workspace.lints.clippy') {
-      out.push(`[${sec.header}]`, ...sec.bodyLines.map((l) => l.trimEnd()).filter((l, idx, arr) => !(idx === arr.length - 1 && l === '')), '');
+    if (
+      sec.header === 'workspace.package' ||
+      sec.header === 'profile.dev' ||
+      sec.header === 'profile.dev.build-override' ||
+      sec.header === 'profile.dbg' ||
+      sec.header === 'profile.dbg.build-override' ||
+      sec.header === 'profile.release' ||
+      sec.header === 'profile.release-fast' ||
+      sec.header === 'workspace.lints.rust' ||
+      sec.header === 'workspace.lints.clippy'
+    ) {
+      out.push(
+        `[${sec.header}]`,
+        ...sec.bodyLines
+          .map((l) => l.trimEnd())
+          .filter((l, idx, arr) => !(idx === arr.length - 1 && l === '')),
+        '',
+      );
       continue;
     }
 
@@ -385,7 +408,21 @@ export function pruneGpuiWorkspace(gpuiDir: string, baseCommit: string, rustTool
           seenExternalDeps.add(entry.key);
         }
       }
-      out.push('[workspace.dependencies]', '# Local GPUI runtime crates', ...localEntries, '', '# External dependencies required by GPUI + GPUIX', ...extEntries, '');
+      for (const [dep, line] of Object.entries(HAUS_EXTRA_WORKSPACE_DEPS)) {
+        if (neededWsDeps.has(dep) && !seenExternalDeps.has(dep)) {
+          extEntries.push(line);
+          seenExternalDeps.add(dep);
+        }
+      }
+      out.push(
+        '[workspace.dependencies]',
+        '# Local GPUI runtime crates',
+        ...localEntries,
+        '',
+        '# External dependencies required by GPUI + GPUIX',
+        ...extEntries,
+        '',
+      );
       continue;
     }
 
@@ -418,11 +455,17 @@ export function pruneGpuiWorkspace(gpuiDir: string, baseCommit: string, rustTool
 
   for (const dep of neededWsDeps) {
     if (!seenExternalDeps.has(dep)) {
-      throw new Error(`Workspace dependency "${dep}" referenced by GPUI crates was missing from upstream Cargo.toml`);
+      throw new Error(
+        `Workspace dependency "${dep}" referenced by GPUI crates was missing from upstream Cargo.toml`,
+      );
     }
   }
 
   writeFileSync(resolve(gpuiDir, 'Cargo.toml'), out.join('\n'), 'utf8');
   writeFileSync(resolve(gpuiDir, '.cargo/config.toml'), renderMinimalConfigToml(), 'utf8');
-  writeFileSync(resolve(gpuiDir, 'rust-toolchain.toml'), renderToolchainToml(rustToolchain), 'utf8');
+  writeFileSync(
+    resolve(gpuiDir, 'rust-toolchain.toml'),
+    renderToolchainToml(rustToolchain),
+    'utf8',
+  );
 }

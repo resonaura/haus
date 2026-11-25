@@ -1,28 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useState } from 'react';
+import { parseBridgeSuggestionsResponse, type BridgeSuggestion } from '@haus/core/transport';
 import { Box, HausButton, HausDisclosure, Heading, Text } from '@haus/ui';
 import { House } from 'lucide-react';
 
-type Device = { id: string; name: string };
-type Suggestion = { name: string; devices: Device[] };
-type State = { state: 'loading' | 'failed' } | { state: 'loaded'; suggestions: Suggestion[] };
-
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function suggestedDevice(value: unknown): value is Device {
-  return record(value) && typeof value.id === 'string' && typeof value.name === 'string';
-}
-
-function suggestion(value: unknown): value is Suggestion {
-  return (
-    record(value) &&
-    typeof value.name === 'string' &&
-    Array.isArray(value.devices) &&
-    value.devices.every(suggestedDevice)
-  );
-}
+type State = { state: 'loading' | 'failed' } | { state: 'loaded'; suggestions: BridgeSuggestion[] };
 
 export function BridgeSuggestions() {
   const [attempt, setAttempt] = useState(0);
@@ -36,13 +18,8 @@ export function BridgeSuggestions() {
           method: 'GET',
           path: 'homekit/bridge/suggestions',
         });
-        if (
-          !record(response) ||
-          !Array.isArray(response.suggestions) ||
-          !response.suggestions.every(suggestion)
-        )
-          throw new Error('invalid_bridge_suggestions');
-        if (active) setResult({ state: 'loaded', suggestions: response.suggestions });
+        const suggestions = parseBridgeSuggestionsResponse(response);
+        if (active) setResult({ state: 'loaded', suggestions });
       } catch {
         if (active) setResult({ state: 'failed' });
       }

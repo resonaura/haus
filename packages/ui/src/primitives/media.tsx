@@ -12,6 +12,7 @@ import type {
   HostFileInputProps,
   HostImageProps,
   HostLinkProps,
+  HostProgressiveBlurProps,
   HostRangeInputProps,
   HostScrollViewProps,
   HostSelectProps,
@@ -21,6 +22,25 @@ import type {
   HostVideoProps,
 } from '../renderers/host.js';
 import { useHausUi } from './context.js';
+
+/** Blurs the content underneath, increasing the radius from top to bottom. */
+export function ProgressiveBlur({
+  maxRadius,
+  start = 0,
+  style,
+}: Omit<HostProgressiveBlurProps, 'start'> & {
+  readonly start?: number;
+}): React.ReactElement | null {
+  const ctx = useHausUi();
+  if (ctx.viewport.reducedTransparency || !Number.isFinite(maxRadius) || maxRadius <= 0)
+    return null;
+  const props = {
+    maxRadius: Math.min(32, maxRadius),
+    start: Number.isFinite(start) ? Math.max(0, Math.min(0.99, start)) : 0,
+    style,
+  };
+  return ctx.contentHost.renderProgressiveBlur?.(props, ctx) ?? null;
+}
 
 /** Platform-neutral range input leaf delegated strictly to `UiHostAdapter`. */
 export function RangeInput(props: HostRangeInputProps): React.ReactElement {

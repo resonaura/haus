@@ -69,6 +69,7 @@ export interface ReactNativeStyleSheet {
   overflow?: 'visible' | 'hidden' | 'scroll';
   flexGrow?: number;
   flexShrink?: number;
+  alignSelf?: 'auto' | 'flex-start' | 'center' | 'flex-end' | 'stretch';
   aspectRatio?: number;
   backgroundColor?: string;
   borderWidth?: number;
@@ -201,6 +202,14 @@ function applyNativeLayout(
     target.overflow = layout.overflow;
   } else if (layout.overflow === 'auto' || layout.overflow === 'scroll') {
     target.overflow = 'scroll';
+  }
+  if (layout.alignSelf) {
+    target.alignSelf =
+      layout.alignSelf === 'start'
+        ? 'flex-start'
+        : layout.alignSelf === 'end'
+          ? 'flex-end'
+          : layout.alignSelf;
   }
   if (layout.flexGrow !== undefined) target.flexGrow = layout.flexGrow;
   if (layout.flexShrink !== undefined) target.flexShrink = layout.flexShrink;

@@ -46,6 +46,14 @@ export interface GradientStop {
   readonly color: ColorValue;
 }
 
+export interface RadialGradientGeometry {
+  readonly centerX?: number;
+  readonly centerY?: number;
+  readonly radiusX?: number;
+  readonly radiusY?: number;
+  readonly shape?: 'ellipse' | 'circle';
+}
+
 export type ShaderUniformValue =
   | { readonly type: 'f32'; readonly value: number }
   | { readonly type: 'vec2'; readonly value: readonly [number, number] }
@@ -100,6 +108,7 @@ export interface GradientMaterialIR {
   readonly angleDeg: number;
   readonly stops: readonly GradientStop[];
   readonly blur?: BlurEffect;
+  readonly radial?: RadialGradientGeometry;
 }
 
 export interface BlurMaterialIR {
@@ -159,6 +168,7 @@ export class GradientMaterial implements SurfaceMaterial {
     readonly angleDeg = 155,
     readonly gradientType: 'linear' | 'radial' = 'linear',
     readonly blur?: BlurEffect,
+    readonly radial?: RadialGradientGeometry,
   ) {}
 
   toIR(): GradientMaterialIR {
@@ -168,6 +178,7 @@ export class GradientMaterial implements SurfaceMaterial {
       angleDeg: this.angleDeg,
       stops: this.stops,
       ...(this.blur ? { blur: this.blur } : {}),
+      ...(this.radial ? { radial: this.radial } : {}),
     };
   }
 }

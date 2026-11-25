@@ -1,0 +1,1 @@
+fn shade(input: ShaderInput) -> vec4<f32> { return input.time; }

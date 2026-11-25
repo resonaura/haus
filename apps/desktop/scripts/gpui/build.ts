@@ -26,6 +26,7 @@ const output = `out/gpui/haus-preview${process.platform === 'win32' ? '.exe' : '
 const result = await build({
   entrypoints: ['src/gpui/index.tsx'],
   conditions: ['development'],
+  define: { 'process.env.NODE_ENV': '"production"' },
   compile: { outfile: output },
   plugins: [
     {

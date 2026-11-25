@@ -18,8 +18,15 @@ export interface HostImageProps {
   readonly className?: string;
   readonly ariaHidden?: boolean;
   readonly objectFit?: 'cover' | 'contain' | 'fill';
+  readonly transitionMs?: number;
   readonly onLoad?: () => void;
   readonly style?: UiStyleSpec;
+}
+
+export interface HostProgressiveBlurProps {
+  readonly maxRadius: number;
+  readonly start: number;
+  readonly style: UiStyleSpec;
 }
 
 export interface HostSurfacePointerEvent {

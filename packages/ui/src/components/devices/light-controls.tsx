@@ -30,14 +30,11 @@ export function LightColorPanel({
   maxKelvin = 6500,
   canColor,
   canTemperature,
-  effects = [],
-  activeEffect,
   disabled,
   presets,
   onColorRgb,
   onColorHsv,
   onTemperature,
-  onEffect,
 }: {
   readonly idPrefix: string;
   readonly rgb: readonly [number, number, number];
@@ -48,27 +45,22 @@ export function LightColorPanel({
   readonly maxKelvin?: number;
   readonly canColor: boolean;
   readonly canTemperature: boolean;
-  readonly effects?: readonly string[];
-  readonly activeEffect?: string;
   readonly disabled: boolean;
   readonly presets: readonly LightColorPresetItem[];
   readonly onColorRgb: (next: [number, number, number]) => void;
   readonly onColorHsv: (nextHue: number, nextSat: number) => void;
   readonly onTemperature: (nextKelvin: number) => void;
-  readonly onEffect: (effect: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [draftHue, setDraftHue] = useState<number>();
   const [draftSat, setDraftSat] = useState<number>();
   const [draftKelvin, setDraftKelvin] = useState<number>();
-  const [showAllEffects, setShowAllEffects] = useState(false);
 
-  if (!canColor && !canTemperature && effects.length === 0) return null;
+  if (!canColor && !canTemperature) return null;
 
   const shownHue = draftHue ?? hue;
   const shownSat = draftSat ?? saturation;
   const shownKelvin = draftKelvin ?? kelvin ?? 3000;
-  const visibleEffects = showAllEffects ? effects : effects.slice(0, 6);
 
   return (
     <Stack gapPx={12} style={{ layout: { width: pct(100) } }}>
@@ -101,11 +93,14 @@ export function LightColorPanel({
                 disabled={disabled}
                 onActivate={() => onColorRgb([preset.rgb[0], preset.rgb[1], preset.rgb[2]])}
                 style={{
-                  layout: { width: px(28), height: px(28), alignItems: 'center', justifyContent: 'center' },
+                  layout: {
+                    width: px(28),
+                    height: px(28),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
                   corners: corners(14),
-                  material: new SolidMaterial(
-                    rgba(preset.rgb[0], preset.rgb[1], preset.rgb[2], 1),
-                  ),
+                  material: new SolidMaterial(rgba(preset.rgb[0], preset.rgb[1], preset.rgb[2], 1)),
                   border: { width: 1, color: colorToken('border') },
                   opacity: disabled ? 0.45 : 1,
                 }}
@@ -188,60 +183,6 @@ export function LightColorPanel({
               />
             </Stack>
           )}
-        </Stack>
-      )}
-
-      {effects.length > 0 && (
-        <Stack gapPx={8}>
-          <Row justify="between" align="center" style={{ layout: { width: pct(100) } }}>
-            <Row align="center" gapPx={6}>
-              <UiIcon name="sparkles" size={14} />
-              <Text size={12} weight={600}>
-                Effects
-              </Text>
-            </Row>
-            {effects.length > 6 && (
-              <HausButton
-                size="sm"
-                variant="ghost"
-                onPress={() => setShowAllEffects((prev) => !prev)}
-              >
-                {showAllEffects ? 'Show less' : `All ${effects.length}`}
-              </HausButton>
-            )}
-          </Row>
-          <Row gapPx={6} wrap>
-            {visibleEffects.map((effect) => {
-              const selected = activeEffect === effect;
-              return (
-                <Pressable
-                  key={effect}
-                  id={`${idPrefix}-effect-${effect}`}
-                  disabled={disabled}
-                  onActivate={() => onEffect(effect)}
-                  style={{
-                    layout: { padding: insets(6, 10) },
-                    material: new SolidMaterial(
-                      colorToken(selected ? 'surfaceActive' : 'surface'),
-                    ),
-                    border: {
-                      width: 1,
-                      color: colorToken(selected ? 'accent' : 'border'),
-                    },
-                    corners: corners(10),
-                  }}
-                >
-                  <Text
-                    size={11}
-                    weight={selected ? 600 : 400}
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {effect}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </Row>
         </Stack>
       )}
     </Stack>

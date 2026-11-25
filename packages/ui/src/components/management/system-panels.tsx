@@ -29,6 +29,7 @@ const UPDATE_TABS: readonly { readonly id: UpdatesFilterId; readonly label: stri
   { id: 'all', label: 'All' },
   { id: 'firmware', label: 'Firmware' },
   { id: 'core_addon', label: 'Core & Apps' },
+  { id: 'hacs', label: 'Integrations & HACS' },
   { id: 'bridges', label: 'Bridges' },
 ];
 
@@ -55,11 +56,7 @@ export function RepairsPanelView({
           <Text size={13}>Back</Text>
         </HausButton>
         {ignoredCount > 0 && (
-          <HausButton
-            variant="secondary"
-            size="sm"
-            onPress={() => setShowIgnored((prev) => !prev)}
-          >
+          <HausButton variant="secondary" size="sm" onPress={() => setShowIgnored((prev) => !prev)}>
             <Text size={12.5}>
               {showIgnored ? 'Hide ignored' : `Show ignored (${ignoredCount})`}
             </Text>
@@ -98,7 +95,8 @@ export function RepairsPanelView({
       ) : (
         <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
           {visible.map((issue) => {
-            const title = issue.title || humanizeIdentifier(issue.translation_key ?? issue.issue_id);
+            const title =
+              issue.title || humanizeIdentifier(issue.translation_key ?? issue.issue_id);
             const age = formatRelativeAge(issue.created);
             const severity = humanizeIdentifier(issue.severity ?? 'warning');
             return (
@@ -168,6 +166,7 @@ export function UpdatesPanelView({
   onCheck,
   onInstall,
   onInstallAll,
+  onOpenHacs,
 }: {
   readonly updates: UnifiedUpdatesSummary | null;
   readonly checking: boolean;
@@ -176,6 +175,7 @@ export function UpdatesPanelView({
   readonly onCheck: () => void;
   readonly onInstall: (item: UnifiedUpdateRecord) => void;
   readonly onInstallAll?: (items: readonly UnifiedUpdateRecord[]) => void;
+  readonly onOpenHacs?: () => void;
 }) {
   const { theme } = useHausUi();
   const primaryFg = theme.mode === 'dark' ? '#101010' : '#ffffff';
@@ -194,7 +194,13 @@ export function UpdatesPanelView({
           <UiIcon name="arrow-left" size={16} />
           <Text size={13}>Back</Text>
         </HausButton>
-        <Row align="center" gapPx={8}>
+        <Row align="center" gapPx={8} wrap>
+          {onOpenHacs && (
+            <HausButton id="updates-open-hacs" variant="secondary" size="sm" onPress={onOpenHacs}>
+              <UiIcon name="sparkles" size={14} />
+              <Text size={12.5}>Community</Text>
+            </HausButton>
+          )}
           {onInstallAll && installable.length > 1 && (
             <HausButton
               variant="primary"

@@ -57,18 +57,17 @@ export interface DialogStyleProps {
 export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyleProps) => {
   const isDark = theme.mode === 'dark';
   const cover = props.size === 'cover';
-  const widthSpec =
-    cover
-      ? pct(100)
-      : props.size === 'sm'
-        ? clampLength(px(360), vw(88), px(440))
-        : props.size === 'lg'
-          ? clampLength(px(520), vw(86), px(780))
-          : props.size === 'xl'
-            ? clampLength(px(640), vw(90), px(1080))
-            : props.size === 'adaptive'
-              ? clampLength(px(480), vw(86), px(1120))
-              : clampLength(px(420), vw(88), px(520));
+  const widthSpec = cover
+    ? pct(100)
+    : props.size === 'sm'
+      ? clampLength(px(360), vw(88), px(440))
+      : props.size === 'lg'
+        ? clampLength(px(520), vw(86), px(780))
+        : props.size === 'xl'
+          ? clampLength(px(640), vw(90), px(1080))
+          : props.size === 'adaptive'
+            ? clampLength(px(480), vw(86), px(1120))
+            : clampLength(px(420), vw(88), px(520));
 
   const backdropMaterial =
     props.backdrop === 'dim'
@@ -162,6 +161,7 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
         alignItems: 'start',
         justifyContent: 'between',
         gap: px(12),
+        flexShrink: 0,
       },
     },
     footer: {
@@ -172,6 +172,7 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
         justifyContent: 'end',
         gap: px(10),
         padding: { top: px(6) },
+        flexShrink: 0,
       },
     },
     closeButton: {

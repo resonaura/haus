@@ -15,9 +15,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "fork:setup": "node scripts/fork.ts --setup",
     "fork:build": "node scripts/fork.ts",
-    "fork:patches": "node scripts/fork.ts --export-patches"
+    "fork:prune": "node scripts/fork.ts --prune",
+    "upstream:check": "node scripts/fork.ts --upstream-check",
+    "upstream:diff": "node scripts/fork.ts --upstream-diff"
   },
   "dependencies": {
     "@gpuix/native": "workspace:*",

@@ -54,6 +54,30 @@
   transition: opacity 220ms ease;
 }
 
+@mixin glass-rim-light-effects($pseudo: after) {
+  &[data-light-effect='flicker']::#{$pseudo} {
+    animation: haus-fx-rim-flicker var(--fx-flicker-duration, 8.4s) ease-in-out infinite;
+  }
+  &[data-light-effect='pulse']::#{$pseudo} {
+    animation: haus-fx-rim-pulse var(--fx-pulse-duration, 7.2s) ease-in-out infinite;
+  }
+  &[data-light-effect='rainbow']::#{$pseudo} {
+    animation: haus-fx-rainbow-hue var(--fx-rainbow-duration, 16s) linear infinite;
+  }
+  &[data-light-effect='aurora']::#{$pseudo} {
+    animation: haus-fx-rim-aurora var(--fx-aurora-duration, 13s) ease-in-out infinite alternate;
+  }
+  &[data-light-effect='wave']::#{$pseudo} {
+    animation: haus-fx-rim-wave var(--fx-wave-duration, 9.5s) ease-in-out infinite alternate;
+  }
+  &[data-light-effect='sparkle']::#{$pseudo} {
+    animation: haus-fx-sparkle-shimmer var(--fx-sparkle-duration, 6.8s) ease-in-out infinite;
+  }
+  &[data-light-effect='beat']::#{$pseudo} {
+    animation: haus-fx-rim-beat var(--fx-beat-duration, 3.8s) ease-in-out infinite;
+  }
+}
+
 /* Anchor static flow cards & controls without disturbing fixed/absolute overlays. */
 :root
   :is(
@@ -61,6 +85,9 @@
     .addon-card,
     .settings-card,
     .room-overview-card,
+    .server-panel,
+    .server-identity-icon,
+    .server-tabs [aria-selected='true'],
     .mood-card,
     .camera-card,
     .automation-row,
@@ -83,13 +110,13 @@
 }
 
 /* Primary device & server cards (replaces fake diagonal CSS gradient). */
-:root .accessory-tile::after {
+:root .accessory-tile:not([data-haus-device-tile='shared'])::after {
   @include glass-rim-overlay(card, 0.56, 3);
 }
-:root .accessory-tile:hover::after {
+:root .accessory-tile:not([data-haus-device-tile='shared']):hover::after {
   opacity: 0.74;
 }
-:root .accessory-tile.is-active::after {
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active::after {
   @include glass-rim-adaptive-mask(card);
   opacity: 0.76;
   background:
@@ -106,15 +133,16 @@
       color-mix(in srgb, var(--device-color) 56%, #ffffff) 100%
     );
 }
-:root .accessory-tile.is-active:hover::after {
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active:hover::after {
   opacity: 0.86;
 }
-:root:is(.dark, [data-theme='dark']) .accessory-tile.is-active::after {
+:root:is(.dark, [data-theme='dark'])
+  .accessory-tile:not([data-haus-device-tile='shared']).is-active::after {
   mix-blend-mode: screen;
 }
 
 /* Multi-color light effect adaptation on active device tile contours. */
-:root .accessory-tile.is-active[data-light-effect]::after {
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active[data-light-effect]::after {
   opacity: 0.82;
   background:
     radial-gradient(
@@ -139,26 +167,8 @@
       color-mix(in srgb, var(--effect-c3, var(--device-color)) 68%, #ffffff) 100%
     );
 }
-:root .accessory-tile.is-active[data-light-effect='flicker']::after {
-  animation: haus-fx-rim-flicker var(--fx-flicker-duration, 8.4s) ease-in-out infinite;
-}
-:root .accessory-tile.is-active[data-light-effect='pulse']::after {
-  animation: haus-fx-rim-pulse var(--fx-pulse-duration, 7.2s) ease-in-out infinite;
-}
-:root .accessory-tile.is-active[data-light-effect='rainbow']::after {
-  animation: haus-fx-rainbow-hue var(--fx-rainbow-duration, 16s) linear infinite;
-}
-:root .accessory-tile.is-active[data-light-effect='aurora']::after {
-  animation: haus-fx-rim-aurora var(--fx-aurora-duration, 13s) ease-in-out infinite alternate;
-}
-:root .accessory-tile.is-active[data-light-effect='wave']::after {
-  animation: haus-fx-rim-wave var(--fx-wave-duration, 9.5s) ease-in-out infinite alternate;
-}
-:root .accessory-tile.is-active[data-light-effect='sparkle']::after {
-  animation: haus-fx-sparkle-shimmer var(--fx-sparkle-duration, 6.8s) ease-in-out infinite;
-}
-:root .accessory-tile.is-active[data-light-effect='beat']::after {
-  animation: haus-fx-rim-beat var(--fx-beat-duration, 3.8s) ease-in-out infinite;
+:root .accessory-tile:not([data-haus-device-tile='shared']).is-active {
+  @include glass-rim-light-effects(after);
 }
 
 /* Elevated device controller modal (uses ::before so HeroUI internals remain free). */
@@ -207,33 +217,15 @@
       color-mix(in srgb, var(--effect-c3, var(--device-color)) 64%, #ffffff) 100%
     );
 }
-:root .haus-device-modal[data-active][data-light-effect='flicker']::before {
-  animation: haus-fx-rim-flicker var(--fx-flicker-duration, 8.4s) ease-in-out infinite;
-}
-:root .haus-device-modal[data-active][data-light-effect='pulse']::before {
-  animation: haus-fx-rim-pulse var(--fx-pulse-duration, 7.2s) ease-in-out infinite;
-}
-:root .haus-device-modal[data-active][data-light-effect='rainbow']::before {
-  animation: haus-fx-rainbow-hue var(--fx-rainbow-duration, 16s) linear infinite;
-}
-:root .haus-device-modal[data-active][data-light-effect='aurora']::before {
-  animation: haus-fx-rim-aurora var(--fx-aurora-duration, 13s) ease-in-out infinite alternate;
-}
-:root .haus-device-modal[data-active][data-light-effect='wave']::before {
-  animation: haus-fx-rim-wave var(--fx-wave-duration, 9.5s) ease-in-out infinite alternate;
-}
-:root .haus-device-modal[data-active][data-light-effect='sparkle']::before {
-  animation: haus-fx-sparkle-shimmer var(--fx-sparkle-duration, 6.8s) ease-in-out infinite;
-}
-:root .haus-device-modal[data-active][data-light-effect='beat']::before {
-  animation: haus-fx-rim-beat var(--fx-beat-duration, 3.8s) ease-in-out infinite;
+:root .haus-device-modal[data-active] {
+  @include glass-rim-light-effects(before);
 }
 :root .haus-device-modal.is-dark::before {
   mix-blend-mode: screen;
 }
 
 /* Dialogs & sheets. */
-:root :is(.haus-dialog, .dashboard-dialog)::after {
+:root :is(.haus-dialog:not([data-haus-glass-rim='managed']), .dashboard-dialog)::after {
   @include glass-rim-overlay(panel, 0.74, 6);
 }
 
@@ -268,8 +260,10 @@
     .addon-card,
     .settings-card,
     .room-overview-card,
-    .mood-card,
-    .camera-card,
+    .server-resource,
+    .server-panel,
+    .mood-card:not([data-haus-glass-rim='managed']),
+    .camera-card:not([data-haus-glass-rim='managed']),
     .automation-row,
     .empty-state,
     .management-intro,
@@ -283,8 +277,10 @@
     .addon-card,
     .settings-card,
     .room-overview-card,
-    .mood-card,
-    .camera-card,
+    .server-resource,
+    .server-panel,
+    .mood-card:not([data-haus-glass-rim='managed']),
+    .camera-card:not([data-haus-glass-rim='managed']),
     .automation-row,
     .integration-entry-detail
   ):hover::after {
@@ -301,6 +297,7 @@
 :root
   :is(
     .nav-button.active,
+    .server-tabs [aria-selected='true'],
     .haus-device-tabs .tabs__indicator,
     .native-app-tabs > button.selected
   )::after {
@@ -401,41 +398,45 @@
   }
 }
 
+$glass-rim-after-targets: (
+  '.accessory-tile',
+  '.haus-dialog',
+  '.dashboard-dialog',
+  '.home-category-dock',
+  ".home-category-filter[aria-pressed='true']",
+  '.search-box',
+  '.dropdown__popover',
+  '.popover',
+  '.home-picker',
+  '.haus-device-tabs > .tabs__list-container .tabs__list',
+  '.haus-device-tabs .tabs__indicator',
+  '.native-app-tabs',
+  '.native-app-tabs > button.selected',
+  '.native-app-card',
+  '.native-app-metric-card',
+  '.integration-card',
+  '.addon-card',
+  '.settings-card',
+  '.room-overview-card',
+  '.server-resource',
+  '.server-panel',
+  ".server-tabs [aria-selected='true']",
+  '.mood-card',
+  '.camera-card',
+  '.automation-row',
+  '.empty-state',
+  '.management-intro',
+  '.integration-entry-detail',
+  '.nav-button.active',
+  '.theme-toggle',
+  '.profile-button',
+  '.haus-controller-close',
+  '.haus-controller-favorite.button',
+  '.mood-details.button'
+);
+
 @media (prefers-reduced-motion: reduce) {
-  :root
-    :is(
-      .accessory-tile,
-      .haus-dialog,
-      .dashboard-dialog,
-      .home-category-dock,
-      .home-category-filter[aria-pressed='true'],
-      .search-box,
-      .dropdown__popover,
-      .popover,
-      .home-picker,
-      .haus-device-tabs > .tabs__list-container .tabs__list,
-      .haus-device-tabs .tabs__indicator,
-      .native-app-tabs,
-      .native-app-tabs > button.selected,
-      .native-app-card,
-      .native-app-metric-card,
-      .integration-card,
-      .addon-card,
-      .settings-card,
-      .room-overview-card,
-      .mood-card,
-      .camera-card,
-      .automation-row,
-      .empty-state,
-      .management-intro,
-      .integration-entry-detail,
-      .nav-button.active,
-      .theme-toggle,
-      .profile-button,
-      .haus-controller-close,
-      .haus-controller-favorite.button,
-      .mood-details.button
-    )::after,
+  :root :is(#{$glass-rim-after-targets})::after,
   :root .haus-device-modal::before,
   .liquid-glass__finish::after {
     animation: none;
@@ -444,40 +445,7 @@
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
-  :root
-    :is(
-      .accessory-tile,
-      .haus-dialog,
-      .dashboard-dialog,
-      .home-category-dock,
-      .home-category-filter[aria-pressed='true'],
-      .search-box,
-      .dropdown__popover,
-      .popover,
-      .home-picker,
-      .haus-device-tabs > .tabs__list-container .tabs__list,
-      .haus-device-tabs .tabs__indicator,
-      .native-app-tabs,
-      .native-app-tabs > button.selected,
-      .native-app-card,
-      .native-app-metric-card,
-      .integration-card,
-      .addon-card,
-      .settings-card,
-      .room-overview-card,
-      .mood-card,
-      .camera-card,
-      .automation-row,
-      .empty-state,
-      .management-intro,
-      .integration-entry-detail,
-      .nav-button.active,
-      .theme-toggle,
-      .profile-button,
-      .haus-controller-close,
-      .haus-controller-favorite.button,
-      .mood-details.button
-    )::after,
+  :root :is(#{$glass-rim-after-targets})::after,
   :root .haus-device-modal::before,
   .liquid-glass__finish::after {
     display: none;

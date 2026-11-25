@@ -1,46 +1,37 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   formatBytes,
-  formatPercent,
   formatRatio,
-  formatUptime,
   resolveServerConnectionState,
-  summarizeServerDisks,
   type ServerDetailTabId,
+  type ServerResourceSample,
+  type ServerServiceRow,
   type ServerSummaryRecord,
 } from '@haus/core/transport';
-import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
+import { colorToken, corners, insets, pct, px, rgba, transparentColor } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
-import {
-  Box,
-  HausButton,
-  Heading,
-  Pressable,
-  Row,
-  Stack,
-  Text,
-} from '../../primitives/index.js';
+import { Box, HausButton, Heading, Pressable, Row, Stack, Text } from '../../primitives/index.js';
+import { GlassRim } from '../../primitives/glass-rim.js';
 import { UiIcon } from '../icon.js';
-
-function FactRow({ label, value }: { readonly label: string; readonly value: string }) {
-  return (
-    <Row align="center" justify="between" gapPx={12} style={{ layout: { width: pct(100), padding: insets(8, 0) } }}>
-      <Text size={12.5} tone="muted">
-        {label}
-      </Text>
-      <Text size={12.5} weight={500}>
-        {value}
-      </Text>
-    </Row>
-  );
-}
+import { resolveServerGlyphName, resolveServerKindLabel } from './server-card.js';
+import { ServerDisksTab } from './server-disks-tab.js';
+import { ServerOverviewTab } from './server-overview-tab.js';
+import { ServerServicesTab } from './server-services-tab.js';
+import { ServerFactRow, ServerGlassPanel } from './server-surfaces.js';
 
 export function ServerDetailView({
   server,
+  history = [],
   activeTab,
   canManage,
+  contextualNavigation = false,
   busy,
   error,
   logsSlot,
@@ -48,10 +39,13 @@ export function ServerDetailView({
   onSelectTab,
   onBack,
   onToggleEnabled,
+  onInspectService,
 }: {
   readonly server: ServerSummaryRecord;
+  readonly history?: readonly ServerResourceSample[];
   readonly activeTab: ServerDetailTabId;
   readonly canManage: boolean;
+  readonly contextualNavigation?: boolean;
   readonly busy?: boolean;
   readonly error?: string;
   readonly logsSlot?: ReactNode;
@@ -59,316 +53,300 @@ export function ServerDetailView({
   readonly onSelectTab: (tab: ServerDetailTabId) => void;
   readonly onBack: () => void;
   readonly onToggleEnabled?: () => void;
+  readonly onInspectService?: (service: ServerServiceRow, mode: 'logs' | 'terminal') => void;
 }) {
-  const [serviceFilter, setServiceFilter] = useState<'all' | 'docker' | 'pm2' | 'systemServices'>('all');
   const state = resolveServerConnectionState(server);
-  const disks = summarizeServerDisks(server.disks);
-  const memRatio = formatRatio(server.memoryUsedBytes, server.memoryTotalBytes);
   const tabs: readonly { readonly id: ServerDetailTabId; readonly label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'storage', label: 'Disks' },
     { id: 'services', label: 'Services' },
-    ...(server.nvr?.hasNvr ? ([{ id: 'nvr', label: 'NVR' }] as const) : []),
-    { id: 'logs', label: 'Logs' },
     { id: 'terminal', label: 'Terminal' },
+    { id: 'logs', label: 'Logs' },
+    ...(server.nvr?.hasNvr ? ([{ id: 'nvr', label: 'NVR' }] as const) : []),
   ];
 
-  const visibleServices = server.services.filter(
-    (item) => serviceFilter === 'all' || item.manager === serviceFilter,
-  );
+  const archSuffix =
+    server.architecture && !server.osLabel.includes(server.architecture)
+      ? server.architecture
+      : undefined;
+  const subtitle =
+    [server.hostname, server.osLabel, archSuffix].filter(Boolean).join(' · ') ||
+    server.url ||
+    'Your home, connected';
+
+  const statusText =
+    state === 'online'
+      ? 'Connected'
+      : state === 'paused'
+        ? 'Paused'
+        : state === 'offline'
+          ? 'Offline'
+          : 'Not checked';
+
+  const statusDot =
+    state === 'online'
+      ? colorToken('textPrimary')
+      : state === 'offline'
+        ? rgba(237, 130, 123, 1)
+        : colorToken('textMuted');
+
+  const nvrRatio = formatRatio(server.nvr?.usedBytes, server.nvr?.limitBytes);
+  const nvrPct = Math.round(Math.max(0, Math.min(1, nvrRatio ?? 0)) * 100);
 
   return (
-    <Stack gapPx={16} style={{ layout: { width: pct(100) } }}>
-      <Row align="center" justify="between" gapPx={12} wrap style={{ layout: { width: pct(100) } }}>
-        <Row align="center" gapPx={12}>
-          <HausButton id="server-detail-back" variant="ghost" size="sm" onPress={onBack}>
-            <UiIcon name="arrow-left" size={16} />
-            <Text size={13}>All servers</Text>
-          </HausButton>
-          <Stack gapPx={2}>
-            <Heading level={2} size={20} weight={600}>
-              {server.name}
-            </Heading>
-            <Text size={12} tone="muted">
-              {`${server.osLabel} · ${state}`}
-            </Text>
-          </Stack>
-        </Row>
-        {canManage && onToggleEnabled && server.kind !== 'ssh' && (
-          <HausButton variant="outline" size="sm" disabled={busy} onPress={onToggleEnabled}>
-            <UiIcon name={server.enabled ? 'pause' : 'play'} size={14} />
-            <Text size={12.5}>{server.enabled ? 'Pause monitoring' : 'Resume monitoring'}</Text>
-          </HausButton>
-        )}
-      </Row>
-
-      <Row gapPx={8} wrap>
-        {tabs.map((tab) => {
-          const active = activeTab === tab.id;
-          return (
-            <Pressable
-              key={tab.id}
-              id={`server-tab-${tab.id}`}
-              ariaPressed={active}
-              onActivate={() => onSelectTab(tab.id)}
-              style={{
-                layout: { direction: 'row', alignItems: 'center', padding: insets(7, 13) },
-                material: new SolidMaterial(
-                  active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                ),
-                border: { width: 1, color: active ? colorToken('accent') : colorToken('border') },
-                corners: corners(999),
-              }}
+    <Box
+      motion={{
+        initial: { opacity: 0, x: 12 },
+        animate: { opacity: 1, x: 0 },
+        durationMs: 240,
+        ease: [0.2, 0.7, 0.2, 1],
+      }}
+      style={{ layout: { width: pct(100), flexShrink: 0 } }}
+    >
+      <Stack gapPx={20} style={{ layout: { width: pct(100), flexShrink: 0 } }}>
+        {!contextualNavigation && (
+          <>
+            <Row
+              align="center"
+              justify="between"
+              gapPx={12}
+              wrap
+              style={{ layout: { width: pct(100) } }}
             >
-              <Text size={12} weight={active ? 600 : 500} tone={active ? 'primary' : 'muted'}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </Row>
+              <HausButton id="server-detail-back" variant="ghost" size="sm" onPress={onBack}>
+                <Row align="center" gapPx={6}>
+                  <UiIcon name="arrow-left" size={15} />
+                  <Text size={12.5}>All servers</Text>
+                </Row>
+              </HausButton>
 
-      {error && <Text size={12} tone="critical">{error}</Text>}
-
-      {activeTab === 'overview' && (
-        <Stack gapPx={14} style={{ layout: { width: pct(100) } }}>
-          <Row gapPx={12} wrap style={{ layout: { width: pct(100) } }}>
-            {[
-              { icon: 'cpu' as const, label: 'CPU', value: formatPercent(server.cpuUsage), sub: `${server.cpuCores ?? '—'} cores` },
-              {
-                icon: 'memory-stick' as const,
-                label: 'Memory',
-                value: formatPercent(memRatio),
-                sub: `${formatBytes(server.memoryUsedBytes)} / ${formatBytes(server.memoryTotalBytes)}`,
-              },
-              {
-                icon: 'hard-drive' as const,
-                label: 'Storage',
-                value: formatPercent(disks.usageRatio),
-                sub: `${formatBytes(disks.usedBytes)} / ${formatBytes(disks.totalBytes)}`,
-              },
-            ].map((card) => (
-              <Stack
-                key={card.label}
-                gapPx={6}
-                style={{
-                  layout: { flexGrow: 1, minWidth: px(180), padding: insets(16) },
-                  material: new SolidMaterial(colorToken('surfaceSecondary')),
-                  border: { width: 1, color: colorToken('border') },
-                  corners: corners(16),
-                }}
-              >
-                <Row align="center" gapPx={8}>
-                  <UiIcon name={card.icon} size={16} />
-                  <Text size={12} tone="muted">
-                    {card.label}
+              <Row align="center" gapPx={12}>
+                <Row align="center" gapPx={6}>
+                  <Box
+                    ariaHidden
+                    style={{
+                      layout: { width: px(6), height: px(6) },
+                      material: new SolidMaterial(statusDot),
+                      corners: corners(999, 'round'),
+                    }}
+                  />
+                  <Text size={11} tone="muted">
+                    {statusText}
                   </Text>
                 </Row>
-                <Text size={22} weight={600}>
-                  {card.value}
+                {canManage && onToggleEnabled && server.kind !== 'ssh' && (
+                  <HausButton variant="outline" size="sm" disabled={busy} onPress={onToggleEnabled}>
+                    <Row align="center" gapPx={6}>
+                      <UiIcon name={server.enabled ? 'pause' : 'play'} size={13} />
+                      <Text size={12}>{server.enabled ? 'Pause' : 'Resume'}</Text>
+                    </Row>
+                  </HausButton>
+                )}
+              </Row>
+            </Row>
+
+            <Row align="center" gapPx={16} style={{ layout: { width: pct(100) } }}>
+              <Box
+                style={{
+                  layout: {
+                    width: px(60),
+                    height: px(60),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    position: 'relative',
+                    overflow: 'hidden',
+                  },
+                  material: new SolidMaterial(colorToken('soft')),
+                  border: { width: 1, color: colorToken('border') },
+                  corners: corners(18),
+                }}
+              >
+                <UiIcon name={resolveServerGlyphName(server)} size={28} />
+                <GlassRim preset="medium" radiusPx={17} opacity={0.62} />
+              </Box>
+              <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                <Text size={10.5} tone="muted" weight={500}>
+                  {resolveServerKindLabel(server.kind)}
                 </Text>
-                <Text size={11.5} tone="muted">
-                  {card.sub}
+                <Heading
+                  level={2}
+                  size={24}
+                  weight={600}
+                  style={{ typography: { size: 24, letterSpacing: -0.025, lineHeight: 1.2 } }}
+                >
+                  {server.name}
+                </Heading>
+                <Text size={11.5} tone="muted" style={{ typography: { size: 11.5, maxLines: 1 } }}>
+                  {subtitle}
                 </Text>
               </Stack>
-            ))}
-          </Row>
+            </Row>
+          </>
+        )}
 
-          <Stack
+        {(error || server.online === false) && (
+          <ServerGlassPanel padding={insets(14, 18)} radius={20}>
+            <Row align="center" gapPx={12}>
+              <UiIcon name="alert-circle" size={18} />
+              <Text size={12} tone={error ? 'critical' : 'muted'}>
+                {error ||
+                  (!server.enabled
+                    ? 'This server is paused. Resume it to receive new work and refresh its information.'
+                    : 'This server is offline. Its saved configuration stays available.')}
+              </Text>
+            </Row>
+          </ServerGlassPanel>
+        )}
+
+        {!contextualNavigation && (
+          <Row
+            role="tablist"
+            ariaLabel="Server details"
             gapPx={4}
+            wrap
             style={{
-              layout: { width: pct(100), padding: insets(16, 18) },
-              material: new SolidMaterial(colorToken('surfaceSecondary')),
+              layout: {
+                padding: insets(5),
+                alignSelf: 'start',
+                position: 'relative',
+                overflow: 'hidden',
+              },
+              material: new SolidMaterial(colorToken('soft')),
               border: { width: 1, color: colorToken('border') },
-              corners: corners(16),
+              corners: corners(20),
             }}
           >
-            <Row align="center" gapPx={8} style={{ layout: { margin: insets(0, 0, 6, 0) } }}>
-              <UiIcon name="monitor" size={16} />
-              <Heading level={3} size={15} weight={600}>
-                System
-              </Heading>
-            </Row>
-            <FactRow label="Processor" value={server.cpuModel} />
-            <FactRow label="Operating system" value={server.osLabel} />
-            <FactRow label="Load average" value={server.loadAverageLabel} />
-            <FactRow label="Uptime" value={formatUptime(server.uptimeSeconds)} />
-          </Stack>
-        </Stack>
-      )}
-
-      {activeTab === 'storage' && (
-        <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
-          {server.disks.length === 0 ? (
-            <Text size={12.5} tone="muted">
-              Disk information is not available on this server yet.
-            </Text>
-          ) : (
-            server.disks.map((disk) => {
-              const ratio = formatRatio(disk.usedBytes, disk.totalBytes);
+            {tabs.map((tab) => {
+              const active = activeTab === tab.id;
               return (
-                <Stack
-                  key={disk.id}
-                  gapPx={8}
+                <Pressable
+                  key={tab.id}
+                  id={`server-tab-${tab.id}`}
+                  role="tab"
+                  ariaSelected={active}
+                  onActivate={() => onSelectTab(tab.id)}
                   style={{
-                    layout: { width: pct(100), padding: insets(14, 16) },
-                    material: new SolidMaterial(colorToken('surfaceSecondary')),
-                    border: { width: 1, color: colorToken('border') },
+                    layout: {
+                      display: 'flex',
+                      direction: 'row',
+                      alignItems: 'center',
+                      padding: insets(8, 16),
+                      position: 'relative',
+                      overflow: 'hidden',
+                    },
+                    material: new SolidMaterial(active ? colorToken('card') : transparentColor),
+                    border: { width: 0, style: 'none', color: transparentColor },
+                    shadows: active
+                      ? [{ offsetX: 0, offsetY: 1, blurRadius: 4, color: rgba(0, 0, 0, 0.08) }]
+                      : undefined,
                     corners: corners(14),
                   }}
                 >
-                  <Row align="center" justify="between" gapPx={10}>
-                    <Row align="center" gapPx={8}>
-                      <UiIcon name="hard-drive" size={16} />
-                      <Text size={14} weight={600}>
-                        {disk.name}
-                      </Text>
-                    </Row>
-                    <Text size={13} weight={600}>
-                      {formatBytes(disk.totalBytes)}
-                    </Text>
-                  </Row>
-                  <Text size={11.5} tone="muted">
-                    {[disk.filesystem, disk.mountpoint].filter(Boolean).join(' · ') || 'Volume'}
+                  <Text size={12} weight={active ? 600 : 500} tone={active ? 'primary' : 'muted'}>
+                    {tab.label}
                   </Text>
-                  <Box
-                    style={{
-                      layout: { width: pct(100), height: px(6) },
-                      material: new SolidMaterial(colorToken('surface')),
-                      corners: corners(3),
-                    }}
-                  >
-                    <Box
-                      style={{
-                        layout: { width: pct(Math.round((ratio ?? 0) * 100)), height: pct(100) },
-                        material: new SolidMaterial(colorToken('accent')),
-                        corners: corners(3),
-                      }}
-                    />
-                  </Box>
-                  <Text size={11.5} tone="muted">
-                    {`${formatBytes(disk.usedBytes)} used · ${formatBytes(disk.availableBytes)} free`}
-                  </Text>
-                </Stack>
-              );
-            })
-          )}
-        </Stack>
-      )}
-
-      {activeTab === 'services' && (
-        <Stack gapPx={12} style={{ layout: { width: pct(100) } }}>
-          <Row gapPx={8} wrap>
-            {(
-              [
-                ['all', 'All'],
-                ['docker', 'Docker'],
-                ['pm2', 'PM2'],
-                ['systemServices', 'System'],
-              ] as const
-            ).map(([id, label]) => {
-              const active = serviceFilter === id;
-              return (
-                <Pressable
-                  key={id}
-                  ariaPressed={active}
-                  onActivate={() => setServiceFilter(id)}
-                  style={{
-                    layout: { direction: 'row', alignItems: 'center', padding: insets(6, 12) },
-                    material: new SolidMaterial(
-                      active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                    ),
-                    border: { width: 1, color: active ? colorToken('accent') : colorToken('border') },
-                    corners: corners(999),
-                  }}
-                >
-                  <Text size={12} weight={active ? 600 : 500}>
-                    {label}
-                  </Text>
+                  {active && <GlassRim preset="control" radiusPx={13} opacity={0.68} />}
                 </Pressable>
               );
             })}
           </Row>
-          {visibleServices.length === 0 ? (
-            <Text size={12.5} tone="muted">
-              No services match this filter.
-            </Text>
-          ) : (
-            visibleServices.map((service) => (
-              <Row
-                key={service.id}
-                align="center"
-                justify="between"
-                gapPx={12}
-                style={{
-                  layout: { width: pct(100), padding: insets(12, 16) },
-                  material: new SolidMaterial(colorToken('surfaceSecondary')),
-                  border: { width: 1, color: colorToken('border') },
-                  corners: corners(14),
-                }}
-              >
-                <Stack gapPx={2}>
-                  <Text size={13.5} weight={600}>
-                    {service.name}
-                  </Text>
-                  <Text size={11.5} tone="muted">
-                    {`${service.manager} · ${service.status}`}
-                  </Text>
-                </Stack>
-                <Row align="center" gapPx={12}>
-                  <Text size={12} tone="muted">
-                    {service.cpuPercent !== null ? `${service.cpuPercent.toFixed(1)}% CPU` : '—'}
-                  </Text>
-                  <Text size={12} tone="muted">
-                    {formatBytes(service.memoryBytes)}
-                  </Text>
+        )}
+
+        <Box
+          key={activeTab}
+          motion={{
+            initial: { opacity: 0, y: 4 },
+            animate: { opacity: 1, y: 0 },
+            durationMs: 160,
+            ease: 'easeOut',
+          }}
+          style={{ layout: { width: pct(100), flexShrink: 0 } }}
+        >
+          {activeTab === 'overview' && (
+            <ServerOverviewTab server={server} history={history} onSelectTab={onSelectTab} />
+          )}
+
+          {activeTab === 'storage' && (
+            <ServerDisksTab disks={server.disks} reportingScope={server.reportingScope} />
+          )}
+
+          {activeTab === 'services' && (
+            <ServerServicesTab
+              server={server}
+              canManage={canManage}
+              onInspectService={onInspectService}
+            />
+          )}
+
+          {activeTab === 'nvr' && server.nvr && (
+            <ServerGlassPanel padding={insets(24)} radius={24}>
+              <Row align="center" gapPx={9} style={{ layout: { margin: insets(0, 0, 14, 0) } }}>
+                <UiIcon name="video" size={17} />
+                <Heading level={3} size={15} weight={600}>
+                  Haus NVR
+                </Heading>
+              </Row>
+              {nvrRatio !== null && (
+                <Stack
+                  gapPx={8}
+                  style={{ layout: { width: pct(100), margin: insets(0, 0, 14, 0) } }}
+                >
+                  <Row align="center" justify="between">
+                    <Text size={11.5} tone="muted">
+                      Archive storage
+                    </Text>
+                    <Text size={12} weight={500} style={{ typography: { tabularNums: true } }}>
+                      {`${formatBytes(server.nvr.usedBytes)} of ${formatBytes(server.nvr.limitBytes)} (${nvrPct}%)`}
+                    </Text>
+                  </Row>
                   <Box
                     style={{
-                      layout: { padding: insets(2, 8) },
-                      material: new SolidMaterial(
-                        service.running ? rgba(52, 211, 153, 0.14) : colorToken('surface'),
-                      ),
-                      corners: corners(999),
+                      layout: { width: pct(100), height: px(7), overflow: 'hidden' },
+                      material: new SolidMaterial(colorToken('soft')),
+                      corners: corners(999, 'round'),
                     }}
                   >
-                    <Text size={11}>{service.running ? 'Running' : 'Stopped'}</Text>
+                    <Box
+                      style={{
+                        layout: { width: pct(nvrPct), height: pct(100) },
+                        material: new SolidMaterial(colorToken('textPrimary')),
+                        corners: corners(999, 'round'),
+                      }}
+                    />
                   </Box>
-                </Row>
-              </Row>
-            ))
+                </Stack>
+              )}
+              <Stack gapPx={4} style={{ layout: { width: pct(100) } }}>
+                <ServerFactRow
+                  label="Recording storage"
+                  value={server.nvr.storageAssigned ? 'Assigned' : 'Not assigned'}
+                />
+                <ServerFactRow
+                  label="Video streaming"
+                  value={server.nvr.streamingAssigned ? 'Assigned' : 'Not assigned'}
+                />
+                {server.nvr.activeStreams && (
+                  <ServerFactRow label="Active streams" value={server.nvr.activeStreams} />
+                )}
+                {server.nvr.playbackPrep && (
+                  <ServerFactRow label="Playback prep" value={server.nvr.playbackPrep} />
+                )}
+                {server.nvr.activityAssist && (
+                  <ServerFactRow label="Activity assist" value={server.nvr.activityAssist} />
+                )}
+                {server.nvr.backupCopies !== undefined && (
+                  <ServerFactRow label="Recovery copies" value={String(server.nvr.backupCopies)} />
+                )}
+              </Stack>
+            </ServerGlassPanel>
           )}
-        </Stack>
-      )}
 
-      {activeTab === 'nvr' && server.nvr && (
-        <Stack
-          gapPx={8}
-          style={{
-            layout: { width: pct(100), padding: insets(16, 18) },
-            material: new SolidMaterial(colorToken('surfaceSecondary')),
-            border: { width: 1, color: colorToken('border') },
-            corners: corners(16),
-          }}
-        >
-          <Row align="center" gapPx={8} style={{ layout: { margin: insets(0, 0, 6, 0) } }}>
-            <UiIcon name="video" size={16} />
-            <Heading level={3} size={15} weight={600}>
-              Haus NVR
-            </Heading>
-          </Row>
-          <FactRow label="Recording storage" value={server.nvr.storageAssigned ? 'Assigned' : 'Not assigned'} />
-          <FactRow label="Video streaming" value={server.nvr.streamingAssigned ? 'Assigned' : 'Not assigned'} />
-          {server.nvr.activeStreams && <FactRow label="Active streams" value={server.nvr.activeStreams} />}
-          {server.nvr.playbackPrep && <FactRow label="Playback preparation" value={server.nvr.playbackPrep} />}
-          {server.nvr.activityAssist && <FactRow label="Activity assist" value={server.nvr.activityAssist} />}
-          {server.nvr.backupCopies !== undefined && (
-            <FactRow label="Recovery copies" value={String(server.nvr.backupCopies)} />
-          )}
-        </Stack>
-      )}
-
-      {activeTab === 'logs' && logsSlot}
-      {activeTab === 'terminal' && terminalSlot}
-    </Stack>
+          {activeTab === 'logs' && logsSlot}
+          {activeTab === 'terminal' && terminalSlot}
+        </Box>
+      </Stack>
+    </Box>
   );
 }

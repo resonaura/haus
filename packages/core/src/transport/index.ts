@@ -7,7 +7,10 @@
 
 export * from './adapters.js';
 export * from './alerts.js';
+export * from './app-config.js';
 export * from './apps.js';
+export * from './automations/index.js';
+export * from './bridges.js';
 export * from './camera-history.js';
 export * from './camera-ptz.js';
 export * from './config-editor.js';
@@ -16,11 +19,15 @@ export * from './contract.js';
 export * from './demo-transport.js';
 export * from './device-history.js';
 export * from './device-specialties.js';
+export * from './ha-import/index.js';
+export * from './hacs.js';
 export * from './integrations.js';
 export * from './inventory.js';
 export * from './onboarding.js';
 export * from './rooms.js';
+export * from './scenes/index.js';
 export * from './servers.js';
 export * from './spotlight.js';
 export * from './switchable-transport.js';
+export * from './terminal.js';
 export * from './visibility.js';

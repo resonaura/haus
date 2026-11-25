@@ -30,7 +30,8 @@ function click(id: string, button = 0) {
   }
   assert(bounds && bounds.width > 0 && bounds.height > 0, `Missing bounds for ${id}`);
   const x = button === 2 ? bounds.x + Math.min(24, bounds.width / 4) : bounds.x + bounds.width / 2;
-  const y = button === 2 ? bounds.y + Math.min(24, bounds.height / 4) : bounds.y + bounds.height / 2;
+  const y =
+    button === 2 ? bounds.y + Math.min(24, bounds.height / 4) : bounds.y + bounds.height / 2;
   renderer.nativeSimulateClick(x, y, button);
   renderer.dispatchNativeEvents();
   renderer.flush();
@@ -85,7 +86,7 @@ try {
   click('sidebar-category:lights');
   click(`device-${demoLamp}-quick`);
   assert(renderer.getAllText().includes('Off'));
-  assert.deepEqual(feedback, ['alignment']);
+  assert.deepEqual(feedback, []);
   click(`device-${demoLamp}-details`);
   assert(renderer.getAllText().includes('Add to favorites'));
   const slider = renderer.findByTestId(`control-${demoLamp}-brightness-input`);
@@ -94,10 +95,10 @@ try {
   renderer.dispatchNativeEvents();
   renderer.flush();
   assert(renderer.getAllText().includes('1%'));
-  assert.deepEqual(feedback, ['alignment', 'alignment']);
+  assert.deepEqual(feedback, ['alignment']);
   assert(renderer.findByTestId('dialog-panel'));
   click(`control-${demoLamp}-preset-0`);
-  assert.equal(feedback.length, 3);
+  assert.equal(feedback.length, 1);
   const modalScreenshotArg = process.argv[4];
   if (modalScreenshotArg) renderer.captureScreenshot(modalScreenshotArg);
   click('device-detail-tabs-history');
@@ -167,11 +168,14 @@ try {
 
   // Servers overview + detail + interactive terminal
   click('sidebar-servers');
-  assert(renderer.getAllText().includes('Your home infrastructure.'));
+  assert(renderer.getAllText().includes('Utility'));
   assert(renderer.getAllText().includes('Willow Hub'));
+  assert(renderer.getAllText().includes('Garage NVR Node'));
   const serversShot = process.argv[17];
   if (serversShot) renderer.captureScreenshot(serversShot);
   click('server-card-haus-hub-main');
+  renderer.clockFastForward(360);
+  renderer.flush();
   assert(renderer.getAllText().includes('Disks'));
   assert(renderer.getAllText().includes('Services'));
   assert(renderer.getAllText().includes('Terminal'));
@@ -181,6 +185,8 @@ try {
   const serverDetailShot = process.argv[18];
   if (serverDetailShot) renderer.captureScreenshot(serverDetailShot);
   click('server-detail-back');
+  renderer.clockFastForward(360);
+  renderer.flush();
 
   // Room detail + category bar filter
   click('sidebar-room:living_room');

@@ -139,6 +139,19 @@ export interface CornerRadius {
   readonly exponent?: number;
 }
 
+export const PILL_RADIUS_THRESHOLD = 500;
+
+/**
+ * Ratio aligning QuartzCore / GPUI `corner_smoothing = 1.0` continuous corners
+ * (whose diagonal inset equals `r * (1 - sqrt(0.5))`) to CSS `corner-shape: superellipse(k)`
+ * (whose diagonal inset equals `r * (1 - 2^(-1 / 2^k))`).
+ * For `k = 1.4` this is ~0.78926, matching the full 90° corner arc within < 0.08px RMS.
+ */
+export function superellipseToContinuousRadiusRatio(exponent = 1.4): number {
+  const n = 2 ** Math.max(0.5, exponent);
+  return (1 - 2 ** (-1 / n)) / (1 - Math.SQRT1_2);
+}
+
 export function corners(
   radius: number,
   shape: CornerShapeKind = 'superellipse',
@@ -189,7 +202,14 @@ export interface TransformSpec {
   readonly translateX?: number;
   readonly translateY?: number;
   readonly scale?: number;
+  readonly scaleX?: number;
+  readonly scaleY?: number;
   readonly rotateDeg?: number;
+  readonly skewXDeg?: number;
+  readonly skewYDeg?: number;
+  readonly matrix?: readonly [number, number, number, number, number, number];
+  readonly originX?: number;
+  readonly originY?: number;
 }
 
 export type BreakpointName = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';

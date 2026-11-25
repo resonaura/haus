@@ -1,90 +1,42 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
 
-import {
-  formatBytes,
-  formatPercent,
-  formatRatio,
-  resolveServerConnectionState,
-  summarizeServerDisks,
-  type ServerConnectionState,
-  type ServerSummaryRecord,
-} from '@haus/core/transport';
-import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
+import type { ServerSummaryRecord } from '@haus/core/transport';
+import { colorToken, insets, pct, px } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
-import {
-  Box,
-  HausButton,
-  Heading,
-  Pressable,
-  Row,
-  Stack,
-  Text,
-} from '../../primitives/index.js';
+import { Box, HausButton, Heading, Row, Stack, Text } from '../../primitives/index.js';
 import { DashboardGrid } from '../home.js';
 import { UiIcon } from '../icon.js';
+import { ServerCardTile } from './server-card.js';
+import { ServerGlassPanel } from './server-surfaces.js';
 
-function statusBadgeColors(state: ServerConnectionState) {
-  if (state === 'online') {
-    return {
-      bg: rgba(52, 211, 153, 0.14),
-      border: rgba(52, 211, 153, 0.35),
-      label: 'Online',
-    };
-  }
-  if (state === 'paused') {
-    return {
-      bg: colorToken('surface'),
-      border: colorToken('border'),
-      label: 'Paused',
-    };
-  }
-  if (state === 'offline') {
-    return {
-      bg: rgba(239, 68, 68, 0.14),
-      border: rgba(239, 68, 68, 0.35),
-      label: 'Offline',
-    };
-  }
-  return {
-    bg: colorToken('surface'),
-    border: colorToken('border'),
-    label: 'Unknown',
-  };
+interface ServerGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly servers: readonly ServerSummaryRecord[];
 }
 
-function MeterBar({ label, ratio, caption }: { readonly label: string; readonly ratio: number | null; readonly caption: string }) {
-  const fillPct = Math.round(Math.max(0, Math.min(1, ratio ?? 0)) * 100);
-  return (
-    <Stack gapPx={4} style={{ layout: { width: pct(100) } }}>
-      <Row align="center" justify="between" style={{ layout: { width: pct(100) } }}>
-        <Text size={11.5} tone="muted">
-          {label}
-        </Text>
-        <Text size={11.5} weight={500}>
-          {caption}
-        </Text>
-      </Row>
-      <Box
-        style={{
-          layout: { width: pct(100), height: px(5) },
-          material: new SolidMaterial(colorToken('surface')),
-          corners: corners(3),
-        }}
-      >
-        <Box
-          style={{
-            layout: { width: pct(fillPct), height: pct(100) },
-            material: new SolidMaterial(colorToken('accent')),
-            corners: corners(3),
-          }}
-        />
-      </Box>
-    </Stack>
-  );
+function groupServers(servers: readonly ServerSummaryRecord[]): readonly ServerGroup[] {
+  const byRoom = new Map<string, ServerSummaryRecord[]>();
+  for (const server of servers) {
+    const key = server.roomName?.trim() || 'Servers';
+    const list = byRoom.get(key);
+    if (list) list.push(server);
+    else byRoom.set(key, [server]);
+  }
+  return Array.from(byRoom.entries()).map(([name, items]) => ({
+    id: name.toLowerCase().replace(/\s+/g, '-'),
+    name,
+    servers: items,
+  }));
 }
 
 export function ServersOverviewView({
-  columns = 3,
+  columns = 4,
   servers,
   loading,
   error,
@@ -100,163 +52,96 @@ export function ServersOverviewView({
   readonly onRefresh: () => void;
   readonly onSelectServer: (serverId: string) => void;
 }) {
+  const groups = groupServers(servers);
+
   return (
-    <Stack gapPx={18} style={{ layout: { width: pct(100) } }}>
-      <Row
-        align="center"
-        justify="between"
-        gapPx={16}
-        wrap
-        style={{
-          layout: { width: pct(100), padding: insets(20) },
-          material: new SolidMaterial(colorToken('surfaceSecondary')),
-          border: { width: 1, color: colorToken('border') },
-          corners: corners(16),
-        }}
-      >
-        <Row align="center" gapPx={14} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
-          <Box
-            style={{
-              layout: { width: px(42), height: px(42), alignItems: 'center', justifyContent: 'center' },
-              material: new SolidMaterial(colorToken('surface')),
-              border: { width: 1, color: colorToken('border') },
-              corners: corners(12),
-            }}
-          >
-            <UiIcon name="server" size={20} />
-          </Box>
-          <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-            <Text size={15} weight={600}>
-              Your home infrastructure.
-            </Text>
-            <Text size={12.5} tone="muted">
-              Monitor hosts, disks, NVR storage, system services, logs and direct shells.
-            </Text>
-          </Stack>
-        </Row>
-        <HausButton variant="outline" size="sm" disabled={loading} onPress={onRefresh}>
-          <UiIcon name="refresh-cw" size={14} />
-          <Text size={12.5}>{loading ? 'Refreshing…' : 'Refresh'}</Text>
+    <Stack gapPx={22} style={{ layout: { width: pct(100) } }}>
+      <Row align="center" justify="end" gapPx={8} style={{ layout: { width: pct(100) } }}>
+        <HausButton
+          id="servers-refresh"
+          variant="outline"
+          size="sm"
+          disabled={loading}
+          onPress={onRefresh}
+        >
+          <Row align="center" gapPx={6}>
+            <UiIcon name="refresh-cw" size={14} />
+            <Text size={12.5}>{loading ? 'Refreshing…' : 'Refresh'}</Text>
+          </Row>
         </HausButton>
       </Row>
 
-      {notice && <Text size={12} tone="muted">{notice}</Text>}
-      {error && <Text size={12} tone="critical">{error}</Text>}
+      {(error || notice) && (
+        <ServerGlassPanel padding={insets(14, 18)} radius={20}>
+          <Row align="center" gapPx={12}>
+            <UiIcon name="alert-circle" size={18} />
+            <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+              {error && (
+                <Text size={12.5} weight={500} tone="critical">
+                  {error}
+                </Text>
+              )}
+              {notice && (
+                <Text size={12} tone="muted">
+                  {notice}
+                </Text>
+              )}
+            </Stack>
+          </Row>
+        </ServerGlassPanel>
+      )}
 
       {servers.length === 0 ? (
-        <Stack
-          align="center"
-          gapPx={8}
-          style={{
-            layout: { width: pct(100), padding: insets(38, 20) },
-            material: new SolidMaterial(colorToken('surfaceSecondary')),
-            border: { width: 1, color: colorToken('border') },
-            corners: corners(16),
-          }}
-        >
-          <UiIcon name="server" size={28} />
-          <Heading level={3} size={16} weight={600}>
-            No servers connected
-          </Heading>
-          <Text size={12} tone="muted">
-            Connect to a Haus Hub or node peer to inspect system metrics and terminals.
-          </Text>
-        </Stack>
+        <ServerGlassPanel padding={insets(40, 24)} radius={24}>
+          <Stack align="center" gapPx={10} style={{ layout: { width: pct(100) } }}>
+            <UiIcon name="server" size={32} />
+            <Heading level={3} size={17} weight={600}>
+              A home for your home servers.
+            </Heading>
+            <Text
+              size={12.5}
+              tone="muted"
+              style={{ typography: { align: 'center', lineHeight: 1.5 } }}
+            >
+              Connect your Haus Hub to see its resources, manage optional servers and keep recovery
+              copies together.
+            </Text>
+          </Stack>
+        </ServerGlassPanel>
       ) : (
-        <DashboardGrid columns={columns}>
-          {servers.map((server) => {
-            const state = resolveServerConnectionState(server);
-            const badge = statusBadgeColors(state);
-            const memRatio = formatRatio(server.memoryUsedBytes, server.memoryTotalBytes);
-            const disks = summarizeServerDisks(server.disks);
-            return (
-              <Pressable
-                key={server.id}
-                id={`server-card-${server.id}`}
-                onActivate={() => onSelectServer(server.id)}
-                style={{
-                  layout: {
-                    direction: 'column',
-                    justifyContent: 'between',
-                    gap: px(14),
-                    padding: insets(16),
-                    width: pct(100),
-                  },
-                  material: new SolidMaterial(colorToken('surfaceSecondary')),
-                  border: { width: 1, color: colorToken('border') },
-                  corners: corners(16),
-                  states: { hover: { material: new SolidMaterial(colorToken('surfaceHover')) } },
-                }}
-              >
-                <Row align="start" justify="between" gapPx={10} style={{ layout: { width: pct(100) } }}>
-                  <Row align="center" gapPx={10} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                    <Box
-                      style={{
-                        layout: {
-                          width: px(36),
-                          height: px(36),
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        },
-                        material: new SolidMaterial(colorToken('surface')),
-                        border: { width: 1, color: colorToken('border') },
-                        corners: corners(10),
-                      }}
-                    >
-                      <UiIcon name={server.nvr?.hasNvr ? 'video' : 'server'} size={18} />
-                    </Box>
-                    <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                      <Text size={14.5} weight={600}>
-                        {server.name}
-                      </Text>
-                      <Text size={11.5} tone="muted">
-                        {server.kind === 'hub' ? 'Haus Hub' : server.kind === 'nvr' ? 'NVR Node' : 'Host'}
-                      </Text>
-                    </Stack>
-                  </Row>
-                  <Box
-                    style={{
-                      layout: { padding: insets(3, 9), flexShrink: 0 },
-                      material: new SolidMaterial(badge.bg),
-                      border: { width: 1, color: badge.border },
-                      corners: corners(999),
-                    }}
-                  >
-                    <Text size={11}>{badge.label}</Text>
-                  </Box>
-                </Row>
+        <Stack gapPx={24} style={{ layout: { width: pct(100) } }}>
+          {groups.map((group) => (
+            <Stack key={group.id} gapPx={12} style={{ layout: { width: pct(100) } }}>
+              <Row align="center" gapPx={10} style={{ layout: { width: pct(100) } }}>
+                <UiIcon name={group.name === 'Servers' ? 'layout-grid' : 'server'} size={16} />
+                <Heading level={2} size={18} weight={600}>
+                  {group.name}
+                </Heading>
+                <Text size={11} tone="muted" style={{ typography: { tabularNums: true } }}>
+                  {`${group.servers.length} ${group.servers.length === 1 ? 'server' : 'servers'}`}
+                </Text>
+                <Box
+                  ariaHidden
+                  style={{
+                    layout: { flexGrow: 1, height: px(1) },
+                    material: new SolidMaterial(colorToken('border')),
+                  }}
+                />
+              </Row>
 
-                <Stack gapPx={8} style={{ layout: { width: pct(100) } }}>
-                  <MeterBar label="CPU" ratio={server.cpuUsage} caption={formatPercent(server.cpuUsage)} />
-                  <MeterBar
-                    label="Memory"
-                    ratio={memRatio}
-                    caption={
-                      server.memoryTotalBytes
-                        ? `${formatBytes(server.memoryUsedBytes)} / ${formatBytes(server.memoryTotalBytes)}`
-                        : '—'
-                    }
+              <DashboardGrid columns={columns}>
+                {group.servers.map((server) => (
+                  <ServerCardTile
+                    key={server.id}
+                    server={server}
+                    room={server.roomName}
+                    onOpen={() => onSelectServer(server.id)}
                   />
-                </Stack>
-
-                <Row align="center" justify="between" style={{ layout: { width: pct(100) } }}>
-                  <Text size={11.5} tone="muted">
-                    {disks.volumeCount > 0
-                      ? `${formatBytes(disks.usedBytes)} / ${formatBytes(disks.totalBytes)}`
-                      : server.osLabel}
-                  </Text>
-                  <Row align="center" gapPx={4}>
-                    <Text size={12} weight={500}>
-                      Open
-                    </Text>
-                    <UiIcon name="chevron-right" size={14} />
-                  </Row>
-                </Row>
-              </Pressable>
-            );
-          })}
-        </DashboardGrid>
+                ))}
+              </DashboardGrid>
+            </Stack>
+          ))}
+        </Stack>
       )}
     </Stack>
   );

@@ -20,12 +20,12 @@
   height: auto;
   min-height: 0;
 }
-:root .camera-card {
+:root .camera-card:not([data-haus-camera-tile='shared']) {
   border-radius: 17px;
   border: 1px solid color-mix(in srgb, var(--line) 35%, transparent);
   box-shadow: 0 4px 12px rgb(0 0 0 / 5%);
 }
-:root .camera-card img {
+:root .camera-card:not([data-haus-camera-tile='shared']) img {
   filter: none;
 }
 :root .camera-shade {
@@ -61,8 +61,8 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 11px;
 }
-:root .accessory-tile,
-:root .accessory-tile:not(.is-active) {
+:root .accessory-tile:not([data-haus-device-tile='shared']),
+:root .accessory-tile:not([data-haus-device-tile='shared']):not(.is-active) {
   min-height: 126px;
   padding: 13px 14px;
   border-radius: 16px;

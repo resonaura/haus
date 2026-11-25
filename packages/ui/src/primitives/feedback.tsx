@@ -184,7 +184,7 @@ function HausToastCard({
     <Row role="status" className="haus-toast" style={styles.card} dataKind="toast">
       <Box style={styles.indicator} />
       <Text style={styles.title}>{item.title}</Text>
-      <Pressable ariaLabel="Dismiss notification" style={styles.closeButton} onPress={onDismiss}>
+      <Pressable ariaLabel="Dismiss notification" style={styles.closeButton} onActivate={onDismiss}>
         ×
       </Pressable>
     </Row>
@@ -192,8 +192,10 @@ function HausToastCard({
 }
 
 export interface HausPopoverProps {
+  readonly id?: string;
   readonly open: boolean;
   readonly placement?: 'top' | 'bottom' | 'left' | 'right';
+  readonly align?: 'start' | 'center' | 'end';
   readonly className?: string;
   readonly style?: UiStyleSpec;
   readonly onOpenChange: (open: boolean) => void;
@@ -202,8 +204,10 @@ export interface HausPopoverProps {
 }
 
 export function HausPopover({
+  id,
   open,
   placement = 'bottom',
+  align,
   className,
   style,
   onOpenChange,
@@ -212,22 +216,37 @@ export function HausPopover({
 }: HausPopoverProps): React.ReactElement {
   const ctx = useHausUi();
   const styles = useHausStyles(popoverStyles, placement);
+  const surfaceStyle = composeStyles(styles.surface, style);
 
   React.useEffect(() => {
     if (!open) return undefined;
     return ctx.host.subscribeEscape?.(() => onOpenChange(false));
   }, [open, onOpenChange, ctx.host]);
 
+  if (ctx.contentHost.renderPopover) {
+    return ctx.contentHost.renderPopover(
+      {
+        id,
+        open,
+        placement,
+        align,
+        className,
+        portal: ctx.portal,
+        onOpenChange,
+        anchorStyle: styles.anchor,
+        surfaceStyle,
+        trigger,
+        children,
+      },
+      ctx,
+    );
+  }
+
   return (
     <Box style={styles.anchor} dataKind="popover-anchor">
       {trigger}
       {open && (
-        <Box
-          role="dialog"
-          className={className}
-          style={composeStyles(styles.surface, style)}
-          dataKind="popover"
-        >
+        <Box id={id} role="dialog" className={className} style={surfaceStyle} dataKind="popover">
           {children}
         </Box>
       )}
@@ -272,7 +291,7 @@ export function HausMenu({
               role="menuitem"
               disabled={item.disabled}
               style={item.danger ? styles.menuDanger : styles.menuItem}
-              onPress={() => {
+              onActivate={() => {
                 onOpenChange(false);
                 item.onAction();
               }}

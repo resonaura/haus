@@ -250,49 +250,6 @@
   width: min(760px, calc(100vw - 40px));
   max-width: min(760px, calc(100vw - 40px));
 }
-:root .power-strip-controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
-  gap: 24px 18px;
-  width: 100%;
-  padding: 14px 0;
-}
-.power-strip-outlet {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  text-align: center;
-  min-width: 0;
-}
-:root .haus-device-modal .power-strip-outlet .button {
-  width: 90px;
-  height: 90px;
-  border-radius: 50% !important;
-  background: var(--soft);
-  border: 0.5px solid var(--line);
-  color: var(--muted-ink);
-  transition:
-    color 260ms,
-    background 260ms,
-    box-shadow 260ms;
-}
-:root .haus-device-modal .power-strip-outlet .button[aria-pressed='true'] {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--ink) 12%, var(--soft));
-  box-shadow:
-    inset 0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent),
-    0 0 25px color-mix(in srgb, var(--ink) 4%, transparent);
-}
-.power-strip-outlet strong {
-  font-size: 12px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.power-strip-outlet small {
-  color: var(--muted-ink);
-  font-size: 11px;
-}
 .haus-tv-remote {
   display: grid;
   justify-items: center;
@@ -455,10 +412,6 @@
   font-size: 12px;
 }
 
-:root .haus-device-modal .power-strip-outlet .button svg {
-  width: 32px;
-  height: 32px;
-}
 :root .haus-device-modal .haus-remote-pad .button,
 :root .haus-device-modal .haus-remote-actions .button {
   border-radius: 50%;

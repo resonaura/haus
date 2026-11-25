@@ -1,10 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import type { ReactNode } from 'react';
-import { colorToken, corners, insets, pct, px } from '../ir/geometry.js';
-import { SolidMaterial } from '../ir/materials.js';
+import {
+  colorToken,
+  corners,
+  insets,
+  mixColor,
+  pct,
+  px,
+  rgba,
+  transparentColor,
+} from '../ir/geometry.js';
+import { GradientMaterial, SolidMaterial } from '../ir/materials.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import { Box, Pressable, Text } from '../primitives/elements.js';
+import { GlassRim } from '../primitives/glass-rim.js';
 import { UiIcon } from './icon.js';
 
 const row = {
@@ -231,13 +241,36 @@ export function SidebarNavButton({
                 width: pct(100),
                 minHeight: px(35),
                 padding: insets(7, 11),
+                position: 'relative',
+                overflow: 'hidden',
               },
               corners: corners(14),
-              material: active ? new SolidMaterial(colorToken('surfaceActive')) : undefined,
-              border: { width: 1, color: colorToken('borderSubtle', active ? undefined : 0) },
+              material: active
+                ? new GradientMaterial(
+                    [
+                      { offset: 0, color: mixColor(transparentColor, colorToken('ink'), 0.15) },
+                      { offset: 1, color: mixColor(transparentColor, colorToken('ink'), 0.07) },
+                    ],
+                    165,
+                    'linear',
+                  )
+                : undefined,
+              border: {
+                width: 1,
+                color: active ? colorToken('materialEdge') : transparentColor,
+              },
+              shadows: active
+                ? [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: rgba(0, 0, 0, 0.08) }]
+                : undefined,
               states: active
                 ? undefined
-                : { hover: { material: new SolidMaterial(colorToken('surfaceHover')) } },
+                : {
+                    hover: {
+                      material: new SolidMaterial(
+                        mixColor(transparentColor, colorToken('ink'), 0.045),
+                      ),
+                    },
+                  },
             }
           : undefined
       }
@@ -247,23 +280,45 @@ export function SidebarNavButton({
         <>
           <Text
             size={portable ? 12 : undefined}
-            weight={portable && active ? 600 : undefined}
+            weight={portable ? (active ? 600 : 500) : undefined}
             tone={portable ? (active ? 'primary' : 'muted') : undefined}
             style={
               portable && badge !== undefined
-                ? { layout: { flexGrow: 1, minWidth: px(0) } }
-                : undefined
+                ? { layout: { flexGrow: 1, minWidth: px(0) }, typography: { maxLines: 1 } }
+                : portable
+                  ? { typography: { maxLines: 1 } }
+                  : undefined
             }
           >
             {children ?? label}
           </Text>
           {portable && badge !== undefined && (
-            <Text size={10.5} tone="muted" style={{ layout: { flexShrink: 0 } }}>
-              {String(badge)}
-            </Text>
+            <Box
+              style={{
+                layout: {
+                  ...row,
+                  justifyContent: 'center',
+                  minWidth: px(22),
+                  padding: insets(2, 7),
+                  flexShrink: 0,
+                },
+                material: new SolidMaterial(mixColor(transparentColor, colorToken('ink'), 0.08)),
+                corners: corners(999, 'round'),
+              }}
+            >
+              <Text
+                size={9.5}
+                weight={500}
+                tone="muted"
+                style={{ typography: { tabularNums: true, lineHeight: 1.2 } }}
+              >
+                {String(badge)}
+              </Text>
+            </Box>
           )}
         </>
       )}
+      {portable && active && <GlassRim preset="control" radiusPx={13} opacity={0.7} />}
     </Pressable>
   );
 }

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { recordingDay, type CameraEvent } from '@haus/core/transport';
-import { pct, rgba } from '@haus/ui/ir';
+import { cameraStageMediaStyle } from '@haus/ui/components';
+import { rgba } from '@haus/ui/ir';
 import { Image, Text, VideoSurface } from '@haus/ui/primitives';
 import { demoCameraPreviewSrc } from './preview-image.js';
 import type { GpuiCameraStreams } from './stream.js';
@@ -84,7 +85,7 @@ export function CameraModalViewport({
           id={`recording-${selectedRecording.id}`}
           frameSource={recordingFrames}
           objectFit="contain"
-          style={{ layout: { width: pct(100), height: pct(100) } }}
+          style={cameraStageMediaStyle}
           onPlaying={() => onStateChange('playing')}
           onEnded={onRecordingEnded}
           onError={() => onStateChange('stopped')}
@@ -96,7 +97,7 @@ export function CameraModalViewport({
         src={demoCameraPreviewSrc(demoScene, 0)}
         alt={title}
         objectFit={fill ? 'cover' : 'contain'}
-        style={{ layout: { width: pct(100), height: pct(100) } }}
+        style={cameraStageMediaStyle}
       />
     );
   }
@@ -108,7 +109,7 @@ export function CameraModalViewport({
         id={`stream-${cameraId}`}
         frameSource={liveFrames}
         objectFit={fill ? 'cover' : 'contain'}
-        style={{ layout: { width: pct(100), height: pct(100) } }}
+        style={cameraStageMediaStyle}
         onEnded={() => onStateChange('stopped')}
         onError={() => onStateChange('stopped')}
       />
@@ -121,7 +122,7 @@ export function CameraModalViewport({
         src={demoCameraPreviewSrc(demoScene, 0)}
         alt={title}
         objectFit={fill ? 'cover' : 'contain'}
-        style={{ layout: { width: pct(100), height: pct(100) } }}
+        style={cameraStageMediaStyle}
       />
     );
   }
@@ -132,7 +133,8 @@ export function CameraModalViewport({
         src={activeSnapshot}
         alt={title}
         objectFit={fill ? 'cover' : 'contain'}
-        style={{ layout: { width: pct(100), height: pct(100) } }}
+        transitionMs={220}
+        style={cameraStageMediaStyle}
       />
     );
   }

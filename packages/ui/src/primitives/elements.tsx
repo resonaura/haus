@@ -8,6 +8,7 @@
 import * as React from 'react';
 import { colorToken, corners, insets, pct, px } from '../ir/geometry.js';
 import { LiquidGlassMaterial, SolidMaterial } from '../ir/materials.js';
+import type { UiMotionSpec } from '../ir/motion.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import type {
   HostBlurEvent,
@@ -31,6 +32,7 @@ export interface BoxProps {
   readonly semantic?: HostBoxSemantic;
   readonly style?: UiStyleSpec;
   readonly surfaceTokens?: HostSurfaceTokens;
+  readonly motion?: UiMotionSpec;
   readonly paddingPx?: number;
   readonly gapPx?: number;
   readonly role?: string;
@@ -330,6 +332,10 @@ export interface PressableProps {
   readonly onSecondaryPress?: () => void;
   readonly onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   readonly onKeyDown?: (event: HostKeyEvent) => void;
+  readonly onPointerEnter?: () => void;
+  readonly onPointerLeave?: () => void;
+  readonly onFocus?: () => void;
+  readonly onBlur?: () => void;
   readonly children?: React.ReactNode;
 }
 
@@ -341,6 +347,10 @@ function StateTrackedPressable({
   style,
   disabled,
   selected,
+  onPointerEnter,
+  onPointerLeave,
+  onFocus,
+  onBlur,
   ...rest
 }: PressableProps): React.ReactElement {
   const ctx = useHausUi();
@@ -357,15 +367,25 @@ function StateTrackedPressable({
       ...rest,
       disabled,
       style: resolvedStyle,
-      onPointerEnter: () => setHovered(true),
+      onPointerEnter: () => {
+        setHovered(true);
+        onPointerEnter?.();
+      },
       onPointerLeave: () => {
         setHovered(false);
         setPressed(false);
+        onPointerLeave?.();
       },
       onPointerDown: () => setPressed(true),
       onPointerUp: () => setPressed(false),
-      onFocus: () => setFocused(true),
-      onBlur: () => setFocused(false),
+      onFocus: () => {
+        setFocused(true);
+        onFocus?.();
+      },
+      onBlur: () => {
+        setFocused(false);
+        onBlur?.();
+      },
     },
     ctx,
   );

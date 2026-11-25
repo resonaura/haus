@@ -2,23 +2,20 @@
 
 import type { ReactNode } from 'react';
 import { mergeRoomIcons, type ManagementPort } from '@haus/core/transport';
-import type { Area, HassEntity, Snapshot } from '@haus/ha/types';
+import type { HassEntity, Snapshot } from '@haus/ha/types';
 import type { RegistryController } from '@haus/ha/ui/registry';
 import type { Preferences } from '@haus/ha/view/preferences';
 import {
   AttentionBanner,
   AttentionFeed,
-  CategoryFilter,
-  CategoryRail,
-  DEVICE_ICONS,
   HomeSections,
   RoomSection,
   UiIcon,
   type PortableAttentionItem,
   type PortableHomeNotice,
+  type SidebarContextualNav,
 } from '@haus/ui/components';
-import { insets } from '@haus/ui/ir';
-import { HausButton, Heading, Row, Stack, Text } from '@haus/ui/primitives';
+import { Stack, Text } from '@haus/ui/primitives';
 import type { GpuiAddDeviceRequest } from '../management/add-device.js';
 import { GpuiAppsView } from '../management/apps.js';
 import { GpuiAutomationsView } from '../management/automations.js';
@@ -30,125 +27,15 @@ import { GpuiRoomsView } from '../management/rooms.js';
 import { GpuiScenesView } from '../management/scenes.js';
 import { GpuiServersView } from '../management/servers.js';
 import type { GpuiSystemPorts } from '../management/servers-port.js';
+import type { GpuiPlatform } from '../platform.js';
 import type { HomeRoute } from '../shell.js';
 import type { DeviceControl } from './cards.js';
 import { roomIcon } from './navigation.js';
 import { Statistics, type StatisticsRequest } from './history.js';
-import { RoomEditAction } from './rooms.js';
 import { SettingsView, type HomeSessionStatusInfo } from './settings-view.js';
 import { homeDashboard, type HomeDevice } from './model.js';
 
 type HomeDashboard = ReturnType<typeof homeDashboard>;
-
-export function WorkspacePageHeader({
-  category,
-  room,
-  roomArea,
-  route,
-  search,
-  heading,
-  demo,
-  isAdmin,
-  disabled,
-  registry,
-  onGo,
-  onAddDevice,
-  onConnect,
-  onRefresh,
-}: {
-  readonly category?: HomeDashboard['categories'][number];
-  readonly room?: HomeDashboard['navigationRooms'][number];
-  readonly roomArea?: Area;
-  readonly route: HomeRoute;
-  readonly search: boolean;
-  readonly heading: string;
-  readonly demo?: boolean;
-  readonly isAdmin: boolean;
-  readonly disabled: boolean;
-  readonly registry?: Pick<RegistryController, 'saveRoom'>;
-  readonly onGo: (route: HomeRoute) => void;
-  readonly onAddDevice?: (request?: GpuiAddDeviceRequest) => void;
-  readonly onConnect?: () => void;
-  readonly onRefresh?: () => void;
-}) {
-  return (
-    <Row justify="between" gapPx={10} style={{ layout: { margin: insets(0, 0, 22, 0) } }}>
-      <Stack gapPx={0}>
-        <Text
-          tone="muted"
-          size={8}
-          weight={600}
-          style={{
-            typography: { letterSpacing: 0.25, lineHeight: 1.5 },
-            layout: { margin: insets(0, 0, 7, 0) },
-          }}
-        >
-          {category || route === 'home'
-            ? 'HAUS OVERVIEW'
-            : room
-              ? 'ROOM OVERVIEW'
-              : 'THOUGHTFULLY CONNECTED'}
-        </Text>
-        <Heading
-          id="desktop-page-title"
-          level={1}
-          size={28}
-          weight={600}
-          style={{ typography: { lineHeight: 1.08 } }}
-        >
-          {search ? 'Search' : heading}
-        </Heading>
-        {route === 'home' && !search && (
-          <Text tone="muted" size={12} style={{ typography: { lineHeight: 1.5 } }}>
-            Your home. A little closer.
-          </Text>
-        )}
-      </Stack>
-      <Row gapPx={8} align="center" wrap>
-        {roomArea && (
-          <RoomEditAction
-            key={room?.id ?? 'new'}
-            room={roomArea}
-            registry={isAdmin ? registry : undefined}
-            disabled={disabled}
-            onSaved={(area) => onGo(`room:${area.area_id}`)}
-          />
-        )}
-        {route === 'home' && (demo || isAdmin) && onAddDevice && (
-          <HausButton
-            id="home-add-device"
-            variant="secondary"
-            disabled={disabled}
-            onPress={() => onAddDevice({ mode: 'picker' })}
-          >
-            <Row gapPx={6}>
-              <UiIcon name="plus" size={15} />
-              <Text size={12.5}>Add device</Text>
-            </Row>
-          </HausButton>
-        )}
-        {onConnect && (
-          <HausButton id="connect-home" variant="outline" onPress={onConnect}>
-            <Row gapPx={8}>
-              <UiIcon name="plus" size={17} />
-              <Text size={13}>Connect your home</Text>
-            </Row>
-          </HausButton>
-        )}
-        {onRefresh && (
-          <HausButton
-            id="hub-reconnect"
-            variant="outline"
-            disabled={disabled}
-            onPress={onRefresh}
-          >
-            Refresh home
-          </HausButton>
-        )}
-      </Row>
-    </Row>
-  );
-}
 
 export function HomeRouteContent({
   route,
@@ -185,6 +72,10 @@ export function HomeRouteContent({
   onToggleDemo,
   onConnect,
   onDisconnect,
+  openExternal,
+  openPaths,
+  onCopyText,
+  onServerSidebarChange,
   renderDevices,
   renderScenes,
   renderCameras,
@@ -226,6 +117,10 @@ export function HomeRouteContent({
   onToggleDemo?: (enabled: boolean) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  openExternal?: (url: string) => Promise<void>;
+  openPaths?: GpuiPlatform['openPaths'];
+  onCopyText?: (text: string) => void;
+  onServerSidebarChange?: (context: SidebarContextualNav | undefined) => void;
   renderDevices: (devices: readonly HomeDevice[]) => ReactNode;
   renderScenes: (scenes: readonly HassEntity[], showAccessoryCount?: boolean) => ReactNode;
   renderCameras: (cameras: typeof home.cameras) => ReactNode;
@@ -249,9 +144,7 @@ export function HomeRouteContent({
   switch (route) {
     case 'cameras':
       return home.allCameras.length > 0 ? (
-        <Stack gapPx={12}>
-          {renderCameras(home.allCameras)}
-        </Stack>
+        <Stack gapPx={12}>{renderCameras(home.allCameras)}</Stack>
       ) : (
         <Text tone="muted">No cameras in this home.</Text>
       );
@@ -263,6 +156,7 @@ export function HomeRouteContent({
           home={home}
           demo={demo}
           management={management}
+          openPaths={openPaths}
           renderScenes={renderScenes}
           onApplyScene={(sceneId) => onControl(sceneId, 'run')}
           onApplySceneEntities={onApplySceneEntities}
@@ -301,6 +195,8 @@ export function HomeRouteContent({
           columns={columns}
           demo={demo}
           requestRpc={system?.requestRpc}
+          openExternal={openExternal}
+          openPaths={openPaths}
           onOpenEntity={onOpenEntity}
           onAddDevice={onAddDevice}
           onSaved={onSaved}
@@ -315,6 +211,7 @@ export function HomeRouteContent({
           sessionKind={system?.sessionKind}
           management={management}
           requestRpc={system?.requestRpc}
+          openExternal={openExternal}
           onSaved={onSaved}
         />
       );
@@ -325,7 +222,9 @@ export function HomeRouteContent({
           columns={columns}
           demo={demo}
           system={system}
+          onCopyText={onCopyText}
           onSaved={onSaved}
+          onContextualSidebarChange={onServerSidebarChange}
         />
       );
     case 'hidden':
@@ -350,6 +249,7 @@ export function HomeRouteContent({
           demo={demo}
           disabled={disabled}
           management={management}
+          openPaths={openPaths}
           onControl={onControl}
           onApplySceneEntities={onApplySceneEntities}
           onSaved={onSaved}
@@ -367,6 +267,8 @@ export function HomeRouteContent({
           disabled={disabled}
           canEditPreferences={canFavorite}
           sessionMeta={sessionMeta}
+          management={management}
+          sessionKind={system?.sessionKind}
           onToggleDemo={onToggleDemo}
           onConnect={onConnect}
           onDisconnect={onDisconnect}
@@ -374,9 +276,7 @@ export function HomeRouteContent({
           onGrouping={onGrouping}
           onPreferencesPatch={onPreferencesPatch}
           onResetLightGroups={onResetLightGroups}
-          onNavigate={(destination) => {
-            if (destination === 'rooms' || destination === 'devices') onGo(destination);
-          }}
+          onNavigate={onGo}
         />
       );
     case 'statistics':
@@ -451,43 +351,4 @@ export function HomeRouteContent({
         />
       );
   }
-}
-
-export function WorkspaceCategoryRail({
-  categories,
-  activeCategory,
-  onSelectHome,
-  onSelectCategory,
-}: {
-  readonly categories: HomeDashboard['categories'];
-  readonly activeCategory?: HomeDashboard['categories'][number];
-  readonly onSelectHome: () => void;
-  readonly onSelectCategory: (id: string) => void;
-}) {
-  return (
-    <CategoryRail>
-      <CategoryFilter
-        name="All"
-        summary="Your home"
-        icon={<UiIcon name="house" size={19} />}
-        selected={!activeCategory}
-        onSelect={onSelectHome}
-        portable
-      />
-      {categories.map((item) => (
-        <CategoryFilter
-          key={item.id}
-          id={item.id}
-          name={item.name}
-          summary={item.summary}
-          selected={item.id === activeCategory?.id}
-          icon={<UiIcon name={DEVICE_ICONS[item.id]} size={19} />}
-          onSelect={() =>
-            item.id === activeCategory?.id ? onSelectHome() : onSelectCategory(item.id)
-          }
-          portable
-        />
-      ))}
-    </CategoryRail>
-  );
 }

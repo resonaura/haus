@@ -10,6 +10,7 @@ import type { SidebarBackdrop } from '../../platform/sidebar.js';
 import { createGpuiCameraApi } from '../camera/transport.js';
 import type { GpuiPlatform } from '../platform.js';
 import { Preview } from '../preview.js';
+import { shouldTriggerControlHaptic } from './model.js';
 import { HomeWorkspace } from './workspace.js';
 import type { HomeSessionStatusInfo } from './settings-view.js';
 import type { GpuiHomeRuntime } from './runtime.js';
@@ -30,6 +31,7 @@ export function LiveHome({
   sidebar,
   subscribeKeyDown,
   systemTheme = 'dark',
+  reducedTransparency,
   onExploreDemo,
 }: {
   runtime: GpuiHomeRuntime;
@@ -38,6 +40,7 @@ export function LiveHome({
   sidebar?: SidebarBackdrop;
   subscribeKeyDown?: (listener: (event: KeyEvent) => void) => () => void;
   systemTheme?: 'light' | 'dark';
+  reducedTransparency?: boolean;
   onExploreDemo?: () => void;
 }) {
   const state = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
@@ -54,8 +57,13 @@ export function LiveHome({
     void runtime.start();
   }, [runtime]);
   const hubCameraUrl = state.sessionKind === 'haus-hub' ? state.session?.url : undefined;
+  const streaming = useMemo(
+    () => (streams && hubCameraUrl && !state.offline ? { streams, hub: hubCameraUrl } : undefined),
+    [streams, hubCameraUrl, state.offline],
+  );
   const cameraApi = useMemo(
-    () => (hubCameraUrl ? createGpuiCameraApi(runtime.createCameraViewer, hubCameraUrl) : undefined),
+    () =>
+      hubCameraUrl ? createGpuiCameraApi(runtime.createCameraViewer, hubCameraUrl) : undefined,
     [runtime, hubCameraUrl],
   );
   useEffect(() => () => cameraApi?.clear(), [cameraApi]);
@@ -68,10 +76,17 @@ export function LiveHome({
       return;
     }
     void runtime.scan(explicitHa);
-  }, [explicitHa, managingConnection, platform.openExternal, runtime, state.pairingUrl, state.session]);
+  }, [
+    explicitHa,
+    managingConnection,
+    platform.openExternal,
+    runtime,
+    state.pairingUrl,
+    state.session,
+  ]);
 
   const submit = (target?: string) => {
-    const rawTarget = (target ?? (state.pairingUrl ?? address)).trim();
+    const rawTarget = (target ?? state.pairingUrl ?? address).trim();
     const rawCode = code.current.trim();
     if (state.busy || !(state.pairingUrl ? rawCode : rawTarget)) return;
     void runtime.connect(rawTarget, state.pairingUrl ? rawCode : undefined, explicitHa).then(() => {
@@ -116,7 +131,11 @@ export function LiveHome({
 
     if (managingConnection) {
       return (
-        <HausUiProvider mode={dark ? 'dark' : 'light'} contentHost={GPUIX_CONTENT_HOST}>
+        <HausUiProvider
+          mode={dark ? 'dark' : 'light'}
+          reducedTransparency={reducedTransparency}
+          contentHost={GPUIX_CONTENT_HOST}
+        >
           <CompactDashboard title="Manage connection">
             {notice}
             <ConnectHomePanel
@@ -157,6 +176,7 @@ export function LiveHome({
           sidebar={sidebar}
           subscribeKeyDown={subscribeKeyDown}
           systemTheme={systemTheme}
+          reducedTransparency={reducedTransparency}
           sessionMeta={sessionMeta}
           onToggleDemo={(enabled) => setDemoOverride(enabled)}
           onConnect={() => setManagingConnection(true)}
@@ -184,8 +204,9 @@ export function LiveHome({
         subscribeKeyDown={subscribeKeyDown}
         preferences={preferences}
         systemTheme={systemTheme}
+        reducedTransparency={reducedTransparency}
         sidebar={sidebar}
-        streaming={streams && !state.offline ? { streams, hub: state.session.url } : undefined}
+        streaming={streaming}
         cameraApi={cameraApi}
         disabled={state.busy || state.offline}
         canFavorite={!state.busy && !state.offline && state.preferenceStatus === 'synced'}
@@ -193,7 +214,7 @@ export function LiveHome({
         notice={notice}
         onControl={(id, intent, value) => {
           if (state.busy || state.offline) return;
-          platform.hapticFeedback?.('alignment');
+          if (shouldTriggerControlHaptic(intent)) platform.hapticFeedback?.('alignment');
           void runtime.controlDevice(id, intent, value);
         }}
         onFavorite={(id, favorite) => void runtime.setFavorite(id, favorite)}
@@ -213,7 +234,11 @@ export function LiveHome({
   }
 
   return (
-    <HausUiProvider mode={dark ? 'dark' : 'light'} contentHost={GPUIX_CONTENT_HOST}>
+    <HausUiProvider
+      mode={dark ? 'dark' : 'light'}
+      reducedTransparency={reducedTransparency}
+      contentHost={GPUIX_CONTENT_HOST}
+    >
       <CompactDashboard
         title={
           state.session?.name ?? (explicitHa ? 'Connect Home Assistant' : 'Connect to Haus Hub')

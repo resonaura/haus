@@ -8,16 +8,18 @@
 import { useCameraPreheat } from './useCameraPreheat';
 import { useElementVisibility } from '../../hooks/useElementVisibility';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CameraPreviewTile, Text } from '@haus/ui';
+import { CameraPreviewTile, SnapshotAge, Text } from '@haus/ui';
 import { Camera as CameraIcon, VideoOff } from 'lucide-react';
 import type { HassEntity } from '../../model';
 import { deviceDisplayName } from '../../model/device-name';
-import { formatSnapshotAge, snapshotAgeSeconds } from '../../model/snapshot-age';
 import { SmoothImage } from '@haus/ui/web';
+import { resolveDemoSceneKey } from '../../../../shared/camera-preview';
 import { sharedCameraSnapshotSync } from './snapshots/sync';
+
+export { SnapshotAge };
+
 export function cameraImage(entity: HassEntity, index = 0): string {
-  const scene = entity.attributes.demo_scene;
-  return `/images/${scene === 'front-door' ? 'entryway' : scene === 'garden' ? 'garden' : scene === 'living-room' ? 'living-room' : ['entryway', 'garden', 'living-room'][index % 3]}.jpg`;
+  return `${import.meta.env.BASE_URL}images/${resolveDemoSceneKey(entity.attributes.demo_scene, index)}.jpg`;
 }
 export function CameraPreview({
   entity,
@@ -27,6 +29,7 @@ export function CameraPreview({
   onOfflineChange,
   onRecoveryChange,
   enabled = true,
+  suppressOverlay = false,
 }: {
   entity: HassEntity;
   demo: boolean;
@@ -35,6 +38,7 @@ export function CameraPreview({
   onOfflineChange?: (offline: boolean) => void;
   onRecoveryChange?: (recovering: boolean) => void;
   enabled?: boolean;
+  suppressOverlay?: boolean;
 }) {
   const sourceAvailable = !['unavailable', 'unknown', 'off'].includes(entity.state);
   const sourceOffline = entity.state === 'unavailable' || entity.state === 'off';
@@ -187,9 +191,16 @@ export function CameraPreview({
     <>
       {demo || frame ? (
         <SmoothImage
-          className={isOffline ? 'is-cached-preview' : cached ? 'is-loading-preview' : ''}
+          className={
+            suppressOverlay
+              ? ''
+              : isOffline
+                ? 'is-cached-preview'
+                : cached
+                  ? 'is-loading-preview'
+                  : ''
+          }
           thumbnail
-          progressiveBlur={!cached && sourceAvailable}
           src={demo ? cameraImage(entity, index) : frame?.image}
           alt={`${String(entity.attributes.friendly_name ?? 'Camera')} ${demo ? 'demonstration' : 'snapshot'}`}
           onLoad={(source) => {
@@ -205,7 +216,9 @@ export function CameraPreview({
           {!isOffline && <CameraIcon size={27} strokeWidth={1.4} />}
         </Text>
       )}
-      {(isOffline || recovering) && <CameraOfflineIndicator exiting={recovering && !isOffline} />}
+      {!suppressOverlay && (isOffline || recovering) && (
+        <CameraOfflineIndicator exiting={recovering && !isOffline} />
+      )}
     </>
   );
 }
@@ -218,27 +231,6 @@ export function CameraOfflineIndicator({ exiting = false }: { exiting?: boolean 
       ariaLabel="Camera offline"
     >
       <VideoOff size={32} strokeWidth={1.35} aria-hidden="true" />
-    </Text>
-  );
-}
-
-export function SnapshotAge({ updatedAt }: { updatedAt: number }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!updatedAt) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [updatedAt]);
-  const seconds = snapshotAgeSeconds(updatedAt, Math.max(now, updatedAt));
-  return seconds === undefined ? (
-    '—'
-  ) : (
-    <Text
-      semantic="time"
-      dateTime={new Date(updatedAt).toISOString()}
-      title={`${seconds} seconds since Haus received the snapshot`}
-    >
-      {formatSnapshotAge(seconds)}
     </Text>
   );
 }
@@ -271,8 +263,10 @@ export function CameraCard({
       name={name}
       label={deviceDisplayName(name, room, 'Camera')}
       room={room}
+      demo={demo}
+      updatedAt={updatedAt}
+      offline={isOffline}
       recovering={recovering}
-      portable={false}
       onOpen={onOpen}
       preview={
         <CameraPreview
@@ -283,13 +277,8 @@ export function CameraCard({
           onOfflineChange={setOffline}
           onRecoveryChange={setRecovering}
           enabled={visible && !paused}
+          suppressOverlay
         />
-      }
-      status={
-        <>
-          {demo ? 'Preview' : <SnapshotAge updatedAt={updatedAt} />}
-          {isOffline && <Text>Offline</Text>}
-        </>
       }
     />
   );

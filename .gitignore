@@ -3,7 +3,12 @@ out/
 dist/
 release/
 coverage/
-packages/gpui/vendor/
+packages/gpui/vendor/**/target/
+packages/gpui/vendor/**/node_modules/
+packages/gpui/vendor/**/dist/
+packages/gpui/vendor/**/*.node
+packages/gpui/vendor/**/*.tsbuildinfo
+packages/gpui/vendor/gpuix/packages/native/wasm/
 .DS_Store
 *.log
 .env*

@@ -167,7 +167,7 @@ const EXCLUDED_DIRS = new Set([
   'target',
 ]);
 
-const EXCLUDED_PREFIXES = ['docs/history/', 'THIRD_PARTY_NOTICES/', 'packages/gpui/patches/'];
+const EXCLUDED_PREFIXES = ['docs/history/', 'THIRD_PARTY_NOTICES/'];
 
 const EXCLUDED_EXTENSIONS = new Set([
   '.icns',
@@ -180,6 +180,8 @@ const EXCLUDED_EXTENSIONS = new Set([
   '.webm',
   '.wasm',
   '.gz',
+  '.ttf',
+  '.otf',
 ]);
 
 const EXCLUDED_FILES = new Set(['pnpm-lock.yaml', 'package-lock.json', 'yarn.lock', 'uv.lock']);

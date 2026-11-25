@@ -7,6 +7,8 @@
 
 export * from './color.js';
 export * from './geometry.js';
+export * from './glass-rim.js';
 export * from './liquid-glass-shader.js';
 export * from './materials.js';
+export * from './motion.js';
 export * from './node.js';

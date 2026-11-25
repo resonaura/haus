@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type * as React from 'react';
+import * as React from 'react';
+import type { ShaderRegistry } from '../ir/materials.js';
 import { wrapSurfacePointerEvent } from './dom-media.js';
 import type {
   HostBoxProps,
@@ -223,4 +224,60 @@ export function buildDomBoxProps(
     onMouseEnter: props.onPointerEnter,
     onMouseLeave: props.onPointerLeave,
   };
+}
+
+/**
+ * Renders procedural SVG refraction/dispersion filter definitions registered in `ShaderRegistry`
+ * so `LiquidGlassMaterial` and custom shaders can apply hardware-accelerated backdrop refraction.
+ */
+export function renderSvgShaderDefs(shaderRegistry: ShaderRegistry): React.ReactElement | null {
+  const shadersWithSvg = shaderRegistry.list().filter((s) => Boolean(s.targets.svgFilter));
+  if (shadersWithSvg.length === 0) return null;
+
+  return React.createElement(
+    'svg',
+    {
+      'aria-hidden': 'true',
+      style: {
+        position: 'absolute',
+        width: 0,
+        height: 0,
+        pointerEvents: 'none',
+        overflow: 'hidden',
+      },
+    },
+    React.createElement(
+      'defs',
+      null,
+      shadersWithSvg.map((shader) => {
+        const scale = shader.targets.svgFilter?.refractionStrength ?? 12;
+        return React.createElement(
+          'filter',
+          {
+            key: shader.id,
+            id: `svg-${shader.id}`,
+            x: '-10%',
+            y: '-10%',
+            width: '120%',
+            height: '120%',
+            colorInterpolationFilters: 'sRGB',
+          },
+          React.createElement('feTurbulence', {
+            type: 'fractalNoise',
+            baseFrequency: '0.015 0.02',
+            numOctaves: 2,
+            seed: 7,
+            result: 'noise',
+          }),
+          React.createElement('feDisplacementMap', {
+            in: 'SourceGraphic',
+            in2: 'noise',
+            scale,
+            xChannelSelector: 'R',
+            yChannelSelector: 'G',
+          }),
+        );
+      }),
+    ),
+  );
 }

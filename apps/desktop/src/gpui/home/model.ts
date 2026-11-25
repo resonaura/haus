@@ -7,7 +7,9 @@ import { buildAction } from '@haus/ha/view/controls/action';
 import { normalizeHome } from '@haus/ha/view/normalize';
 import { buildHomeView, roomTemperatureFor } from '@haus/ha/view/home-view';
 import { describeAccessory } from '@haus/ha/view/presentation';
-import { deviceDisplayName } from '@haus/ha/view/device-name';
+import { deviceDisplayName, deviceSource } from '@haus/ha/view/device-name';
+import { stripOutlets } from '@haus/ha/view/device-relationships';
+import { resolveDeviceAppearance } from '@haus/ha/view/device-state';
 import { deviceTelemetryRegistry } from '@haus/ha/view/device-telemetry';
 import { resolveDeviceHausId } from '@haus/ha/view/device-identity';
 import { deviceArea } from '@haus/ha/view/registry';
@@ -15,17 +17,29 @@ import { groupNumberedLights, orderRoomDevices } from '@haus/ha/view/room-device
 import { accessoriesForCategory, homeCategorySummaries } from '@haus/ha/view/categories';
 import { homeControls } from '@haus/ha/view/controls/home';
 import { groupScenes, sceneCard } from '@haus/ha/view/scene-presentation';
-import { isEntityActive } from '@haus/ha/view/device-state';
-import { lightColor } from '@haus/ha/light-color';
 import type { Preferences } from '@haus/ha/view/preferences';
 import { setAccessoryFavorite } from '@haus/ha/view/settings/shared';
 import { getCategoryMetadata } from '@haus/ui/categories';
-import type { DeviceTileData } from '@haus/ui/components';
+import type {
+  DeviceTileBatteryData,
+  DeviceTileData,
+  LightEffectOption,
+  UiIconName,
+} from '@haus/ui/components';
+import { resolveAccessoryIconName } from './device-icon.js';
 
 export interface HomeDevice extends DeviceTileData {
   readonly id: string;
   readonly accessory: HausAccessory;
+  readonly active: boolean;
   readonly accent?: string;
+  readonly colorSwatch?: string;
+  readonly lightEffect?: LightEffectOption;
+  readonly groupCount?: number;
+  readonly battery?: DeviceTileBatteryData;
+  readonly sourceBadge?: string;
+  readonly iconName: UiIconName;
+  readonly stateKey: string;
 }
 
 export interface HomeRoom {
@@ -130,17 +144,48 @@ export function homeDashboard(snapshot: Snapshot, preferences: Preferences) {
   };
   const cameras = view.homeCameras.map(cameraCard);
   const isDevice = (item: HausAccessory) => !item.primaryEntityId.startsWith('camera.');
-  const tile = (item: HausAccessory): HomeDevice => ({
-    id: item.primaryEntityId,
-    accessory: item,
-    name: item.name,
-    category: item.category,
-    categoryLabel: getCategoryMetadata(item.category).label,
-    state: describeAccessory(item),
-    available: item.availability === 'available',
-    favorite: view.isFavorite(item),
-    accent: isEntityActive(item.state) ? lightColor(item.state) : undefined,
-  });
+  const tile = (item: HausAccessory): HomeDevice => {
+    const room = item.areaId ? areasById.get(item.areaId) : undefined;
+    const outlets = item.powerStrip ? stripOutlets(item) : [];
+    const effectiveState = item.powerStrip
+      ? { ...item.state, state: outlets.some((outlet) => outlet.state === 'on') ? 'on' : 'off' }
+      : item.state;
+    const appearance = resolveDeviceAppearance(effectiveState);
+    const active = item.availability === 'available' && appearance.active;
+    const domain = item.primaryEntityId.split('.')[0];
+    const fallbackName =
+      item.category === 'network'
+        ? [item.manufacturer, item.model]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\beero\s+eero\b/gi, 'eero') || 'Router'
+        : domain.charAt(0).toUpperCase() + domain.slice(1).replaceAll('_', ' ');
+    const stateText = item.powerStrip
+      ? `${outlets.length} outlets · ${outlets.filter((outlet) => outlet.state === 'on').length} on`
+      : describeAccessory(item);
+    return {
+      id: item.primaryEntityId,
+      accessory: item,
+      name: deviceDisplayName(item.name, room, fallbackName),
+      category: item.category,
+      categoryLabel: getCategoryMetadata(item.category).label,
+      state: stateText,
+      stateKey: `${effectiveState.state}:${stateText}`,
+      available: item.availability === 'available',
+      active,
+      favorite: view.isFavorite(item),
+      accent: active ? appearance.actualColor : undefined,
+      colorSwatch: active ? appearance.actualColor : undefined,
+      lightEffect: active ? appearance.effect : undefined,
+      groupCount: item.lightGroup?.members.length,
+      battery:
+        typeof item.batteryLevel === 'number' || typeof item.batteryCharging === 'boolean'
+          ? { level: item.batteryLevel, charging: item.batteryCharging }
+          : undefined,
+      sourceBadge: deviceSource(item.name),
+      iconName: resolveAccessoryIconName(item),
+    };
+  };
   const tiles = (items: HausAccessory[], scope?: string) =>
     orderRoomDevices(
       groupNumberedLights(
@@ -237,6 +282,43 @@ export type DeviceIntent =
   | 'position'
   | 'update-install'
   | 'update-skip';
+
+export type DeviceTarget = string | readonly string[];
+
+const CONTINUOUS_HAPTIC_INTENTS: ReadonlySet<DeviceIntent> = new Set<DeviceIntent>([
+  'brightness',
+  'temperature',
+  'climate-temperature',
+  'water-temperature',
+  'volume',
+  'percentage',
+  'value',
+  'position',
+]);
+
+/** Only continuous slider/detent adjustments emit synthetic haptics; click actions already have physical feedback. */
+export function shouldTriggerControlHaptic(intent: DeviceIntent): boolean {
+  return CONTINUOUS_HAPTIC_INTENTS.has(intent);
+}
+
+export function availableDeviceActions(
+  snapshot: Snapshot,
+  target: DeviceTarget,
+  intent: DeviceIntent,
+  value?: unknown,
+) {
+  const ids = typeof target === 'string' ? [target] : [...new Set(target)];
+  const actions = ids.flatMap((id) => {
+    const action = availableAction(snapshot, id, intent, value);
+    return action ? [action] : [];
+  });
+  if (typeof target === 'string' || intent !== 'toggle') return actions;
+
+  const service = actions.some((action) => action.service === 'turn_off') ? 'turn_off' : 'turn_on';
+  return actions.flatMap((action) =>
+    Object.hasOwn(snapshot.services[action.domain] ?? {}, service) ? [{ ...action, service }] : [],
+  );
+}
 
 export function availableAction(
   snapshot: Snapshot,

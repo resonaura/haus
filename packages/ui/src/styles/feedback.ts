@@ -120,7 +120,7 @@ export const popoverStyles = defineStyleSheet(
         layout: {
           position: 'absolute',
           inset: positionInset,
-          zIndex: 950,
+          zIndex: 1100,
           display: 'flex',
           direction: 'column',
           minWidth: px(180),
@@ -145,6 +145,7 @@ export const popoverStyles = defineStyleSheet(
         ),
         corners: corners(14, 'superellipse', 1.4),
         border: { width: 1, style: 'solid', color: colorToken('materialEdge') },
+        typography: { color: colorToken('textPrimary') },
         shadows: [
           {
             offsetX: 0,

@@ -57,30 +57,36 @@ it('pairs, merges concurrent favorites, restores a rotated credential, and dispa
     const url = await app.getUrl();
     const home = app.get<StandaloneHomeService>(STANDALONE_HOME_SERVICE);
     await home.roomManager.createRoom({ id: 'gpui-office', name: 'Fixture Office' });
-    home.registerDevice({
-      id: 'fixture-lamp',
-      name: 'Fixture Lamp',
-      category: 'lighting',
-      roomId: 'gpui-office',
-      availability: 'online',
-      source: { instanceId: 'fixture-gpui', externalId: 'fixture-lamp' },
-      connectivity: { protocol: 'virtual' },
-      endpoints: [
-        {
-          id: 'fixture-lamp-endpoint',
-          name: 'Fixture Lamp',
-          capabilities: [
-            { id: 'on_off', kind: 'binary', readable: true, operations: ['turn_on', 'turn_off'] },
-          ],
-          readings: {},
-        },
-      ],
-    });
+    const lamps = [
+      { id: 'fixture-lamp', name: 'Fixture Lamp' },
+      { id: 'fixture-desk', name: 'Fixture Desk' },
+    ];
+    for (const { id, name } of lamps) {
+      home.registerDevice({
+        id,
+        name,
+        category: 'lighting',
+        roomId: 'gpui-office',
+        availability: 'online',
+        source: { instanceId: 'fixture-gpui', externalId: id },
+        connectivity: { protocol: 'virtual' },
+        endpoints: [
+          {
+            id: `${id}-endpoint`,
+            name,
+            capabilities: [
+              { id: 'on_off', kind: 'binary', readable: true, operations: ['turn_on', 'turn_off'] },
+            ],
+            readings: {},
+          },
+        ],
+      });
+    }
     const commands = vi.fn(async (endpoint: string, _capability: string, command: string) => {
       await home.updateEndpointState(endpoint, { state: command === 'turn_on' ? 'on' : 'off' });
     });
     home.registerCommandHandler('virtual', commands, { optimistic: false });
-    await home.updateEndpointState('fixture-lamp-endpoint', { state: 'off' });
+    for (const { id } of lamps) await home.updateEndpointState(`${id}-endpoint`, { state: 'off' });
 
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     await first.start();
@@ -92,11 +98,13 @@ it('pairs, merges concurrent favorites, restores a rotated credential, and dispa
     expect(state.session?.url).toBe(url);
     expect(state.snapshot).not.toBeNull();
     if (!state.snapshot) throw new Error('The fixture home was not loaded.');
-    const lamp = homeDashboard(state.snapshot, state.preferences)
-      .rooms.flatMap((room) => room.devices)
-      .find((device) => device.name === 'Fixture Lamp');
+    const devices = homeDashboard(state.snapshot, state.preferences).rooms.flatMap(
+      (room) => room.devices,
+    );
+    const lamp = devices.find((device) => device.name === 'Fixture Lamp');
+    const desk = devices.find((device) => device.name === 'Fixture Desk');
     expect(lamp?.id).toMatch(/^light\./);
-    if (!lamp) throw new Error('The fixture lamp was not visible.');
+    if (!lamp || !desk) throw new Error('The fixture lights were not visible.');
     expect(JSON.stringify(state)).not.toContain('sessionToken');
 
     expect(state.preferenceStatus).toBe('synced');
@@ -131,14 +139,23 @@ it('pairs, merges concurrent favorites, restores a rotated credential, and dispa
     expect(commands).toHaveBeenCalledTimes(1);
     expect(home.getEndpointState('fixture-lamp-endpoint').state).toBe('on');
 
+    await first.controlDevice([lamp.id, desk.id, lamp.id], 'toggle');
+    expect(commands.mock.calls.slice(1).map(([endpoint, , action]) => [endpoint, action])).toEqual([
+      ['fixture-lamp-endpoint', 'turn_off'],
+      ['fixture-desk-endpoint', 'turn_off'],
+    ]);
+    expect(home.getEndpointState('fixture-lamp-endpoint').state).toBe('off');
+    expect(home.getEndpointState('fixture-desk-endpoint').state).toBe('off');
+
     acknowledgementLost = true;
-    await first.controlDevice(lamp.id, 'toggle');
-    expect(commands).toHaveBeenCalledTimes(2);
+    await first.controlDevice([lamp.id, desk.id], 'toggle');
+    expect(commands).toHaveBeenCalledTimes(4);
     expect(first.getSnapshot().error).toMatch(/could not be confirmed/);
     expect(first.getSnapshot().offline).toBe(true);
     await first.toggleLight(lamp.id);
-    expect(commands).toHaveBeenCalledTimes(2);
-    expect(home.getEndpointState('fixture-lamp-endpoint').state).toBe('off');
+    expect(commands).toHaveBeenCalledTimes(4);
+    expect(home.getEndpointState('fixture-lamp-endpoint').state).toBe('on');
+    expect(home.getEndpointState('fixture-desk-endpoint').state).toBe('off');
     first.dispose();
 
     const previous = await store.loadHubSession();
@@ -169,3 +186,25 @@ it('pairs, merges concurrent favorites, restores a rotated credential, and dispa
     await docker.close();
   }
 }, 30_000);
+
+it('keeps runtime transport and system ports referentially stable across updates', () => {
+  const runtime = new GpuiHomeRuntime({
+    assertAvailable() {},
+    async loadHubSession() {
+      return null;
+    },
+    async saveHubSession() {},
+    async clearHubSession() {},
+  });
+  try {
+    const alertsBefore = runtime.alertsTransport;
+    const managementBefore = runtime.managementPort;
+    const systemBefore = runtime.systemPorts;
+    runtime.cancelPairing();
+    expect(runtime.alertsTransport).toBe(alertsBefore);
+    expect(runtime.managementPort).toBe(managementBefore);
+    expect(runtime.systemPorts).toBe(systemBefore);
+  } finally {
+    runtime.dispose();
+  }
+});

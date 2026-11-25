@@ -114,7 +114,7 @@ jobs:
             release/*.pkg.tar.zst
             release/*.tar.gz
   gpui-preview:
-    name: GPUIX preview (macOS ${{ matrix.arch }})
+    name: GPUIX preview (${{ matrix.platform }} ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -122,11 +122,19 @@ jobs:
       matrix:
         include:
           - os: macos-15
+            platform: macos
             arch: arm64
             macho: arm64
+            rust_target: aarch64-apple-darwin
           - os: macos-15-intel
+            platform: macos
             arch: x64
             macho: x86_64
+            rust_target: x86_64-apple-darwin
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4
@@ -140,38 +148,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build GPUIX workspace dependencies
         run: pnpm exec turbo run build --filter='@haus/desktop^...'
-      - if: matrix.arch == 'x64'
-        name: Build pinned GPUIX addon from source for Intel
-        env:
-          GPUIX_REVISION: 2e31b47ff6432ceebe70e7fc7b0f51a76d7d30cf
-          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      - if: matrix.platform == 'linux'
+        name: Install Linux GPUI system libraries
         run: |
-          test "$(uname -m)" = x86_64
-          xcodebuild -version
-          if ! xcrun --sdk macosx metal --version; then
-            xcodebuild -downloadComponent MetalToolchain
-            xcrun --sdk macosx metal --version
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libxcb1-dev libasound2-dev libfontconfig1-dev libssl-dev libvulkan-dev
+      - name: Build vendored GPUI/GPUIX native addon
+        run: |
+          rust_channel="$(node -e "console.log(JSON.parse(require('fs').readFileSync('packages/gpui/manifest.json','utf8')).rustToolchain)")"
+          rustup toolchain install "$rust_channel" --profile minimal --target "${{ matrix.rust_target }}"
+          if [ "${{ matrix.platform }}" = "macos" ] && [ "${{ matrix.arch }}" = "x64" ]; then
+            if [ -d /Applications/Xcode_26.3.app/Contents/Developer ]; then
+              export DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer
+            fi
+            xcodebuild -version
+            if ! xcrun --sdk macosx metal --version; then
+              xcodebuild -downloadComponent MetalToolchain
+              xcrun --sdk macosx metal --version
+            fi
           fi
-
-          source_dir="$RUNNER_TEMP/gpuix"
-          git init --quiet "$source_dir"
-          git -C "$source_dir" fetch --quiet --depth=1 https://github.com/remorses/gpuix.git "$GPUIX_REVISION"
-          git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
-          git -C "$source_dir" submodule update --init --recursive --depth=1
-          rust_channel="$(awk -F '"' '/^channel[[:space:]]*=/{print $2; exit}' "$source_dir/rust-toolchain.toml")"
-          rustup toolchain install "$rust_channel" --profile minimal --target x86_64-apple-darwin
-          (
-            cd "$source_dir/packages/native"
-            cargo "+$rust_channel" build --lib --release --locked \
-              --features test-support --target x86_64-apple-darwin --target-dir "$source_dir/target"
-          )
-          addon="$source_dir/target/x86_64-apple-darwin/release/libgpuix_native.dylib"
-          test "$(lipo -archs "$addon")" = x86_64
-          install -m 755 "$addon" apps/desktop/node_modules/@gpuix/native/gpuix-native.darwin-x64.node
+          pnpm --filter @haus/gpui fork:build
       - name: Check native addon and compile the executable
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
           EXPECTED_MACHO: ${{ matrix.macho }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
         run: |
           pnpm --filter @haus/desktop exec node --input-type=module -e '
             import assert from "node:assert/strict";
@@ -182,10 +185,16 @@ jobs:
             new GpuixRenderer();
           '
           pnpm --filter @haus/desktop build:gpui
-          lipo -archs apps/desktop/out/gpui/haus-preview
-          test "$(lipo -archs apps/desktop/out/gpui/haus-preview)" = "$EXPECTED_MACHO"
-      - name: Check the standalone executable and render when Metal is available
-        timeout-minutes: 3
+          if [ "$TARGET_PLATFORM" = "macos" ]; then
+            lipo -archs apps/desktop/out/gpui/haus-preview
+            test "$(lipo -archs apps/desktop/out/gpui/haus-preview)" = "$EXPECTED_MACHO"
+          else
+            file apps/desktop/out/gpui/haus-preview
+            file apps/desktop/out/gpui/haus-preview | grep -q "ARM aarch64"
+          fi
+      - if: matrix.platform == 'macos'
+        name: Check the standalone executable and compositor on macOS
+        timeout-minutes: 5
         run: |
           executable="$GITHUB_WORKSPACE/apps/desktop/out/gpui/haus-preview"
           metal="$(xcrun swift -e 'import Metal; print(MTLCreateSystemDefaultDevice() == nil ? "unavailable" : "available")')"
@@ -193,7 +202,10 @@ jobs:
             available)
               pnpm --filter @haus/desktop check:gpui:packed "$executable" "$RUNNER_TEMP/gpui-preview.png"
               GPUIX_BACKGROUND=1 pnpm --filter @haus/desktop check:gpui:sidebar
-              echo 'Standalone addon load, native Metal window, and AppKit sidebar checks passed.' >> "$GITHUB_STEP_SUMMARY"
+              bun --conditions=development apps/desktop/scripts/gpui/check-compositor.ts
+              bun --conditions=development apps/desktop/scripts/gpui/check-scroll.ts
+              bun --conditions=development apps/desktop/scripts/gpui/check-community.ts
+              echo 'Standalone addon load, native Metal window, compositor, and AppKit sidebar checks passed.' >> "$GITHUB_STEP_SUMMARY"
               ;;
             unavailable)
               pnpm --filter @haus/desktop check:gpui:packed "$executable"
@@ -201,8 +213,15 @@ jobs:
               ;;
             *) echo 'Unexpected Metal probe result.' >&2; exit 1 ;;
           esac
+      - if: matrix.platform == 'linux'
+        name: Check the standalone executable on Linux ARM64
+        timeout-minutes: 3
+        run: |
+          executable="$GITHUB_WORKSPACE/apps/desktop/out/gpui/haus-preview"
+          pnpm --filter @haus/desktop check:gpui:packed "$executable"
       - name: Archive GPUIX preview with its executable permissions
         env:
+          PREVIEW_PLATFORM: ${{ matrix.platform }}
           PREVIEW_ARCH: ${{ matrix.arch }}
         run: |
           preview_dir="$RUNNER_TEMP/gpui-preview"
@@ -210,17 +229,26 @@ jobs:
           install -m 755 apps/desktop/out/gpui/haus-preview "$preview_dir/haus-preview"
           cp LICENSE "$preview_dir/"
           cp -R THIRD_PARTY_NOTICES "$preview_dir/"
-          install -m 644 apps/desktop/node_modules/@gpuix/native/LICENSE \
+          install -m 644 packages/gpui/vendor/gpuix/LICENSE \
             "$preview_dir/THIRD_PARTY_NOTICES/GPUIX-Apache-2.0.txt"
-          tar -czf "$RUNNER_TEMP/gpui-preview-macos-$PREVIEW_ARCH.tar.gz" -C "$preview_dir" .
+          install -m 644 packages/gpui/vendor/gpui/LICENSE-APACHE \
+            "$preview_dir/THIRD_PARTY_NOTICES/GPUI-Apache-2.0.txt"
+          install -m 644 packages/gpui/vendor/gpui/LICENSE-GPL \
+            "$preview_dir/THIRD_PARTY_NOTICES/GPUI-GPL-3.0.txt"
+          tar -czf "$RUNNER_TEMP/gpui-preview-$PREVIEW_PLATFORM-$PREVIEW_ARCH.tar.gz" -C "$preview_dir" .
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: GPUIX-preview-macos-${{ matrix.arch }}
+          name: GPUIX-preview-${{ matrix.platform }}-${{ matrix.arch }}
           retention-days: 14
           if-no-files-found: error
-          path: |
-            ${{ runner.temp }}/gpui-preview-macos-${{ matrix.arch }}.tar.gz
-            ${{ runner.temp }}/gpui-preview.png
+          path: ${{ runner.temp }}/gpui-preview-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+      - if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: GPUIX-preview-${{ matrix.platform }}-${{ matrix.arch }}-screenshot
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/gpui-preview.png
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [desktop, mobile]

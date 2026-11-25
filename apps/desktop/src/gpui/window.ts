@@ -1,30 +1,32 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { release } from 'node:os';
 import { createRenderer, isTerminal, render, resetRender, startFrameLoop } from '@gpuix/react';
 import type { FrameLoop, KeyEvent, PathPromptOptions, WindowOptions } from '@gpuix/react';
 import type { ReactNode } from 'react';
 import * as koffi from 'koffi';
 import { appKitBridge } from '../platform/appkit.js';
 import {
+  createNativeWindowsDwmBridge,
+  LinuxSidebarBackdrop,
+  WindowsSidebarBackdrop,
+} from '../platform/backdrop.js';
+import {
   promptOpenPaths,
   promptSaveFilePath,
   writeSavedFile,
   type SaveFileOptions,
 } from '../platform/dialogs.js';
-import {
-  createLinuxMaterialController,
-  type LinuxMaterialController,
-} from '../platform/materials.js';
 import { installMacQuit } from '../platform/quit.js';
 import { AppKitSidebar, type SidebarBackdrop } from '../platform/sidebar.js';
 import { WindowControlsController } from '../platform/window-controls.js';
+import type { SidebarMaterial } from '../shared/native.js';
 import { requireGpuiBun } from './bun.js';
 
 export class GpuiWindow {
   readonly renderer: ReturnType<typeof createRenderer>;
   readonly sidebar?: SidebarBackdrop;
   readonly controls: WindowControlsController;
-  private linuxMaterial?: LinuxMaterialController;
   private readonly keyListeners = new Set<(event: KeyEvent) => void>();
   private readAppearance?: () => string | null;
   private loop?: FrameLoop;
@@ -34,6 +36,10 @@ export class GpuiWindow {
   constructor(
     options: WindowOptions,
     private readonly exit: (code: number) => void = (code) => process.exit(code),
+    materialOptions?: {
+      readonly initialLinuxMaterial?: SidebarMaterial;
+      readonly reduceTransparency?: boolean;
+    },
   ) {
     requireGpuiBun();
     this.renderer = createRenderer();
@@ -46,21 +52,32 @@ export class GpuiWindow {
       setWindowTitle: (title) => this.renderer.setWindowTitle(title),
       closeWindow: () => this.close(),
     });
+    const reduced = Boolean(materialOptions?.reduceTransparency);
     if (process.platform === 'darwin' && !isTerminal()) {
       const bridge = appKitBridge(koffi);
       installMacQuit(bridge, options.title, () => void this.close());
       const app = bridge.id(bridge.klass('NSApplication'), 'sharedApplication');
       this.readAppearance = () =>
-        bridge.string(bridge.id(bridge.id(app, 'effectiveAppearance'), 'name'));
-      if (options.windowBackground === 'transparent' && options.title) {
+        bridge.withAutoreleasePool(() =>
+          bridge.string(bridge.id(bridge.id(app, 'effectiveAppearance'), 'name')),
+        );
+      if (!reduced && options.windowBackground === 'transparent' && options.title) {
         this.sidebar = new AppKitSidebar(bridge, options.title);
       }
-    }
-    if (process.platform === 'linux' && !isTerminal()) {
-      this.linuxMaterial = createLinuxMaterialController(() => {
-        /* Compositor material updates are queried dynamically when rendering shell surfaces. */
+    } else if (process.platform === 'linux' && !isTerminal()) {
+      this.sidebar = new LinuxSidebarBackdrop({
+        initialMaterial: materialOptions?.initialLinuxMaterial,
+        reduceTransparency: reduced,
       });
-      void this.linuxMaterial.start();
+    } else if (process.platform === 'win32' && !isTerminal()) {
+      if (!reduced && options.windowBackground !== 'opaque' && options.title) {
+        this.sidebar = new WindowsSidebarBackdrop({
+          title: options.title,
+          version: release(),
+          reduceTransparency: reduced,
+          bridge: createNativeWindowsDwmBridge(koffi),
+        });
+      }
     }
   }
 
@@ -85,11 +102,7 @@ export class GpuiWindow {
     return name && !name.includes('Dark') ? 'light' : 'dark';
   }
 
-  mount(
-    node: ReactNode,
-    cleanup?: () => Promise<void>,
-    renderFn: typeof render = render,
-  ): void {
+  mount(node: ReactNode, cleanup?: () => Promise<void>, renderFn: typeof render = render): void {
     if (this.closing) return;
     this.cleanup = cleanup;
     renderFn(node, {
@@ -108,7 +121,6 @@ export class GpuiWindow {
       .then(async () => {
         try {
           this.loop?.stop();
-          this.linuxMaterial?.dispose();
           this.sidebar?.close();
           if (!windowClosed) resetRender();
         } catch (error) {

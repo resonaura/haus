@@ -1,91 +1,29 @@
 /* @jsxImportSource @gpuix/react */
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { EventPayload, KeyEvent, StyleDesc } from '@gpuix/react';
+import type {
+  EventPayload,
+  KeyEvent,
+  MotionEase,
+  MotionStyle,
+  MotionTargetStyle,
+  MotionTargetValue,
+} from '@gpuix/react';
 import { Button } from '@gpuix/react/button';
 import { Dialog, DialogBackdrop, DialogPopup, DialogPortal } from '@gpuix/react/dialog';
 import { colorToken } from '../ir/geometry.js';
-import { normalizeMaterialIR, UiNode, type UiInteractiveStateStyle, type UiStyleSpec } from '../ir/node.js';
-import { resolveColorToCss, type RenderContext } from '../renderers/contract.js';
+import type { UiMotionEase, UiMotionSpec, UiMotionTarget, UiMotionValue } from '../ir/motion.js';
+import { resolveColorToCss } from '../renderers/contract.js';
 import type { HostKeyEvent, UiContentHost } from '../renderers/host.js';
-import { ReactNativeRenderer } from '../renderers/react-native.js';
 import { GpuiSelect } from './select.js';
+import { GpuiGlassRim } from './glass-rim.js';
+import { GpuiPopover } from './popover.js';
+import { styleFor } from './style.js';
+import { buildGpuiSvgSource } from './vector.js';
 import { GpuiVideo } from './video.js';
+import { motion } from '@gpuix/react';
+import { renderProgressiveBlur } from './progressive-blur.js';
 import { GpuiRange } from './range.js';
-
-const renderer = new ReactNativeRenderer();
-
-function backgroundForMaterial(
-  style: UiStyleSpec | undefined,
-  context: RenderContext,
-): StyleDesc['background'] {
-  const material = normalizeMaterialIR(style?.material);
-  const first = material?.kind === 'gradient' ? material.stops[0] : undefined;
-  const last = material?.kind === 'gradient' ? material.stops.at(-1) : undefined;
-  if (
-    material?.kind === 'gradient' &&
-    material.gradientType === 'linear' &&
-    material.stops.length === 2 &&
-    first &&
-    last
-  ) {
-    return {
-      type: 'linear-gradient',
-      angle: material.angleDeg,
-      stops: [
-        { position: first.offset, color: resolveColorToCss(first.color, context.theme, false) },
-        { position: last.offset, color: resolveColorToCss(last.color, context.theme, false) },
-      ],
-    };
-  }
-  return undefined;
-}
-
-function overlayStyleDesc(
-  overlay: UiInteractiveStateStyle | undefined,
-  context: RenderContext,
-): StyleDesc | undefined {
-  if (!overlay) return undefined;
-  const overlaySpec: UiStyleSpec = {
-    ...(overlay.material ? { material: overlay.material } : {}),
-    ...(overlay.border ? { border: overlay.border } : {}),
-    ...(overlay.opacity !== undefined ? { opacity: overlay.opacity } : {}),
-    ...(overlay.transform ? { transform: overlay.transform } : {}),
-    ...(overlay.shadows ? { shadows: overlay.shadows } : {}),
-    ...(overlay.cursor ? { cursor: overlay.cursor } : {}),
-    ...(overlay.textColor ? { typography: { color: overlay.textColor } } : {}),
-  };
-  const rendered = renderer.render(new UiNode({ kind: 'box', style: overlaySpec }), context).style;
-  const background = backgroundForMaterial(overlaySpec, context);
-  const resolved: StyleDesc = {
-    ...rendered,
-    ...(background ? { background } : {}),
-    ...(overlay.cursor ? { cursor: overlay.cursor } : {}),
-  };
-  return resolved;
-}
-
-function styleFor(style: UiStyleSpec | undefined, context: RenderContext): StyleDesc {
-  const { layout } = style ?? {};
-  const background = backgroundForMaterial(style, context);
-  const hover = overlayStyleDesc(style?.states?.hover, context);
-  const active = overlayStyleDesc(style?.states?.pressed, context);
-  const focusVisible = overlayStyleDesc(style?.states?.focus, context);
-  return {
-    display: layout?.display === 'grid' || layout?.display === 'none' ? layout.display : 'flex',
-    flexDirection: 'column',
-    ...renderer.render(new UiNode({ kind: 'box', style }), context).style,
-    background,
-    gridTemplateColumns: typeof layout?.gridColumns === 'number' ? layout.gridColumns : undefined,
-    overflowX: layout?.overflowX,
-    overflowY: layout?.overflowY,
-    pointerEvents: style?.pointerEvents,
-    ...(style?.cursor ? { cursor: style.cursor } : {}),
-    ...(hover ? { hover } : {}),
-    ...(active ? { active } : {}),
-    ...(focusVisible ? { focusVisible } : {}),
-  };
-}
 
 function gpuiSecondaryHandler(onSecondaryPress?: () => void) {
   if (!onSecondaryPress) return undefined;
@@ -111,8 +49,56 @@ function gpuiKeyHandler(onKeyDown?: (event: HostKeyEvent) => void) {
   };
 }
 
+function gpuiMotionEase(ease: UiMotionEase | undefined): MotionEase | undefined {
+  if (!ease) return undefined;
+  return Array.isArray(ease) ? [ease[0], ease[1], ease[2], ease[3]] : (ease as MotionEase);
+}
+
+function gpuiMotionValue(value: UiMotionValue): MotionTargetValue {
+  return typeof value === 'number' ? value : [...value];
+}
+
+function gpuiMotionTarget(animate: UiMotionTarget): MotionTargetStyle {
+  const out: MotionTargetStyle = {};
+  if (animate.opacity !== undefined) out.opacity = gpuiMotionValue(animate.opacity);
+  if (animate.left !== undefined) out.left = gpuiMotionValue(animate.left);
+  if (animate.x !== undefined) out.x = gpuiMotionValue(animate.x);
+  if (animate.y !== undefined) out.y = gpuiMotionValue(animate.y);
+  if (animate.scale !== undefined) out.scale = gpuiMotionValue(animate.scale);
+  if (animate.scaleX !== undefined) out.scaleX = gpuiMotionValue(animate.scaleX);
+  if (animate.scaleY !== undefined) out.scaleY = gpuiMotionValue(animate.scaleY);
+  if (animate.rotate !== undefined) out.rotate = gpuiMotionValue(animate.rotate);
+  if (animate.blur !== undefined) out.blur = gpuiMotionValue(animate.blur);
+  return out;
+}
+
+function gpuiStaticMotionStyle(motion: UiMotionSpec): MotionStyle {
+  const end = (value: UiMotionTarget[keyof UiMotionTarget]): number | undefined => {
+    if (value === undefined) return undefined;
+    if (typeof value === 'number') return value;
+    for (let i = value.length - 1; i >= 0; i--) {
+      if (typeof value[i] === 'number') return value[i] as number;
+    }
+    return undefined;
+  };
+  return {
+    opacity: end(motion.animate.opacity),
+    left: end(motion.animate.left),
+    x: end(motion.animate.x),
+    y: end(motion.animate.y),
+    scale: end(motion.animate.scale),
+    scaleX: end(motion.animate.scaleX),
+    scaleY: end(motion.animate.scaleY),
+    rotate: end(motion.animate.rotate),
+    blur: end(motion.animate.blur),
+  };
+}
+
 export const GPUIX_CONTENT_HOST: UiContentHost = {
   nativeInteractiveStates: true,
+  renderProgressiveBlur,
+  renderGlassRim: (props, context) => <GpuiGlassRim props={props} context={context} />,
+  renderPopover: (props, context) => <GpuiPopover {...props} context={context} />,
   renderDialogFrame: ({ title, onClose, backdrop, panel, children }, context) => {
     const backdropStyle = styleFor(backdrop, context);
     return (
@@ -132,7 +118,14 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
             justifyContent: backdropStyle.justifyContent,
           }}
         >
-          <DialogBackdrop style={{ backgroundColor: backdropStyle.backgroundColor }} />
+          <DialogBackdrop
+            style={{
+              backgroundColor: backdropStyle.backgroundColor,
+              ...(backdropStyle.backdropBlur !== undefined
+                ? { backdropBlur: backdropStyle.backdropBlur }
+                : {}),
+            }}
+          />
           <DialogPopup testId="dialog-panel" aria-label={title} style={styleFor(panel, context)}>
             {children}
           </DialogPopup>
@@ -141,30 +134,60 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
     );
   },
   renderScrollView: (
-    { id, style, orientation, role, ariaLabel, children, hidden, isEnabled = true, onScroll },
+    {
+      id,
+      style,
+      orientation,
+      shadowSizePx,
+      overscrollBehavior,
+      scrollPolicy,
+      scrollId,
+      role,
+      ariaLabel,
+      children,
+      hidden,
+      isEnabled = true,
+      onScroll,
+    },
     context,
-  ) => (
-    <div
-      testId={id}
-      role={role}
-      aria-label={ariaLabel}
-      onScrollChange={onScroll}
-      style={{
-        ...styleFor(style, context),
-        display: hidden ? 'none' : 'flex',
-        overflowX: orientation === 'horizontal' && isEnabled ? 'scroll' : undefined,
-        overflowY: orientation !== 'horizontal' && isEnabled ? 'scroll' : undefined,
-        flexShrink: 1,
-      }}
-    >
-      {children}
-    </div>
-  ),
+  ) => {
+    const scrollShadow =
+      shadowSizePx !== undefined && shadowSizePx > 0
+        ? {
+            enabled: true,
+            size: shadowSizePx,
+            edges: (orientation === 'horizontal' ? ['left', 'right'] : ['top', 'bottom']) as Array<
+              'top' | 'bottom' | 'left' | 'right'
+            >,
+          }
+        : undefined;
+    return (
+      <div
+        testId={id}
+        role={role}
+        aria-label={ariaLabel}
+        onScrollChange={onScroll}
+        style={{
+          ...styleFor(style, context),
+          display: hidden ? 'none' : 'flex',
+          overflowX: orientation === 'horizontal' && isEnabled ? 'scroll' : undefined,
+          overflowY: orientation !== 'horizontal' && isEnabled ? 'scroll' : undefined,
+          overscrollBehavior: overscrollBehavior ?? 'contain',
+          scrollPolicy: scrollPolicy ?? (orientation === 'horizontal' ? 'horizontal' : 'vertical'),
+          scrollId: scrollId ?? id,
+          ...(scrollShadow ? { scrollShadow } : {}),
+          flexShrink: 1,
+        }}
+      >
+        {children}
+      </div>
+    );
+  },
   renderRangeInput: (props) => <GpuiRange {...props} />,
   renderSelect: (props, context) => (
     <GpuiSelect props={props} style={styleFor(props.style, context)} context={context} />
   ),
-  renderImage: ({ id, src, alt, ariaHidden, objectFit, style }, context) => (
+  renderImage: ({ id, src, alt, ariaHidden, objectFit, transitionMs, style }, context) => (
     <img
       testId={id}
       src={src}
@@ -173,38 +196,118 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       aria-label={ariaHidden ? undefined : alt}
       style={styleFor(style, context)}
       objectFit={objectFit ?? 'fill'}
+      transitionMs={transitionMs}
     />
   ),
   renderVideo: (props, context) => (
     <GpuiVideo video={props} style={styleFor(props.style, context)} />
   ),
   renderBox: (
-    { children, style, id, ariaLabel, ariaLevel, role, onPress, onSecondaryPress, onKeyDown },
+    {
+      children,
+      style,
+      motion: boxMotion,
+      id,
+      ariaLabel,
+      ariaLevel,
+      role,
+      onPress,
+      onSecondaryPress,
+      onKeyDown,
+      onPointerEnter,
+      onPointerLeave,
+    },
     context,
-  ) => (
-    <div
-      testId={id}
-      aria-label={ariaLabel}
-      aria-level={ariaLevel}
-      role={role ?? (ariaLabel ? 'group' : undefined)}
-      onClick={onPress}
-      onAuxClick={gpuiSecondaryHandler(onSecondaryPress)}
-      onKeyDown={gpuiKeyHandler(onKeyDown)}
-      style={styleFor(style, context)}
-    >
-      {children}
-    </div>
-  ),
+  ) => {
+    const resolvedStyle = styleFor(style, context);
+    const props = {
+      testId: id,
+      'aria-label': ariaLabel,
+      'aria-level': ariaLevel,
+      role: role ?? (ariaLabel ? 'group' : undefined),
+      onClick: onPress,
+      onAuxClick: gpuiSecondaryHandler(onSecondaryPress),
+      onKeyDown: gpuiKeyHandler(onKeyDown),
+      onMouseEnter: onPointerEnter,
+      onMouseLeave: onPointerLeave,
+      style: boxMotion
+        ? {
+            ...resolvedStyle,
+            ...(boxMotion.originX !== undefined || boxMotion.originY !== undefined
+              ? { transformOrigin: { x: boxMotion.originX ?? 0.5, y: boxMotion.originY ?? 0.5 } }
+              : {}),
+          }
+        : resolvedStyle,
+      children,
+    };
+    if (boxMotion) {
+      if (context.viewport.reducedMotion) {
+        const staticMotion = gpuiStaticMotionStyle(boxMotion);
+        return (
+          <div
+            {...props}
+            style={{
+              ...props.style,
+              ...(staticMotion.opacity !== undefined ? { opacity: staticMotion.opacity } : {}),
+              ...(staticMotion.left !== undefined ? { left: staticMotion.left } : {}),
+              ...(staticMotion.blur !== undefined ? { blur: staticMotion.blur } : {}),
+              ...(staticMotion.scale !== undefined ||
+              staticMotion.x !== undefined ||
+              staticMotion.y !== undefined ||
+              staticMotion.rotate !== undefined
+                ? {
+                    transform: {
+                      ...props.style.transform,
+                      ...(staticMotion.x !== undefined ? { translateX: staticMotion.x } : {}),
+                      ...(staticMotion.y !== undefined ? { translateY: staticMotion.y } : {}),
+                      ...(staticMotion.scale !== undefined ? { scale: staticMotion.scale } : {}),
+                      ...(staticMotion.rotate !== undefined ? { rotate: staticMotion.rotate } : {}),
+                    },
+                  }
+                : {}),
+            }}
+          />
+        );
+      }
+      return (
+        <motion.div
+          {...props}
+          initial={boxMotion.initial === undefined ? false : boxMotion.initial}
+          animate={gpuiMotionTarget(boxMotion.animate)}
+          transition={{
+            duration: boxMotion.durationMs / 1000,
+            ...(boxMotion.delayMs !== undefined ? { delay: boxMotion.delayMs / 1000 } : {}),
+            ...(boxMotion.ease ? { ease: gpuiMotionEase(boxMotion.ease) } : {}),
+            ...(boxMotion.times ? { times: [...boxMotion.times] } : {}),
+            ...(boxMotion.repeat !== undefined ? { repeat: boxMotion.repeat } : {}),
+            ...(boxMotion.repeatType ? { repeatType: boxMotion.repeatType } : {}),
+          }}
+        />
+      );
+    }
+    if (style?.transitionMs && style.opacity !== undefined && !context.viewport.reducedMotion) {
+      return (
+        <motion.div
+          {...props}
+          initial={false}
+          animate={{ opacity: style.opacity }}
+          transition={{ duration: style.transitionMs / 1000, ease: [0.22, 1, 0.36, 1] }}
+        />
+      );
+    }
+    return <div {...props} />;
+  },
   renderDivider: ({ id, style }, context) => <div testId={id} style={styleFor(style, context)} />,
-  renderText: ({ children, style, role, ariaLabel }, context) => (
+  renderText: ({ id, children, style, role, ariaLabel }, context) => (
     <text
+      testId={id}
       role={role}
       aria-label={ariaLabel}
       style={{
         color: resolveColorToCss(colorToken('textPrimary'), context.theme, false),
         ...styleFor(style, context),
-        textOverflow: style?.typography?.maxLines ? 'ellipsis' : undefined,
-        lineClamp: style?.typography?.maxLines,
+        textOverflow: style?.typography?.maxLines === 1 ? 'ellipsis' : undefined,
+        lineClamp: style?.typography?.maxLines === 1 ? 1 : undefined,
       }}
     >
       {children}
@@ -247,18 +350,20 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       style={styleFor(style, context)}
     />
   ),
-  renderTextArea: ({ id, value, style, ariaLabel, placeholder, rows, readOnly, disabled, onChange }, context) => (
+  renderTextArea: (
+    { id, value, style, ariaLabel, placeholder, rows, readOnly, disabled, onChange },
+    context,
+  ) => (
     <textarea
       testId={id}
       aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
       minRows={rows ?? 4}
+      maxRows={rows ?? 8}
       readOnly={disabled || readOnly}
       onChange={
-        onChange && !disabled
-          ? (event: EventPayload) => onChange(event.value ?? '')
-          : undefined
+        onChange && !disabled ? (event: EventPayload) => onChange(event.value ?? '') : undefined
       }
       style={styleFor(style, context)}
     />
@@ -285,9 +390,15 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
     context,
   ) => {
     const resolved = styleFor(style, context);
-    const nativeHover = disabled ? undefined : (resolved.hover ?? (style ? undefined : { backgroundColor: '#32333e' }));
+    const nativeHover = disabled
+      ? undefined
+      : (resolved.hover ?? (style ? undefined : { backgroundColor: '#32333e' }));
     const nativeActive = disabled ? undefined : resolved.active;
-    const nativeFocusVisible = { outlineColor: '#9bb6ff', outlineWidth: 2, ...resolved.focusVisible };
+    const nativeFocusVisible = {
+      outlineColor: '#9bb6ff',
+      outlineWidth: 2,
+      ...resolved.focusVisible,
+    };
     return (
       <Button
         testId={id}
@@ -316,20 +427,26 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       </Button>
     );
   },
-  renderVector: ({ id, rawSvgMarkup, width, height, stroke, ariaHidden, ariaLabel }, context) => (
-    <svg
-      testId={id}
-      source={rawSvgMarkup?.replaceAll('="currentColor"', '="#000"')}
-      role={ariaHidden ? 'presentation' : 'img'}
-      aria-label={ariaLabel}
-      style={{
-        width: typeof width === 'number' || width === '100%' ? width : undefined,
-        height: typeof height === 'number' ? height : undefined,
-        color:
-          stroke && stroke !== 'currentColor'
-            ? stroke
-            : resolveColorToCss(colorToken('textPrimary'), context.theme, false),
-      }}
-    />
-  ),
+  renderVector: (props, context) => {
+    const { id, width, height, stroke, ariaHidden, ariaLabel, style } = props;
+    const resolved = style ? styleFor(style, context) : undefined;
+    return (
+      <svg
+        testId={id}
+        source={buildGpuiSvgSource(props)}
+        role={ariaHidden ? 'presentation' : 'img'}
+        aria-label={ariaHidden ? undefined : ariaLabel}
+        style={{
+          ...resolved,
+          width: typeof width === 'number' || width === '100%' ? width : resolved?.width,
+          height: typeof height === 'number' ? height : resolved?.height,
+          color:
+            stroke && stroke !== 'currentColor'
+              ? stroke
+              : (resolved?.color ??
+                resolveColorToCss(colorToken('textPrimary'), context.theme, false)),
+        }}
+      />
+    );
+  },
 };

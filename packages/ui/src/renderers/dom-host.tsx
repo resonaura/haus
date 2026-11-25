@@ -16,8 +16,11 @@ import type {
   HostDividerProps,
   HostFileInputProps,
   HostFormProps,
+  HostGlassRimProps,
   HostHeadingProps,
   HostImageProps,
+  HostPopoverProps,
+  HostProgressiveBlurProps,
   HostLinkProps,
   HostPressableProps,
   HostRangeInputProps,
@@ -38,7 +41,10 @@ import {
   TEXT_SEMANTIC_TAG,
 } from './dom-helpers.js';
 import { DomCheckbox, DomFileInput, DomSelect, DomTextArea, DomTextInput } from './dom-inputs.js';
+import { DomGlassRim } from './dom-glass-rim.js';
 import { DomCanvas, DomVector, DomVideo } from './dom-media.js';
+import { DomMotionBox } from './dom-motion.js';
+import { DomPopover } from './dom-popover.js';
 import { DomScrollView } from './dom-scroll.js';
 import { compileStyleToReactCss, renderSvgShaderDefs } from './react-dom.js';
 
@@ -48,10 +54,30 @@ import { compileStyleToReactCss, renderSvgShaderDefs } from './react-dom.js';
  */
 export class DomHostAdapter implements UiHostAdapter {
   readonly target = 'react-dom' as const;
+  private readonly escapeStack: Array<() => void> = [];
+
+  private readonly handleEscapeKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    const top = this.escapeStack[this.escapeStack.length - 1];
+    if (!top) return;
+    event.preventDefault();
+    top();
+  };
 
   renderBox(props: HostBoxProps, context: RenderContext): React.ReactElement {
     const { style, shaderId } = compileStyleToReactCss(props.style ?? {}, context);
     const mergedStyle = mergeSurfaceStyle(style, props.surfaceTokens);
+    if (props.motion) {
+      return (
+        <DomMotionBox
+          props={props}
+          motion={props.motion}
+          mergedStyle={mergedStyle}
+          shaderId={shaderId}
+          reducedMotion={context.viewport.reducedMotion}
+        />
+      );
+    }
     const tag = BOX_SEMANTIC_TAG[props.semantic ?? 'box'];
     const elementProps = buildDomBoxProps(props, mergedStyle, shaderId);
     return tag === 'col'
@@ -248,6 +274,36 @@ export class DomHostAdapter implements UiHostAdapter {
     );
   }
 
+  renderProgressiveBlur(
+    { maxRadius, start, style }: HostProgressiveBlurProps,
+    context: RenderContext,
+  ) {
+    const { style: css } = compileStyleToReactCss(style, context);
+    return (
+      <span aria-hidden="true" style={{ ...css, pointerEvents: 'none', overflow: 'hidden' }}>
+        {[0.25, 0.53, 1].map((amount, index) => {
+          const begin = start + (1 - start) * index * 0.27;
+          const end = start + ((1 - start) * (index + 1)) / 3;
+          const mask = `linear-gradient(transparent ${begin * 100}%, black ${end * 100}%)`;
+          return (
+            <span
+              key={amount}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 'inherit',
+                backdropFilter: `blur(${maxRadius * amount}px)`,
+                WebkitBackdropFilter: `blur(${maxRadius * amount}px)`,
+                maskImage: mask,
+                WebkitMaskImage: mask,
+              }}
+            />
+          );
+        })}
+      </span>
+    );
+  }
+
   renderVector(props: HostVectorProps, context: RenderContext): React.ReactElement {
     return <DomVector props={props} context={context} />;
   }
@@ -374,13 +430,30 @@ export class DomHostAdapter implements UiHostAdapter {
     return renderSvgShaderDefs(registry);
   }
 
+  renderPopover(props: HostPopoverProps, context: RenderContext): React.ReactElement {
+    return <DomPopover props={props} context={context} />;
+  }
+
+  renderGlassRim(props: HostGlassRimProps, context: RenderContext): React.ReactElement | null {
+    return <DomGlassRim props={props} context={context} />;
+  }
+
   subscribeEscape(onEscape: () => void): () => void {
     if (typeof window === 'undefined') return () => undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onEscape();
+    const entry = () => {
+      onEscape();
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    if (this.escapeStack.length === 0) {
+      window.addEventListener('keydown', this.handleEscapeKeyDown);
+    }
+    this.escapeStack.push(entry);
+    return () => {
+      const index = this.escapeStack.lastIndexOf(entry);
+      if (index !== -1) this.escapeStack.splice(index, 1);
+      if (this.escapeStack.length === 0) {
+        window.removeEventListener('keydown', this.handleEscapeKeyDown);
+      }
+    };
   }
 }
 

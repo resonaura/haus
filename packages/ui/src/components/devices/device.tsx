@@ -1,29 +1,22 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { ReactNode } from 'react';
+import type { LightEffectOption } from '@haus/core/device';
 import type { DeviceCategory } from '../../categories/index.js';
-import {
-  colorToken,
-  corners,
-  insets,
-  mixColor,
-  pct,
-  px,
-  type ColorValue,
-} from '../../ir/geometry.js';
-import { GradientMaterial, SolidMaterial } from '../../ir/materials.js';
+import { colorToken, corners, insets, px } from '../../ir/geometry.js';
+import { SolidMaterial } from '../../ir/materials.js';
 import { mergeStyleSpecs, type UiStyleSpec } from '../../ir/node.js';
 import { useHausUi } from '../../primitives/context.js';
+import { Box, Pressable, Text, type PressableProps } from '../../primitives/elements.js';
 import { resolveColorToCss } from '../../renderers/contract.js';
-import {
-  Box,
-  Pressable,
-  Text,
-  type BoxProps,
-  type PressableProps,
-} from '../../primitives/elements.js';
 import { DEVICE_ICONS, type UiIconName } from '../icons.js';
 import { UiIcon } from '../icon.js';
+import { DesktopDeviceTile, type DesktopTileRenderProps } from './tile-desktop.js';
+
+export interface DeviceTileBatteryData {
+  readonly level?: number;
+  readonly charging?: boolean;
+  readonly powerConnected?: boolean;
+}
 
 /** Presentation data only. Apps resolve provider state and own device actions. */
 export interface DeviceTileData {
@@ -35,25 +28,7 @@ export interface DeviceTileData {
   readonly favorite?: boolean;
 }
 
-export interface DeviceTileProps extends DeviceTileData {
-  readonly compact?: boolean;
-  readonly desktop?: boolean;
-  readonly accent?: ColorValue;
-  readonly frame?: BoxProps;
-  readonly subtitle?: ReactNode;
-  readonly stateKey?: string;
-  readonly icon?: ReactNode;
-  readonly iconName?: UiIconName;
-  readonly indicators?: ReactNode;
-  readonly actions?: ReactNode;
-  readonly details?: ReactNode;
-  readonly quickLabel?: string;
-  readonly quickDisabled?: boolean;
-  readonly onQuick?: () => void;
-  readonly onOpen?: () => void;
-  readonly opened?: boolean;
-  readonly selected?: boolean;
-}
+export interface DeviceTileProps extends DesktopTileRenderProps {}
 
 const compactStyles = {
   frame: {
@@ -83,65 +58,34 @@ const compactStyles = {
   state: { typography: { size: 14, color: colorToken('textSecondary'), maxLines: 2 } },
 } satisfies Record<string, UiStyleSpec>;
 
-const desktopStyles = {
-  frame: {
-    layout: {
-      display: 'flex',
-      direction: 'column',
-      minHeight: px(126),
-      padding: insets(13, 14),
-      position: 'relative',
-    },
-    material: new SolidMaterial(colorToken('card')),
-    border: { width: 1, color: colorToken('borderSubtle') },
-    corners: corners(26),
-  },
-  top: {
-    layout: {
-      direction: 'row',
-      alignItems: 'center',
-      justifyContent: 'between',
-      margin: insets(0, 0, 11, 0),
-    },
-  },
-  icon: {
-    layout: { width: px(32), height: px(32), alignItems: 'center', justifyContent: 'center' },
-    corners: corners(16),
-  },
-  indicators: { layout: { direction: 'row', alignItems: 'center', gap: px(8) } },
-  body: { layout: { direction: 'column', width: pct(100), alignItems: 'start', gap: px(2) } },
-  subtitle: { typography: { size: 10, color: colorToken('textMuted'), maxLines: 1 } },
-  name: { typography: { size: 13, weight: 600, color: colorToken('textPrimary'), maxLines: 1 } },
-  state: { typography: { size: 11, color: colorToken('textMuted'), maxLines: 1 } },
-} satisfies Record<string, UiStyleSpec>;
-
-export function DeviceTile({
-  name,
-  state,
-  available,
-  category,
-  categoryLabel,
-  favorite,
-  compact = false,
-  desktop = false,
-  accent,
-  frame,
-  subtitle = categoryLabel,
-  stateKey,
-  icon,
-  iconName = DEVICE_ICONS[category ?? 'other'],
-  indicators,
-  actions,
-  details,
-  quickLabel = `Quick control ${name}`,
-  quickDisabled = !available,
-  onQuick,
-  onOpen,
-  opened,
-  selected,
-}: DeviceTileProps) {
+export function DeviceTile(props: DeviceTileProps) {
+  if (props.desktop) return <DesktopDeviceTile {...props} />;
+  const {
+    name,
+    state,
+    available,
+    category,
+    categoryLabel,
+    favorite,
+    compact = false,
+    accent,
+    frame,
+    subtitle = categoryLabel,
+    stateKey,
+    icon,
+    iconName = DEVICE_ICONS[category ?? 'other'],
+    indicators,
+    actions,
+    details,
+    quickLabel = `Quick control ${name}`,
+    quickDisabled = !available,
+    onQuick,
+    onOpen,
+    opened,
+    selected,
+  } = props;
   const { theme } = useHausUi();
-  const styles = desktop ? desktopStyles : compact ? compactStyles : undefined;
+  const styles = compact ? compactStyles : undefined;
   const iconColor = resolveColorToCss(
     accent ?? colorToken(available ? 'textPrimary' : 'textMuted'),
     theme,
@@ -151,19 +95,7 @@ export function DeviceTile({
     <UiIcon name={key} size={size} color={iconColor} />
   );
   const indicatorsContent = indicators ?? (favorite ? tileIcon('heart', 12) : undefined);
-  const activeSurface: UiStyleSpec | undefined =
-    desktop && accent
-      ? {
-          material: new GradientMaterial([
-            { offset: 0, color: mixColor(colorToken('card'), accent, 0.22) },
-            { offset: 1, color: colorToken('card') },
-          ]),
-          border: { width: 1, color: mixColor(colorToken('border'), accent, 0.35) },
-        }
-      : undefined;
-  const frameStyle = styles
-    ? mergeStyleSpecs(styles.frame, activeSurface, frame?.style)
-    : frame?.style;
+  const frameStyle = styles ? mergeStyleSpecs(styles.frame, frame?.style) : frame?.style;
   const tile = (
     <Box semantic="article" {...frame} style={frameStyle}>
       <Box className="tile-top" style={styles?.top}>
@@ -175,7 +107,7 @@ export function DeviceTile({
           onActivate={onQuick}
           style={styles?.icon}
         >
-          {icon ?? tileIcon(iconName, desktop ? 20 : 21)}
+          {icon ?? tileIcon(iconName, 21)}
         </TileAction>
         {styles ? (
           indicatorsContent && (
@@ -230,3 +162,5 @@ function TileAction(props: PressableProps) {
     </Box>
   );
 }
+
+export type { LightEffectOption };

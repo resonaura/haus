@@ -253,7 +253,7 @@
   padding-block: 17px;
 }
 
-:root .accessory-icon {
+:root .accessory-tile:not([data-haus-device-tile='shared']) .accessory-icon {
   transition:
     color 360ms ease,
     background-color 360ms ease,
@@ -261,14 +261,14 @@
     transform 160ms ease,
     --device-color 280ms ease;
 }
-:root .accessory-icon:active {
+:root .accessory-tile:not([data-haus-device-tile='shared']) .accessory-icon:active {
   transform: scale(0.92);
 }
 .tile-pending-indicator {
   display: inline-flex;
   color: var(--muted-ink);
 }
-.device-state-text {
+.accessory-tile:not([data-haus-device-tile='shared']) .device-state-text {
   animation: state-arrive 320ms ease-out;
 }
 .mood-card[data-pending] {

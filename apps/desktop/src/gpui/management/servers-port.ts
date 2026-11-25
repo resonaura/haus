@@ -158,15 +158,23 @@ export function normalizeHomeServer(server: HomeServer): ServerSummaryRecord {
   const hasNvr =
     server.kind === 'nvr' ||
     Boolean(server.roles?.some((r) => r === 'storage' || r === 'stream')) ||
-    Boolean(server.streams || server.playback || server.analysis || server.backupCopies !== undefined);
+    Boolean(
+      server.streams || server.playback || server.analysis || server.backupCopies !== undefined,
+    );
   const nvr: ServerNvrSummary | undefined = hasNvr
     ? {
         hasNvr: true,
         storageAssigned: Boolean(server.roles?.includes('storage')),
         streamingAssigned: Boolean(server.roles?.includes('stream')),
-        ...(server.streams ? { activeStreams: `${server.streams.active} / ${server.streams.max}` } : {}),
-        ...(server.playback ? { playbackPrep: `${server.playback.active} / ${server.playback.max}` } : {}),
-        ...(server.analysis ? { activityAssist: `${server.analysis.active} / ${server.analysis.max}` } : {}),
+        ...(server.streams
+          ? { activeStreams: `${server.streams.active} / ${server.streams.max}` }
+          : {}),
+        ...(server.playback
+          ? { playbackPrep: `${server.playback.active} / ${server.playback.max}` }
+          : {}),
+        ...(server.analysis
+          ? { activityAssist: `${server.analysis.active} / ${server.analysis.max}` }
+          : {}),
         ...(server.backupCopies !== undefined ? { backupCopies: server.backupCopies } : {}),
         usedBytes: server.storage?.usedBytes ?? null,
         limitBytes: server.settings?.storageLimitBytes ?? server.storage?.limitBytes ?? null,
@@ -178,6 +186,10 @@ export function normalizeHomeServer(server: HomeServer): ServerSummaryRecord {
     ...(server.managedId ? { managedId: server.managedId } : {}),
     name: server.name,
     kind: server.kind,
+    ...(host?.hostname ? { hostname: host.hostname } : {}),
+    ...(host?.platform ? { platform: host.platform } : {}),
+    ...(host?.arch ? { architecture: host.arch } : {}),
+    ...(host?.scope ? { reportingScope: host.scope } : {}),
     online: server.online,
     enabled: server.enabled !== false,
     local: server.local,
@@ -192,8 +204,14 @@ export function normalizeHomeServer(server: HomeServer): ServerSummaryRecord {
       : 'Not available',
     memoryUsedBytes: host?.memory?.usedBytes ?? null,
     memoryTotalBytes: host?.memory?.totalBytes ?? null,
+    memoryInstalledBytes: host?.memory?.installedBytes ?? host?.memory?.totalBytes ?? null,
+    swapSupported: host?.swap?.supported ?? false,
+    swapUsedBytes: host?.swap?.usedBytes ?? null,
+    swapTotalBytes: host?.swap?.totalBytes ?? null,
     uptimeSeconds: host?.uptimeSeconds ?? null,
-    ...(host?.battery ? { batteryLevel: host.battery.level, batteryCharging: Boolean(host.battery.charging) } : {}),
+    ...(host?.battery
+      ? { batteryLevel: host.battery.level, batteryCharging: Boolean(host.battery.charging) }
+      : {}),
     disks,
     services,
     ...(nvr ? { nvr } : {}),
@@ -232,7 +250,10 @@ export function createGpuiServersPort(getHelper: () => HausHelper | null): GpuiS
     async loadServers(): Promise<ServerSummaryRecord[]> {
       const helper = getHelper();
       if (!helper) throw new Error('Connect to a Haus Hub to view servers.');
-      const payload = (await helper.request({ method: 'GET', path: '/api/servers' })) as ServersStatus;
+      const payload = (await helper.request({
+        method: 'GET',
+        path: '/api/servers',
+      })) as ServersStatus;
       return Array.isArray(payload?.servers) ? payload.servers.map(normalizeHomeServer) : [];
     },
     async setServerEnabled(serverId: string, enabled: boolean): Promise<void> {
@@ -255,15 +276,19 @@ export function createGpuiRuntimeSystem(options: {
 }) {
   const terminal = createGpuiTerminalPort(options.getHubAccess);
   const servers = createGpuiServersPort(options.getHelper);
+  const ports: GpuiSystemPorts = {
+    requestRpc: <T = unknown>(message: Record<string, unknown>) =>
+      options.getRequestRpc()<T>(message),
+    get sessionKind() {
+      return options.getSessionKind();
+    },
+    servers,
+    terminal,
+  };
   return {
     terminal,
     snapshotPorts(): GpuiSystemPorts {
-      return {
-        requestRpc: options.getRequestRpc(),
-        sessionKind: options.getSessionKind(),
-        servers,
-        terminal,
-      };
+      return ports;
     },
   };
 }

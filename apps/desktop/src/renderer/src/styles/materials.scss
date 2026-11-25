@@ -36,11 +36,11 @@
 }
 
 /* Content remains quiet; curvature is shared across rooms, devices and management. */
-:root .accessory-tile:not(.is-active),
+:root .accessory-tile:not([data-haus-device-tile='shared']):not(.is-active),
 :root
   :is(
-    .camera-card,
-    .accessory-tile,
+    .camera-card:not([data-haus-camera-tile='shared']),
+    .accessory-tile:not([data-haus-device-tile='shared']),
     .room-overview-card,
     .mood-card,
     .integration-card,
@@ -133,8 +133,8 @@
       input,
       select,
       textarea,
-      .camera-card,
-      .accessory-tile,
+      .camera-card:not([data-haus-camera-tile='shared']),
+      .accessory-tile:not([data-haus-device-tile='shared']),
       .room-overview-card,
       .mood-card,
       .integration-card,

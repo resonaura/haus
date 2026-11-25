@@ -6,12 +6,15 @@
  */
 
 import * as React from 'react';
+import { insets, pct, px } from '../ir/geometry.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import type { HostDataAttrs, HostPointerEvent, HostSurfaceTokens } from '../renderers/host.js';
-import { dialogStyles } from '../styles/overlays.js';
+import { dialogStyles, type DialogStyleProps } from '../styles/overlays.js';
 import { composeStyles } from '../styles/sheet.js';
 import { useHausStyles, useHausUi } from './context.js';
 import { Box, Heading, Pressable, Row } from './elements.js';
+
+type ModalContainerSize = 'xs' | 'sm' | 'md' | 'lg' | 'full' | 'cover';
 
 interface ModalOverlayCtx {
   readonly onClose: () => void;
@@ -19,6 +22,14 @@ interface ModalOverlayCtx {
 }
 
 const ModalOverlayContext = React.createContext<ModalOverlayCtx | null>(null);
+const ModalContainerContext = React.createContext<ModalContainerSize>('md');
+
+function resolveDialogSize(size: ModalContainerSize): DialogStyleProps['size'] {
+  if (size === 'cover' || size === 'full') return 'cover';
+  if (size === 'xs' || size === 'sm') return 'sm';
+  if (size === 'lg') return 'lg';
+  return 'md';
+}
 
 export interface HausModalRootProps {
   readonly isOpen?: boolean;
@@ -129,28 +140,53 @@ function ModalBackdrop({
 }
 
 function ModalContainer({
+  placement = 'center',
+  size = 'md',
   className,
   style,
   children,
 }: {
   readonly placement?: 'center' | 'top' | 'bottom' | 'auto';
   readonly scroll?: 'inside' | 'outside';
-  readonly size?: 'xs' | 'sm' | 'md' | 'lg' | 'full' | 'cover';
+  readonly size?: ModalContainerSize;
   readonly className?: string;
   readonly style?: UiStyleSpec;
   readonly children?: React.ReactNode;
 }): React.ReactElement {
   const modalCtx = React.useContext(ModalOverlayContext);
+  const isFullViewport = size === 'cover' || size === 'full';
+  const alignItems =
+    size === 'cover'
+      ? 'stretch'
+      : placement === 'top'
+        ? 'start'
+        : placement === 'bottom'
+          ? 'end'
+          : 'center';
+
   return (
     <Box
       className={['modal__container', className].filter(Boolean).join(' ')}
       style={composeStyles(
         {
-          layout: {
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          },
+          layout: isFullViewport
+            ? {
+                position: 'fixed',
+                inset: insets(0),
+                width: pct(100),
+                height: pct(100),
+                display: 'flex',
+                alignItems,
+                justifyContent: 'center',
+                ...(className ? {} : { padding: insets(size === 'cover' ? 12 : 0) }),
+              }
+            : {
+                width: pct(100),
+                height: pct(100),
+                display: 'flex',
+                alignItems,
+                justifyContent: 'center',
+              },
         },
         style,
       )}
@@ -159,12 +195,13 @@ function ModalContainer({
         if (modalCtx?.dismissableRef.current !== false) modalCtx?.onClose();
       }}
     >
-      {children}
+      <ModalContainerContext.Provider value={size}>{children}</ModalContainerContext.Provider>
     </Box>
   );
 }
 
 function ModalDialog({
+  size,
   className,
   style,
   surfaceTokens,
@@ -176,6 +213,7 @@ function ModalDialog({
   'data-video-fill': dataVideoFill,
   children,
 }: {
+  readonly size?: DialogStyleProps['size'];
   readonly className?: string;
   readonly style?: UiStyleSpec;
   readonly surfaceTokens?: HostSurfaceTokens;
@@ -187,7 +225,11 @@ function ModalDialog({
   readonly 'data-video-fill'?: boolean | string;
   readonly children?: React.ReactNode;
 }): React.ReactElement {
-  const styles = useHausStyles(dialogStyles, { size: 'md', backdrop: 'blur' });
+  const containerSize = React.useContext(ModalContainerContext);
+  const styles = useHausStyles(dialogStyles, {
+    size: size ?? resolveDialogSize(containerSize),
+    backdrop: 'blur',
+  });
   const dataAttrs: HostDataAttrs = {
     'data-controller-kind': dataControllerKind,
     'data-active': dataActive,
@@ -223,7 +265,12 @@ function ModalCloseTrigger({
   readonly 'aria-label'?: string;
 }): React.ReactElement {
   const modalCtx = React.useContext(ModalOverlayContext);
-  const styles = useHausStyles(dialogStyles, { size: 'md', backdrop: 'blur' });
+  const containerSize = React.useContext(ModalContainerContext);
+  const isCover = containerSize === 'cover';
+  const styles = useHausStyles(dialogStyles, {
+    size: resolveDialogSize(containerSize),
+    backdrop: 'blur',
+  });
   return (
     <Pressable
       ariaLabel={ariaLabel ?? ariaLabelAttr ?? 'Close dialog'}
@@ -232,7 +279,16 @@ function ModalCloseTrigger({
       style={composeStyles(styles.closeButton, {
         layout: {
           position: 'absolute',
-          inset: { top: { unit: 'px', value: 16 }, right: { unit: 'px', value: 16 } },
+          zIndex: 12,
+          ...(isCover
+            ? {
+                width: px(38),
+                height: px(38),
+                inset: { top: px(22), right: px(24) },
+              }
+            : {
+                inset: { top: px(16), right: px(16) },
+              }),
         },
       })}
       onPress={() => modalCtx?.onClose()}

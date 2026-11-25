@@ -83,11 +83,15 @@ export function resolveColorToSrgb(
       const first = resolveColorToSrgb(color.base, theme);
       const second = resolveColorToSrgb(color.target, theme);
       const t = Math.max(0, Math.min(1, color.ratio));
+      const a1 = first[3] * (1 - t);
+      const a2 = second[3] * t;
+      const outA = a1 + a2;
+      if (outA <= 1e-6) return [0, 0, 0, 0];
       return [
-        Math.round(first[0] * (1 - t) + second[0] * t),
-        Math.round(first[1] * (1 - t) + second[1] * t),
-        Math.round(first[2] * (1 - t) + second[2] * t),
-        Number((first[3] * (1 - t) + second[3] * t).toFixed(4)),
+        Math.round(Math.max(0, Math.min(255, (first[0] * a1 + second[0] * a2) / outA))),
+        Math.round(Math.max(0, Math.min(255, (first[1] * a1 + second[1] * a2) / outA))),
+        Math.round(Math.max(0, Math.min(255, (first[2] * a1 + second[2] * a2) / outA))),
+        Number(Math.min(1, Math.max(0, outA)).toFixed(4)),
       ];
     }
     case 'transparent':

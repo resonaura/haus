@@ -1,26 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useWindowSize, type KeyEvent } from '@gpuix/react';
-import {
-  mergeRoomIcons,
-  type AlertsTransport,
-  type EditableKind,
-  type ManagementPort,
-} from '@haus/core/transport';
-import type { HassEntity, Snapshot } from '@haus/ha/types';
-import type { RegistryController } from '@haus/ha/ui/registry';
-import type { Preferences } from '@haus/ha/view/preferences';
-import { DesktopTopbar } from '@haus/ui/components';
+import { useEffect, useMemo, useState } from 'react';
+import { useWindowSize } from '@gpuix/react';
+import { mergeRoomIcons, type EditableKind } from '@haus/core/transport';
+import type { HassEntity } from '@haus/ha/types';
+import { DesktopTopbar, type SidebarContextualNav } from '@haus/ui/components';
 import { colorToken, insets, pct, px, SolidMaterial } from '@haus/ui/ir';
 import { Box, HausUiProvider, Stack, Text } from '@haus/ui/primitives';
 import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
-import type { SidebarBackdrop } from '../../platform/sidebar.js';
-import type { GpuiCameraStreams } from '../camera/stream.js';
-import type { GpuiCameraApi } from '../camera/transport.js';
-import type { GpuiPlatform } from '../platform.js';
 import { DesktopShell, type HomeRoute } from '../shell.js';
-import { CameraPreviews, DeviceCards, SceneCards, type DeviceControl } from './cards.js';
+import { CameraPreviews, DeviceCards, SceneCards } from './cards.js';
+import { WorkspaceCategoryRail, WorkspacePageHeader } from './header.js';
 import { useGpuiAlerts } from './hub-alerts.js';
 import {
   buildWorkspaceSpotlightItems,
@@ -31,53 +21,10 @@ import {
 } from './menus.js';
 import { navigation, settingsLink, WORKSPACE_ROUTE_LABELS } from './navigation.js';
 import type { GpuiAddDeviceRequest } from '../management/add-device.js';
-import type { GpuiSystemPorts } from '../management/servers-port.js';
 import { WorkspaceOverlays } from './overlays.js';
-import type { StatisticsRequest } from './history.js';
-import { HomeRouteContent, WorkspaceCategoryRail, WorkspacePageHeader } from './routes.js';
-import type { HomeSessionStatusInfo } from './settings-view.js';
+import { HomeRouteContent } from './routes.js';
 import { homeDashboard, type HomeDevice } from './model.js';
-
-const NON_DEVICE_ROUTES = new Set<HomeRoute>([
-  'attention', 'settings', 'statistics', 'cameras', 'devices', 'integrations', 'addons', 'servers', 'hidden',
-]);
-
-interface Props {
-  snapshot: Snapshot;
-  preferences: Preferences;
-  systemTheme?: 'light' | 'dark';
-  platform?: Pick<GpuiPlatform, 'clipboard' | 'showContextMenu' | 'openExternal'>;
-  alertsTransport?: AlertsTransport;
-  management?: ManagementPort;
-  system?: GpuiSystemPorts;
-  subscribeKeyDown?: (listener: (event: KeyEvent) => void) => () => void;
-  sidebar?: SidebarBackdrop;
-  streaming?: { hub: string; streams: GpuiCameraStreams };
-  cameraApi?: GpuiCameraApi;
-  demo?: boolean;
-  disabled?: boolean;
-  canFavorite?: boolean;
-  registry?: Pick<
-    RegistryController,
-    'saveRoom' | 'deleteRoom' | 'moveDevices' | 'updateDevice' | 'updateEntity'
-  >;
-  statistics?: StatisticsRequest;
-  fetchCameraSnapshot?: (id: string) => Promise<string | null>;
-  onApplySceneEntities?: (entities: Record<string, unknown>) => Promise<void>;
-  sessionMeta?: HomeSessionStatusInfo;
-  notice?: ReactNode;
-  onControl: DeviceControl;
-  onFavorite: (id: string, favorite: boolean) => void;
-  onTheme: (theme: Preferences['theme']) => void;
-  onGrouping: (enabled: boolean) => void;
-  onPreferencesPatch?: (patch: Partial<Preferences>) => void;
-  onResetLightGroups?: () => void;
-  onToggleDemo?: (enabled: boolean) => void;
-  onManage?: (url: string) => void;
-  onConnect?: () => void;
-  onRefresh?: () => void;
-  onDisconnect?: () => void;
-}
+import { NON_DEVICE_ROUTES, type HomeWorkspaceProps } from './workspace-props.js';
 
 declare global {
   var hausGpuiRoute: HomeRoute | undefined;
@@ -87,6 +34,7 @@ export function HomeWorkspace({
   snapshot,
   preferences,
   systemTheme = 'dark',
+  reducedTransparency,
   platform,
   alertsTransport,
   management,
@@ -115,9 +63,12 @@ export function HomeWorkspace({
   onConnect,
   onRefresh,
   onDisconnect,
-}: Props) {
+}: HomeWorkspaceProps) {
   const home = useMemo(() => homeDashboard(snapshot, preferences), [snapshot, preferences]);
-  const roomIcons = useMemo(() => mergeRoomIcons(snapshot.areas, preferences.roomIcons), [preferences.roomIcons, snapshot.areas]);
+  const roomIcons = useMemo(
+    () => mergeRoomIcons(snapshot.areas, preferences.roomIcons),
+    [preferences.roomIcons, snapshot.areas],
+  );
   const groups = useMemo(() => navigation(home, roomIcons), [home, roomIcons]);
   const [route, setRouteState] = useState<HomeRoute>(() => globalThis.hausGpuiRoute ?? 'home');
   const setRoute = (next: HomeRoute) => {
@@ -127,13 +78,16 @@ export function HomeWorkspace({
   const [camera, setCamera] = useState<string>();
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [previewScene, setPreviewScene] = useState<HassEntity | null>(null);
-  const [editingConfig, setEditingConfig] = useState<{ kind: EditableKind; entity?: HassEntity } | null>(
-    null,
-  );
+  const [editingConfig, setEditingConfig] = useState<{
+    kind: EditableKind;
+    entity?: HassEntity;
+  } | null>(null);
   const [addDevice, setAddDevice] = useState<GpuiAddDeviceRequest | null>(null);
   const [fallbackMenu, setFallbackMenu] = useState<ActiveFallbackMenu | null>(null);
   const [search, setSearch] = useState(false);
   const [query, setQuery] = useState('');
+  const [serverSidebar, setServerSidebar] = useState<SidebarContextualNav>();
+  const activeServerSidebar = route === 'servers' ? serverSidebar : undefined;
   const alerts = useGpuiAlerts({ transport: alertsTransport, states: snapshot.states, demo });
   const { width } = useWindowSize();
   const inset = width <= 760 ? 19 : width <= 1180 ? 25 : 32;
@@ -153,6 +107,7 @@ export function HomeWorkspace({
     setFallbackMenu(null);
     setSearch(false);
     setQuery('');
+    if (next !== 'servers') setServerSidebar(undefined);
     setRoute(next);
   };
   const openCamera = (id: string) => {
@@ -198,10 +153,8 @@ export function HomeWorkspace({
   useEffect(() => {
     if (!subscribeKeyDown) return;
     return subscribeKeyDown((event) => {
-      handleShortcut(
-        event.key ?? '',
-        Boolean(event.modifiers?.cmd || event.modifiers?.ctrl),
-        () => event.preventDefault(),
+      handleShortcut(event.key ?? '', Boolean(event.modifiers?.cmd || event.modifiers?.ctrl), () =>
+        event.preventDefault(),
       );
     });
   });
@@ -313,6 +266,15 @@ export function HomeWorkspace({
 
   const openAddDevice = (req?: GpuiAddDeviceRequest) => setAddDevice(req ?? { mode: 'picker' });
   const openExternal = platform?.openExternal;
+  const boundOpenExternal = openExternal
+    ? (url: string) =>
+        sessionMeta?.url
+          ? openExternal(url, sessionMeta.url)
+          : Promise.reject(new Error('Connect your home first.'))
+    : undefined;
+  const copyText = platform?.clipboard
+    ? (text: string) => void platform.clipboard?.writeText(text).catch(() => undefined)
+    : undefined;
 
   const content = (
     <HomeRouteContent
@@ -349,6 +311,10 @@ export function HomeWorkspace({
       onToggleDemo={onToggleDemo}
       onConnect={onConnect}
       onDisconnect={onDisconnect}
+      openExternal={boundOpenExternal}
+      openPaths={platform?.openPaths}
+      onCopyText={copyText}
+      onServerSidebarChange={setServerSidebar}
       renderDevices={renderDevices}
       renderScenes={renderScenes}
       renderCameras={renderCameras}
@@ -356,13 +322,15 @@ export function HomeWorkspace({
   );
 
   return (
-    <HausUiProvider contentHost={GPUIX_CONTENT_HOST} mode={dark ? 'dark' : 'light'}>
+    <HausUiProvider
+      contentHost={GPUIX_CONTENT_HOST}
+      mode={dark ? 'dark' : 'light'}
+      reducedTransparency={reducedTransparency}
+    >
       <Box
         onKeyDown={(event) =>
-          handleShortcut(
-            event.key,
-            Boolean(event.metaKey || event.ctrlKey),
-            () => event.preventDefault(),
+          handleShortcut(event.key, Boolean(event.metaKey || event.ctrlKey), () =>
+            event.preventDefault(),
           )
         }
         style={{ layout: { width: pct(100), height: pct(100) } }}
@@ -374,13 +342,14 @@ export function HomeWorkspace({
           dark={dark}
           groups={groups}
           footer={settingsLink}
+          contextual={activeServerSidebar}
           expandedWidth={width > 760 && width <= 1180 ? 215 : undefined}
         >
           {(toggleSidebar, collapsed) => (
             <Stack gapPx={0} style={{ layout: { height: pct(100) } }}>
               <DesktopTopbar
                 homeName={snapshot.config.location_name}
-                heading={route === 'home' ? 'Overview' : heading}
+                heading={activeServerSidebar?.title ?? (route === 'home' ? 'Overview' : heading)}
                 userName={snapshot.user.name}
                 demo={demo}
                 hasAttention={home.attention.length + alerts.notices.length > 0}
@@ -391,51 +360,53 @@ export function HomeWorkspace({
                 onNotifications={() => go('attention')}
                 onSettings={() => go('settings')}
               />
-            <Box
-              style={{
-                layout: { height: px(1), flexShrink: 0 },
-                material: new SolidMaterial(colorToken('borderSubtle')),
-              }}
-            />
-            <Stack
-              gapPx={0}
-              style={{
-                layout: {
-                  flexGrow: 1,
-                  minHeight: px(0),
-                  overflowY: 'scroll',
-                  padding: insets(width <= 760 ? 22 : 27, inset, 22, inset),
-                },
-              }}
-            >
-              <WorkspacePageHeader
-                category={category}
-                room={room}
-                roomArea={roomArea}
-                route={route}
-                search={search}
-                heading={heading}
-                demo={demo}
-                isAdmin={Boolean(snapshot.user.is_admin)}
-                disabled={disabled}
-                registry={registry}
-                onGo={go}
-                onAddDevice={openAddDevice}
-                onConnect={onConnect}
-                onRefresh={onRefresh}
+              <Box
+                style={{
+                  layout: { height: px(1), flexShrink: 0 },
+                  material: new SolidMaterial(colorToken('borderSubtle')),
+                }}
               />
-              {notice}
-              {(route === 'home' || category) && (
-                <WorkspaceCategoryRail
-                  categories={home.categories}
-                  activeCategory={category}
-                  onSelectHome={() => go('home')}
-                  onSelectCategory={(id) => go(`category:${id}`)}
-                />
-              )}
-              {content}
+              <Stack
+                gapPx={0}
+                style={{
+                  layout: {
+                    flexGrow: 1,
+                    minHeight: px(0),
+                    overflowY: 'scroll',
+                    padding: insets(width <= 760 ? 22 : 27, inset, 22, inset),
+                  },
+                }}
+              >
+                {!activeServerSidebar && (
+                  <WorkspacePageHeader
+                    category={category}
+                    room={room}
+                    roomArea={roomArea}
+                    route={route}
+                    search={search}
+                    heading={heading}
+                    demo={demo}
+                    isAdmin={Boolean(snapshot.user.is_admin)}
+                    disabled={disabled}
+                    registry={registry}
+                    onGo={go}
+                    onAddDevice={openAddDevice}
+                    onConnect={onConnect}
+                    onRefresh={onRefresh}
+                  />
+                )}
+                {notice}
+                {(route === 'home' || category) && (
+                  <WorkspaceCategoryRail
+                    categories={home.categories}
+                    activeCategory={category}
+                    onSelectHome={() => go('home')}
+                    onSelectCategory={(id) => go(`category:${id}`)}
+                  />
+                )}
+                {content}
+              </Stack>
             </Stack>
-          </Stack>
           )}
         </DesktopShell>
         <WorkspaceOverlays
@@ -443,7 +414,10 @@ export function HomeWorkspace({
           query={query}
           onQueryChange={setQuery}
           spotlightItems={spotlightItems}
-          onCloseSearch={() => { setSearch(false); setQuery(''); }}
+          onCloseSearch={() => {
+            setSearch(false);
+            setQuery('');
+          }}
           fallbackMenu={fallbackMenu}
           onCloseMenu={() => setFallbackMenu(null)}
           activePairing={alerts.activePairing}
@@ -451,22 +425,71 @@ export function HomeWorkspace({
           onDismissPairing={(sessionId) => void alerts.dismissPairing(sessionId)}
           cameraModal={
             camera
-              ? { cameraId: camera, snapshot, preferences, allAccessories: home.allAccessories, demo, disabled, streaming, cameraApi, fetchSnapshot: fetchCameraSnapshot, onControl, onPreferencesPatch, onClose: () => setCamera(undefined) }
+              ? {
+                  cameraId: camera,
+                  snapshot,
+                  preferences,
+                  allAccessories: home.allAccessories,
+                  demo,
+                  disabled,
+                  streaming,
+                  cameraApi,
+                  fetchSnapshot: fetchCameraSnapshot,
+                  onControl,
+                  onToggleFullscreen: platform?.toggleFullscreen,
+                  onPreferencesPatch,
+                  onClose: () => setCamera(undefined),
+                }
               : undefined
           }
           scenePreview={
             previewScene
-              ? { scene: previewScene, snapshot, canEdit: Boolean(demo || snapshot.user.is_admin), onClose: () => setPreviewScene(null), onEdit: () => { setEditingConfig({ kind: 'scene', entity: previewScene }); setPreviewScene(null); }, onApply: () => { onControl(previewScene.entity_id, 'run'); setPreviewScene(null); } }
+              ? {
+                  scene: previewScene,
+                  snapshot,
+                  canEdit: Boolean(demo || snapshot.user.is_admin),
+                  onClose: () => setPreviewScene(null),
+                  onEdit: () => {
+                    setEditingConfig({ kind: 'scene', entity: previewScene });
+                    setPreviewScene(null);
+                  },
+                  onApply: () => {
+                    onControl(previewScene.entity_id, 'run');
+                    setPreviewScene(null);
+                  },
+                }
               : undefined
           }
           configEditor={
             editingConfig
-              ? { kind: editingConfig.kind, entity: editingConfig.entity, snapshot, demo, management, onApplySceneEntities, onClose: () => setEditingConfig(null), onSaved: () => onRefresh?.() }
+              ? {
+                  kind: editingConfig.kind,
+                  entity: editingConfig.entity,
+                  snapshot,
+                  demo,
+                  management,
+                  onApplySceneEntities,
+                  onClose: () => setEditingConfig(null),
+                  onSaved: () => onRefresh?.(),
+                }
               : undefined
           }
           addDevice={
             addDevice
-              ? { snapshot, demo, management, requestRpc: system?.requestRpc, openExternal: openExternal ? (url) => (sessionMeta?.url ? openExternal(url, sessionMeta.url) : Promise.reject(new Error('Connect your home first.'))) : undefined, initialRequest: addDevice, onOpenApps: () => { setAddDevice(null); go('addons'); }, onClose: () => setAddDevice(null), onSaved: () => onRefresh?.() }
+              ? {
+                  snapshot,
+                  demo,
+                  management,
+                  requestRpc: system?.requestRpc,
+                  openExternal: boundOpenExternal,
+                  initialRequest: addDevice,
+                  onOpenApps: () => {
+                    setAddDevice(null);
+                    go('addons');
+                  },
+                  onClose: () => setAddDevice(null),
+                  onSaved: () => onRefresh?.(),
+                }
               : undefined
           }
         />

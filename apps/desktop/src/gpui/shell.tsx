@@ -4,6 +4,7 @@ import { useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 
 import {
   SidebarLayout,
   sidebarWidths,
+  type SidebarContextualNav,
   type SidebarGroup,
   type SidebarItem,
 } from '@haus/ui/components';
@@ -40,6 +41,7 @@ export function DesktopShell({
   dark = true,
   groups,
   footer,
+  contextual,
   expandedWidth = sidebarWidths.expanded,
   children,
 }: {
@@ -49,6 +51,7 @@ export function DesktopShell({
   dark?: boolean;
   groups?: readonly SidebarGroup<HomeRoute>[];
   footer?: SidebarItem<HomeRoute>;
+  contextual?: SidebarContextualNav;
   expandedWidth?: number;
   children: ReactNode | ((toggleSidebar: () => void, collapsed: boolean) => ReactNode);
 }) {
@@ -69,6 +72,7 @@ export function DesktopShell({
       items={items}
       groups={groups}
       footer={footer}
+      contextual={contextual}
       expandedWidth={expandedWidth}
       selected={route}
       onSelect={onSelect}

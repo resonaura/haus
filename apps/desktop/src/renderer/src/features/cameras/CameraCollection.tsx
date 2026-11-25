@@ -7,7 +7,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildCameraMenuOptions } from '@haus/core/transport';
-import { Box, HausScrollArea, Pressable, Text } from '@haus/ui';
+import { Box, corners, HausScrollArea, insets, Pressable, px, rgba, Text } from '@haus/ui';
+import { BackdropMaterial } from '@haus/ui/ir';
 import { QrCode } from 'lucide-react';
 import type { ContextMenuItem } from '../../../../shared/native';
 import type { HassEntity } from '../../model';
@@ -215,10 +216,30 @@ export function CameraCollection(props: Props) {
             />
             {reconnect && (
               <Pressable
-                className="camera-age-badge camera-reconnect-pill"
+                className="camera-reconnect-pill"
                 ariaLabel={`Reconnect ${reconnect.cameraName} with QR code`}
                 stopPropagation
                 onPress={() => setReconnectTarget(reconnect)}
+                style={{
+                  layout: {
+                    position: 'absolute',
+                    inset: { top: px(10), left: px(10) },
+                    zIndex: 4,
+                    display: 'flex',
+                    direction: 'row',
+                    alignItems: 'center',
+                    gap: px(6),
+                    padding: insets(4, 9),
+                    minHeight: px(24),
+                  },
+                  material: new BackdropMaterial(
+                    { blurRadius: 14, saturation: 1.1, tintColor: rgba(12, 12, 12, 0.44) },
+                    { fallbackColor: rgba(16, 16, 18, 0.92) },
+                  ),
+                  border: { width: 1, color: rgba(255, 255, 255, 0.14) },
+                  corners: corners(9),
+                  typography: { size: 10, weight: 500, color: rgba(255, 255, 255, 0.94) },
+                }}
               >
                 <QrCode size={11} aria-hidden="true" />
                 Reconnect QR

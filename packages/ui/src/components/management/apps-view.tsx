@@ -46,6 +46,7 @@ export function AppsWorkspaceView({
   onQueryChange,
   onFilterChange,
   onRefresh,
+  onOpenRepositories,
   onManageApp,
   onInstallCatalogApp,
 }: {
@@ -66,6 +67,7 @@ export function AppsWorkspaceView({
   readonly onQueryChange: (value: string) => void;
   readonly onFilterChange: (filter: AppsFilterId) => void;
   readonly onRefresh: () => void;
+  readonly onOpenRepositories?: () => void;
   readonly onManageApp: (app: InstalledAppRecord) => void;
   readonly onInstallCatalogApp: (app: CatalogAppRecord) => void;
 }) {
@@ -86,7 +88,12 @@ export function AppsWorkspaceView({
         <Row align="center" gapPx={14} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
           <Box
             style={{
-              layout: { width: px(42), height: px(42), alignItems: 'center', justifyContent: 'center' },
+              layout: {
+                width: px(42),
+                height: px(42),
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
               material: new SolidMaterial(colorToken('surface')),
               border: { width: 1, color: colorToken('border') },
               corners: corners(12),
@@ -115,7 +122,10 @@ export function AppsWorkspaceView({
               material: new SolidMaterial(
                 tab === 'installed' ? colorToken('surfaceActive') : colorToken('surface'),
               ),
-              border: { width: 1, color: tab === 'installed' ? colorToken('accent') : colorToken('border') },
+              border: {
+                width: 1,
+                color: tab === 'installed' ? colorToken('accent') : colorToken('border'),
+              },
               corners: corners(999),
             }}
           >
@@ -132,7 +142,10 @@ export function AppsWorkspaceView({
               material: new SolidMaterial(
                 tab === 'catalog' ? colorToken('surfaceActive') : colorToken('surface'),
               ),
-              border: { width: 1, color: tab === 'catalog' ? colorToken('accent') : colorToken('border') },
+              border: {
+                width: 1,
+                color: tab === 'catalog' ? colorToken('accent') : colorToken('border'),
+              },
               corners: corners(999),
             }}
           >
@@ -171,6 +184,18 @@ export function AppsWorkspaceView({
           <UiIcon name="refresh-cw" size={14} />
           <Text size={12.5}>Refresh</Text>
         </HausButton>
+        {canManage && onOpenRepositories && (
+          <HausButton
+            id="apps-open-repositories"
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onPress={onOpenRepositories}
+          >
+            <UiIcon name="folder-git-2" size={14} />
+            <Text size={12.5}>Repositories</Text>
+          </HausButton>
+        )}
       </Row>
 
       {tab === 'installed' && (
@@ -184,7 +209,12 @@ export function AppsWorkspaceView({
                 ariaPressed={active}
                 onActivate={() => onFilterChange(item.id)}
                 style={{
-                  layout: { direction: 'row', alignItems: 'center', gap: px(7), padding: insets(6, 12) },
+                  layout: {
+                    direction: 'row',
+                    alignItems: 'center',
+                    gap: px(7),
+                    padding: insets(6, 12),
+                  },
                   material: new SolidMaterial(
                     active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
                   ),
@@ -204,8 +234,16 @@ export function AppsWorkspaceView({
         </Row>
       )}
 
-      {notice && <Text size={12} tone="muted">{notice}</Text>}
-      {error && <Text size={12} tone="critical">{error}</Text>}
+      {notice && (
+        <Text size={12} tone="muted">
+          {notice}
+        </Text>
+      )}
+      {error && (
+        <Text size={12} tone="critical">
+          {error}
+        </Text>
+      )}
 
       {tab === 'installed' ? (
         installedApps.length === 0 ? (
@@ -244,7 +282,12 @@ export function AppsWorkspaceView({
                     corners: corners(16),
                   }}
                 >
-                  <Row align="start" justify="between" gapPx={10} style={{ layout: { width: pct(100) } }}>
+                  <Row
+                    align="start"
+                    justify="between"
+                    gapPx={10}
+                    style={{ layout: { width: pct(100) } }}
+                  >
                     <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
                       <Text size={14.5} weight={600}>
                         {app.name}
@@ -274,7 +317,12 @@ export function AppsWorkspaceView({
                     <Text size={11.5} tone="muted">
                       {app.version ? `v${app.version}` : app.externalId}
                     </Text>
-                    <HausButton variant="ghost" size="sm" onPress={() => onManageApp(app)}>
+                    <HausButton
+                      id={`app-manage-${app.id}`}
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => onManageApp(app)}
+                    >
                       <Text size={12.5}>Manage</Text>
                       <UiIcon name="chevron-right" size={14} />
                     </HausButton>
@@ -324,6 +372,7 @@ export function AppsWorkspaceView({
                   </Text>
                 ) : (
                   <HausButton
+                    id={`catalog-install-${entry.id}`}
                     variant="primary"
                     size="sm"
                     disabled={!canManage || busyAppId === entry.id}

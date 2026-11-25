@@ -12,6 +12,7 @@ import { createDefaultShaderRegistry, type ShaderPassDescriptor } from '../ir/ma
 import type { ThemeMode, UiNode } from '../ir/node.js';
 import type { RenderContext } from '../renderers/contract.js';
 import { DOM_HOST_ADAPTER } from '../renderers/dom-host.js';
+import { ensureDomResetStyle } from '../renderers/dom-reset.js';
 import type { UiContentHost, UiHostAdapter } from '../renderers/host.js';
 import { NativeSceneGraphRenderer, type HausSceneGraphIR } from '../renderers/native-ir.js';
 import { ReactDomRenderer } from '../renderers/react-dom.js';
@@ -113,8 +114,31 @@ export function useHausStyles<TSlots extends StyleSlotMap, TProps = void>(
   return sheet.resolve(theme, props, viewport);
 }
 
+export function HausUiThemeScope({
+  mode,
+  children,
+}: {
+  readonly mode: ThemeMode;
+  readonly children: React.ReactNode;
+}): React.ReactElement {
+  const parent = useHausUi();
+  const value = React.useMemo(() => {
+    if (parent.theme.mode === mode) return parent;
+    const theme = mode === 'light' ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
+    const context = { theme, viewport: parent.viewport, shaderRegistry: parent.shaderRegistry };
+    return {
+      ...parent,
+      ...context,
+      compileToNativeIR: (node: UiNode) => parent.nativeRenderer.render(node, context),
+      compileToReactNative: (node: UiNode) => parent.reactNativeRenderer.render(node, context),
+    };
+  }, [parent, mode]);
+  return <HausUiContext.Provider value={value}>{children}</HausUiContext.Provider>;
+}
+
 export interface HausUiProviderProps {
   readonly mode?: ThemeMode | 'auto';
+  readonly reducedTransparency?: boolean;
   readonly host?: UiHostAdapter;
   readonly contentHost?: UiContentHost;
   readonly portal?: (node: React.ReactNode) => React.ReactNode;
@@ -124,6 +148,7 @@ export interface HausUiProviderProps {
 
 export function HausUiProvider({
   mode = 'auto',
+  reducedTransparency,
   host = DOM_HOST_ADAPTER,
   contentHost = host,
   portal,
@@ -139,6 +164,7 @@ export function HausUiProvider({
   React.useEffect(() => {
     if (!readDom || typeof document === 'undefined' || typeof window === 'undefined')
       return undefined;
+    ensureDomResetStyle(document);
     const onResize = () => setViewport(readViewportMetrics());
     window.addEventListener('resize', onResize, { passive: true });
     return () => window.removeEventListener('resize', onResize);
@@ -171,10 +197,14 @@ export function HausUiProvider({
   }, [customShaders]);
 
   const resolvedMode: ThemeMode = mode === 'auto' ? autoMode : mode;
+  const effectiveViewport = React.useMemo<ViewportMetrics>(
+    () => (reducedTransparency === undefined ? viewport : { ...viewport, reducedTransparency }),
+    [reducedTransparency, viewport],
+  );
 
   const value = React.useMemo<HausUiContextValue>(() => {
     const theme = resolvedMode === 'light' ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
-    const ctx: RenderContext = { theme, viewport, shaderRegistry };
+    const ctx: RenderContext = { theme, viewport: effectiveViewport, shaderRegistry };
     return {
       ...ctx,
       host,
@@ -186,7 +216,7 @@ export function HausUiProvider({
       compileToNativeIR: (node: UiNode) => NATIVE_RENDERER.render(node, ctx),
       compileToReactNative: (node: UiNode) => RN_RENDERER.render(node, ctx),
     };
-  }, [resolvedMode, viewport, shaderRegistry, host, contentHost, portal]);
+  }, [resolvedMode, effectiveViewport, shaderRegistry, host, contentHost, portal]);
 
   return (
     <HausUiContext.Provider value={value}>

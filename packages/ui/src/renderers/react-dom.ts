@@ -6,13 +6,15 @@
  */
 
 import * as React from 'react';
-import type { CornerRadius, LayoutStyle, ShadowSpec, TypographyStyle } from '../ir/geometry.js';
-import type {
-  BackdropEffect,
-  MaterialIR,
-  RimLightingPass,
-  ShaderRegistry,
-} from '../ir/materials.js';
+import {
+  PILL_RADIUS_THRESHOLD,
+  type CornerRadius,
+  type LayoutStyle,
+  type ShadowSpec,
+  type TypographyStyle,
+} from '../ir/geometry.js';
+import type { BackdropEffect, MaterialIR, RimLightingPass } from '../ir/materials.js';
+export { renderSvgShaderDefs } from './dom-helpers.js';
 import {
   normalizeMaterialIR,
   resolveStyleForViewport,
@@ -74,7 +76,20 @@ function buildRimLightShadow(rim: RimLightingPass, theme: UiTheme): string {
 }
 
 function applyLayoutCss(layout: LayoutStyle, target: React.CSSProperties): void {
-  if (layout.display) target.display = layout.display;
+  if (layout.display) {
+    target.display = layout.display;
+  } else if (
+    layout.gridColumns === undefined &&
+    (layout.direction ||
+      layout.wrap ||
+      layout.alignItems ||
+      layout.justifyContent ||
+      layout.gap ||
+      layout.rowGap ||
+      layout.columnGap)
+  ) {
+    target.display = 'flex';
+  }
   if (layout.direction) target.flexDirection = layout.direction;
   if (layout.wrap) target.flexWrap = layout.wrap;
   if (layout.alignItems) {
@@ -142,6 +157,14 @@ function applyLayoutCss(layout: LayoutStyle, target: React.CSSProperties): void 
   if (layout.overflow) target.overflow = layout.overflow;
   if (layout.overflowX) target.overflowX = layout.overflowX;
   if (layout.overflowY) target.overflowY = layout.overflowY;
+  if (layout.alignSelf) {
+    target.alignSelf =
+      layout.alignSelf === 'start'
+        ? 'flex-start'
+        : layout.alignSelf === 'end'
+          ? 'flex-end'
+          : layout.alignSelf;
+  }
   if (layout.flexGrow !== undefined) target.flexGrow = layout.flexGrow;
   if (layout.flexShrink !== undefined) target.flexShrink = layout.flexShrink;
   if (layout.aspectRatio !== undefined) target.aspectRatio = String(layout.aspectRatio);
@@ -183,8 +206,20 @@ function applyCornersCss(
   target.borderTopRightRadius = `${corners.topRight}px`;
   target.borderBottomRightRadius = `${corners.bottomRight}px`;
   target.borderBottomLeftRadius = `${corners.bottomLeft}px`;
-  if (corners.shape === 'superellipse') {
-    target['--haus-corner-exponent'] = String(corners.exponent ?? 1.4);
+  const maxRadius = Math.max(
+    corners.topLeft,
+    corners.topRight,
+    corners.bottomRight,
+    corners.bottomLeft,
+  );
+  if (corners.shape === 'superellipse' && maxRadius < PILL_RADIUS_THRESHOLD) {
+    const exp = corners.exponent ?? 1.4;
+    target['--haus-corner-exponent'] = String(exp);
+    target['cornerShape'] = `superellipse(${exp})`;
+  } else if (corners.shape === 'bevel') {
+    target['cornerShape'] = 'bevel';
+  } else {
+    target['cornerShape'] = 'round';
   }
 }
 
@@ -215,10 +250,18 @@ function applyMaterialCss(
       const stops = material.stops
         .map((s) => `${resolveColorToCss(s.color, theme)} ${Math.round(s.offset * 100)}%`)
         .join(', ');
-      target.backgroundImage =
-        material.gradientType === 'radial'
-          ? `radial-gradient(circle at center, ${stops})`
-          : `linear-gradient(${material.angleDeg}deg, ${stops})`;
+      if (material.gradientType === 'radial') {
+        if (material.radial) {
+          const shape = material.radial.shape ?? 'ellipse';
+          const cx = Math.round((material.radial.centerX ?? 0.5) * 100);
+          const cy = Math.round((material.radial.centerY ?? 0.5) * 100);
+          target.backgroundImage = `radial-gradient(${shape} at ${cx}% ${cy}%, ${stops})`;
+        } else {
+          target.backgroundImage = `radial-gradient(circle at center, ${stops})`;
+        }
+      } else {
+        target.backgroundImage = `linear-gradient(${material.angleDeg}deg, ${stops})`;
+      }
       return {};
     }
     case 'blur':
@@ -318,10 +361,19 @@ export function compileStyleToReactCss(
     if (resolved.transform.scale !== undefined && resolved.transform.scale !== 1) {
       tParts.push(`scale(${resolved.transform.scale})`);
     }
+    if (resolved.transform.scaleX !== undefined && resolved.transform.scaleX !== 1) {
+      tParts.push(`scaleX(${resolved.transform.scaleX})`);
+    }
+    if (resolved.transform.scaleY !== undefined && resolved.transform.scaleY !== 1) {
+      tParts.push(`scaleY(${resolved.transform.scaleY})`);
+    }
     if (resolved.transform.rotateDeg) {
       tParts.push(`rotate(${resolved.transform.rotateDeg}deg)`);
     }
     if (tParts.length > 0) css.transform = tParts.join(' ');
+    if (resolved.transform.originX !== undefined || resolved.transform.originY !== undefined) {
+      css.transformOrigin = `${(resolved.transform.originX ?? 0.5) * 100}% ${(resolved.transform.originY ?? 0.5) * 100}%`;
+    }
   }
   if (resolved.opacity !== undefined) css.opacity = resolved.opacity;
   if (resolved.cursor) css.cursor = resolved.cursor;
@@ -332,62 +384,6 @@ export function compileStyleToReactCss(
   }
 
   return { style: css, ...(shaderId ? { shaderId } : {}) };
-}
-
-/**
- * Renders procedural SVG refraction/dispersion filter definitions registered in `ShaderRegistry`
- * so `LiquidGlassMaterial` and custom shaders can apply hardware-accelerated backdrop refraction.
- */
-export function renderSvgShaderDefs(shaderRegistry: ShaderRegistry): React.ReactElement | null {
-  const shadersWithSvg = shaderRegistry.list().filter((s) => Boolean(s.targets.svgFilter));
-  if (shadersWithSvg.length === 0) return null;
-
-  return React.createElement(
-    'svg',
-    {
-      'aria-hidden': 'true',
-      style: {
-        position: 'absolute',
-        width: 0,
-        height: 0,
-        pointerEvents: 'none',
-        overflow: 'hidden',
-      },
-    },
-    React.createElement(
-      'defs',
-      null,
-      shadersWithSvg.map((shader) => {
-        const scale = shader.targets.svgFilter?.refractionStrength ?? 12;
-        return React.createElement(
-          'filter',
-          {
-            key: shader.id,
-            id: `svg-${shader.id}`,
-            x: '-10%',
-            y: '-10%',
-            width: '120%',
-            height: '120%',
-            colorInterpolationFilters: 'sRGB',
-          },
-          React.createElement('feTurbulence', {
-            type: 'fractalNoise',
-            baseFrequency: '0.015 0.02',
-            numOctaves: 2,
-            seed: 7,
-            result: 'noise',
-          }),
-          React.createElement('feDisplacementMap', {
-            in: 'SourceGraphic',
-            in2: 'noise',
-            scale,
-            xChannelSelector: 'R',
-            yChannelSelector: 'G',
-          }),
-        );
-      }),
-    ),
-  );
 }
 
 /**

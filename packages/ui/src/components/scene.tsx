@@ -6,6 +6,7 @@ import { SolidMaterial } from '../ir/materials.js';
 import { GradientMaterial } from '../ir/materials.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import { Box, Heading, Pressable, Text } from '../primitives/elements.js';
+import { GlassRim } from '../primitives/glass-rim.js';
 import { Image } from '../primitives/media.js';
 import { UiIcon } from './icon.js';
 import type { UiIconName } from './icons.js';
@@ -167,6 +168,7 @@ export function SceneCard({
   onContextOptions,
   onActivate,
 }: SceneCardProps) {
+  const [hovered, setHovered] = useState(false);
   const action = `${details ? 'Details for' : 'Apply'} ${name}`;
   const swatches = colors.slice(0, 5).flatMap((color) => {
     const rgb = swatchPattern.exec(color)?.slice(1).map(Number);
@@ -184,12 +186,23 @@ export function SceneCard({
     <Box
       semantic="article"
       className={`mood-card ${active ? 'is-active-scene' : ''} ${dark ? 'is-dark-scene' : ''}`}
-      dataAttrs={{ 'data-menu-open': menuOpen || undefined, 'data-pending': applying || undefined }}
+      dataAttrs={{
+        'data-haus-glass-rim': 'managed',
+        'data-menu-open': menuOpen || undefined,
+        'data-pending': applying || undefined,
+      }}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
       onSecondaryPress={onContextOptions}
       style={
         portable
           ? {
-              layout: { width: pct(100), overflow: 'hidden', minHeight: px(178), position: 'relative' },
+              layout: {
+                width: pct(100),
+                overflow: 'hidden',
+                minHeight: px(178),
+                position: 'relative',
+              },
               corners: corners(16),
               border: {
                 width: 1,
@@ -391,6 +404,7 @@ export function SceneCard({
       ) : (
         options
       )}
+      <GlassRim preset="card" radiusPx={portable ? 15 : 25} opacity={hovered ? 0.72 : 0.48} />
     </Box>
   );
 }
@@ -405,12 +419,24 @@ export function SceneRooms({
   return (
     <Box className="scene-room-groups" style={portable ? { layout: { gap: px(27) } } : undefined}>
       {groups.map(({ id, name, count, children }) => (
-        <Box semantic="section" id={`scene-group-${id}`} key={id} style={portable ? { layout: { gap: px(14) } } : undefined}>
+        <Box
+          semantic="section"
+          id={`scene-group-${id}`}
+          key={id}
+          style={portable ? { layout: { gap: px(14) } } : undefined}
+        >
           <Box
             className="scene-room-heading"
-            style={portable ? { layout: { direction: 'row', alignItems: 'center', gap: px(10) } } : undefined}
+            style={
+              portable
+                ? { layout: { direction: 'row', alignItems: 'center', gap: px(10) } }
+                : undefined
+            }
           >
-            <Heading level={2} style={portable ? { typography: { whiteSpace: 'nowrap' } } : undefined}>
+            <Heading
+              level={2}
+              style={portable ? { typography: { whiteSpace: 'nowrap' } } : undefined}
+            >
               {name}
             </Heading>
             <Text

@@ -6,20 +6,47 @@
  */
 
 import type * as React from 'react';
+import type { ColorValue } from '../ir/geometry.js';
+import type { GlassRimEffectMotion, GlassRimPresetName } from '../ir/glass-rim.js';
 import type { ShaderRegistry } from '../ir/materials.js';
+import type { UiMotionSpec } from '../ir/motion.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import type { RenderContext } from './contract.js';
 import type {
+  HostBlurEvent,
+  HostBoxSemantic,
+  HostDataAttrs,
+  HostKeyEvent,
+  HostPointerEvent,
+  HostScrollEvent,
+  HostSurfaceTokens,
+  HostTextSemantic,
+  HostTouchEvent,
+} from './host-events.js';
+import type {
   HostCanvasProps,
   HostImageProps,
+  HostProgressiveBlurProps,
   HostSurfacePointerEvent,
   HostVectorProps,
   HostVideoProps,
 } from './host-media.js';
 
 export type {
+  HostBlurEvent,
+  HostBoxSemantic,
+  HostDataAttrs,
+  HostKeyEvent,
+  HostPointerEvent,
+  HostScrollEvent,
+  HostSurfaceTokens,
+  HostTextSemantic,
+  HostTouchEvent,
+} from './host-events.js';
+export type {
   HostCanvasProps,
   HostImageProps,
+  HostProgressiveBlurProps,
   HostSurfacePointerEvent,
   HostVectorCircle,
   HostVectorClipPath,
@@ -35,90 +62,13 @@ export type {
   HostVideoProps,
 } from './host-media.js';
 
-export interface HostPointerEvent {
-  readonly target: unknown;
-  readonly currentTarget: { contains(node: unknown): boolean };
-  stopPropagation(): void;
-}
-
-export type HostDataAttrs = Readonly<Record<string, string | boolean | undefined>>;
-export type HostSurfaceTokens = Readonly<Record<string, string | number | undefined>>;
-
-export type HostBoxSemantic =
-  | 'box'
-  | 'section'
-  | 'header'
-  | 'footer'
-  | 'main'
-  | 'aside'
-  | 'nav'
-  | 'article'
-  | 'list'
-  | 'ordered-list'
-  | 'listitem'
-  | 'dl'
-  | 'dt'
-  | 'dd'
-  | 'fieldset'
-  | 'legend'
-  | 'table'
-  | 'colgroup'
-  | 'col'
-  | 'thead'
-  | 'tbody'
-  | 'tr'
-  | 'th'
-  | 'td';
-
-export type HostTextSemantic =
-  | 'span'
-  | 'p'
-  | 'strong'
-  | 'small'
-  | 'em'
-  | 'label'
-  | 'swatch'
-  | 'kbd'
-  | 'time'
-  | 'output'
-  | 'bold'
-  | 'break';
-
-export interface HostBlurEvent {
-  readonly currentTarget: { contains(node: unknown): boolean };
-  readonly relatedTarget: unknown;
-}
-
-export interface HostKeyEvent {
-  readonly key: string;
-  readonly altKey?: boolean;
-  readonly shiftKey?: boolean;
-  readonly ctrlKey?: boolean;
-  readonly metaKey?: boolean;
-  readonly target: unknown;
-  readonly currentTarget: unknown;
-  preventDefault(): void;
-  stopPropagation(): void;
-}
-
-export interface HostScrollEvent {
-  readonly scrollLeft: number;
-  readonly scrollTop: number;
-}
-
-export interface HostTouchEvent {
-  readonly currentTarget: {
-    scrollTo(options: { left: number; behavior: 'instant' }): void;
-    setChildStyleProperty(name: string, value: string): void;
-  };
-}
-
 export interface HostBoxProps {
   readonly id?: string;
   readonly className?: string;
   readonly semantic?: HostBoxSemantic;
   readonly style?: UiStyleSpec;
   readonly surfaceTokens?: HostSurfaceTokens;
+  readonly motion?: UiMotionSpec;
   readonly role?: string;
   readonly title?: string;
   readonly tabIndex?: number;
@@ -203,6 +153,18 @@ export interface HostHeadingProps {
   readonly dataKind?: string;
   readonly dataAttrs?: HostDataAttrs;
   readonly children?: React.ReactNode;
+}
+
+export interface HostGlassRimProps {
+  readonly preset?: GlassRimPresetName;
+  readonly radiusPx?: number;
+  readonly opacity?: number;
+  readonly zIndex?: number;
+  readonly tintColor?: ColorValue;
+  readonly effectColors?: readonly [ColorValue?, ColorValue?, ColorValue?];
+  readonly effectMotion?: GlassRimEffectMotion;
+  readonly variant?: 'card' | 'panel';
+  readonly continuous?: boolean;
 }
 
 export interface HostPressableProps {
@@ -359,6 +321,9 @@ export interface HostScrollViewProps {
   readonly orientation?: 'vertical' | 'horizontal';
   readonly shadowSizePx?: number;
   readonly hideScrollBar?: boolean;
+  readonly overscrollBehavior?: 'auto' | 'contain' | 'none';
+  readonly scrollPolicy?: 'auto' | 'vertical' | 'horizontal' | 'both' | 'directionLocked' | 'free';
+  readonly scrollId?: string;
   readonly hidden?: boolean;
   readonly isEnabled?: boolean;
   readonly role?: string;
@@ -434,6 +399,20 @@ export interface HostDisclosureProps {
   readonly children?: React.ReactNode;
 }
 
+export interface HostPopoverProps {
+  readonly id?: string;
+  readonly open: boolean;
+  readonly placement: 'top' | 'bottom' | 'left' | 'right';
+  readonly align?: 'start' | 'center' | 'end';
+  readonly className?: string;
+  readonly portal?: (node: React.ReactNode) => React.ReactNode;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly anchorStyle: UiStyleSpec;
+  readonly surfaceStyle: UiStyleSpec;
+  readonly trigger: React.ReactNode;
+  readonly children: React.ReactNode;
+}
+
 /**
  * Pure platform host adapter contract.
  * Every TSX component in `@haus/ui` delegates leaf rendering strictly through `UiHostAdapter`,
@@ -454,6 +433,10 @@ export interface UiHostAdapter {
   renderFileInput(props: HostFileInputProps, context: RenderContext): React.ReactElement;
   renderScrollView(props: HostScrollViewProps, context: RenderContext): React.ReactElement;
   renderImage(props: HostImageProps, context: RenderContext): React.ReactElement;
+  renderProgressiveBlur?(
+    props: HostProgressiveBlurProps,
+    context: RenderContext,
+  ): React.ReactElement;
   renderVector(props: HostVectorProps, context: RenderContext): React.ReactElement;
   renderVideo(props: HostVideoProps, context: RenderContext): React.ReactElement;
   renderCanvas(props: HostCanvasProps, context: RenderContext): React.ReactElement;
@@ -462,6 +445,8 @@ export interface UiHostAdapter {
   renderForm(props: HostFormProps, context: RenderContext): React.ReactElement;
   renderCode(props: HostCodeProps, context: RenderContext): React.ReactElement;
   renderDisclosure(props: HostDisclosureProps, context: RenderContext): React.ReactElement;
+  renderPopover?(props: HostPopoverProps, context: RenderContext): React.ReactElement;
+  renderGlassRim?(props: HostGlassRimProps, context: RenderContext): React.ReactElement | null;
   renderShaderDefs?(registry: ShaderRegistry): React.ReactElement | null;
   subscribeEscape?(onEscape: () => void): () => void;
 }
@@ -474,8 +459,11 @@ export type UiContentHost = Pick<
     Pick<
       UiHostAdapter,
       | 'renderDivider'
+      | 'renderGlassRim'
       | 'renderHeading'
       | 'renderImage'
+      | 'renderPopover'
+      | 'renderProgressiveBlur'
       | 'renderRangeInput'
       | 'renderScrollView'
       | 'renderSelect'

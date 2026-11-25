@@ -6,44 +6,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isGoveeAddon, parseAppConfigInfo, parseConfigJsonObject } from '@haus/core/transport';
 import { Box, HausButton, Heading, Pressable, Text, TextArea } from '@haus/ui';
 import { LoaderCircle, RefreshCw, RotateCw } from 'lucide-react';
 import { appRequest, record, type InstalledApp } from './api';
 import { parseCatalogDetail } from './catalog-api';
 import { NativeAppConfigFields, type NativeConfigFieldMeta } from './config-form';
-
-interface LoadedAppInfo {
-  readonly config: Record<string, unknown>;
-  readonly configuredSecrets: readonly string[];
-  readonly nativeFields?: Record<string, NativeConfigFieldMeta>;
-  readonly image?: string;
-}
-
-function isGoveeAddon(externalId: string, image?: string): boolean {
-  return (
-    externalId === 'govee' ||
-    externalId === 'homebridge-govee' ||
-    externalId === 'govee2mqtt' ||
-    /govee/i.test(image ?? '')
-  );
-}
-
-function parseAppInfo(value: unknown): LoadedAppInfo | undefined {
-  if (!record(value) || value.status !== 'ok' || !record(value.data)) return undefined;
-  const data = value.data;
-  const config = record(data.config) ? { ...data.config } : {};
-  const configuredSecrets = Array.isArray(data.configuredSecrets)
-    ? data.configuredSecrets.filter((item): item is string => typeof item === 'string')
-    : [];
-  const nativeFields = record(data.nativeFields)
-    ? (data.nativeFields as Record<string, NativeConfigFieldMeta>)
-    : undefined;
-  const image =
-    record(data.manifest) && typeof data.manifest.image === 'string'
-      ? data.manifest.image
-      : undefined;
-  return { config, configuredSecrets, nativeFields, image };
-}
 
 export function AppConfigTab({
   app,
@@ -78,7 +46,7 @@ export function AppConfigTab({
       const infoRes = await appRequest('POST', `${path}/operate`, { operation: 'info' }).catch(
         () => undefined,
       );
-      const info = parseAppInfo(infoRes);
+      const info = parseAppConfigInfo(infoRes);
       const liveConfig = info?.config ?? {};
       const mergedMeta: Record<string, NativeConfigFieldMeta> = { ...info?.nativeFields };
 
@@ -136,31 +104,26 @@ export function AppConfigTab({
       setConfigMode('json');
       return;
     }
-    try {
-      const parsed: unknown = JSON.parse(jsonText);
-      if (!record(parsed)) {
-        onError('Configuration must be a JSON object.');
-        return;
-      }
-      setConfigValues(parsed);
-      setConfigMode('fields');
-    } catch {
-      onError('Fix invalid JSON before switching to Fields view.');
+    const parsed = parseConfigJsonObject(jsonText);
+    if (!parsed.ok) {
+      onError(
+        parsed.error === 'Configuration must be valid JSON.'
+          ? 'Fix invalid JSON before switching to Fields view.'
+          : parsed.error,
+      );
+      return;
     }
+    setConfigValues(parsed.value);
+    setConfigMode('fields');
   };
 
   const saveConfiguration = (restartAfter = false) =>
     onRun(async () => {
       let options: Record<string, unknown>;
       if (configMode === 'json') {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(jsonText);
-        } catch {
-          throw Error('Configuration must be valid JSON.');
-        }
-        if (!record(parsed)) throw Error('Configuration must be a JSON object.');
-        options = parsed;
+        const parsed = parseConfigJsonObject(jsonText);
+        if (!parsed.ok) throw Error(parsed.error);
+        options = parsed.value;
       } else {
         options = configValues;
       }

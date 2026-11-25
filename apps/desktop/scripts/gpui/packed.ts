@@ -19,6 +19,7 @@ const directory = await mkdtemp(join(tmpdir(), 'haus-gpui-packed-'));
 const binary = join(directory, process.platform === 'win32' ? 'Haus.exe' : 'Haus');
 const env: NodeJS.ProcessEnv = {
   ...process.env,
+  HAUS_GPUI_DEMO: '1',
   GPUIX_BACKGROUND: '1',
   GPUIX_TERMINAL: '0',
   NAPI_RS_NATIVE_LIBRARY_PATH: '',
@@ -49,8 +50,50 @@ try {
       assert((await stat(output)).size > 0, 'The standalone window did not produce a screenshot.');
       checking = 'the camera preview tile';
       await app.getByTestId('preview-camera.front_door').click();
-      await app.getByTestId('camera-modal-tabs').waitFor({ timeoutMs: 5000 });
-      await app.getByTestId('dialog-panel').getByText('Front door').waitFor({ timeoutMs: 5000 });
+      const picker = app.getByTestId('camera-modal-tabs');
+      const camera = app.getByTestId('dialog-panel');
+      await camera.getByText('Front door').waitFor({ timeoutMs: 5000 });
+      await picker.getByTestId('camera-view-events').click();
+      await camera.getByText('Choose a recorded moment').waitFor({ timeoutMs: 5000 });
+      await picker.getByTestId('camera-view-live').click();
+      await camera.getByText('DEMO · STILL IMAGE').waitFor({ timeoutMs: 5000 });
+      checking = 'the shared camera calendar and toolbar';
+      const calendarToggle = camera.getByTestId('camera-calendar-toggle');
+      const todayLabel = (await calendarToggle.textContent()).trim();
+      await camera.getByTestId('camera-day-prev').click();
+      const prevLabel = (await calendarToggle.textContent()).trim();
+      assert.notEqual(prevLabel, todayLabel);
+      await camera.getByTestId('camera-day-next').click();
+      assert.equal((await calendarToggle.textContent()).trim(), todayLabel);
+      await calendarToggle.click();
+      const popover = camera.getByTestId('camera-calendar-popover');
+      await popover.getByText('Days with recordings').waitFor({ timeoutMs: 5000 });
+      const now = new Date();
+      let pickDay: string;
+      let expectedDay: Date;
+      if (now.getDate() > 1) {
+        pickDay = String(now.getDate() - 1);
+        expectedDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      } else {
+        await popover.getByText('‹').click();
+        pickDay = '15';
+        expectedDay = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+      }
+      await popover.getByText(pickDay).click();
+      assert.equal(await camera.getByTestId('camera-calendar-popover').count(), 0);
+      assert.equal(
+        (await calendarToggle.textContent()).trim(),
+        expectedDay.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+      );
+      for (const id of ['camera-fill-toggle', 'camera-mute-toggle', 'camera-fullscreen-toggle']) {
+        const bounds = await camera.getByTestId(id).bounds();
+        assert(bounds.width > 0 && bounds.height > 0, `Missing toolbar bounds for ${id}`);
+      }
+      await camera.getByTestId('camera-fill-toggle').click();
+      await camera.getByTestId('camera-fill-toggle').click();
+      await camera.getByTestId('camera-settings-toggle').click();
+      await camera.getByText('Viewing & recording').waitFor({ timeoutMs: 5000 });
+      await camera.getByTestId('camera-settings-toggle').click();
       await app.getByTestId('dialog-close').click();
       await app.getByText('Welcome home.').waitFor({ timeoutMs: 5000 });
       checking = 'the Home scene';
@@ -72,7 +115,9 @@ try {
       checking = 'sidebar navigation and collapse';
       await app.getByTestId('sidebar-scenes').click();
       await app.getByTestId('desktop-page-title').getByText('Scenes').waitFor({ timeoutMs: 5000 });
-      const movie = app.getByTestId('scene-group-living_room').getByTestId('scene-scene.movie_time');
+      const movie = app
+        .getByTestId('scene-group-living_room')
+        .getByTestId('scene-scene.movie_time');
       await movie.getByText('Movie time').waitFor({ timeoutMs: 5000 });
       await movie.getByType('img').waitFor({ timeoutMs: 5000 });
       await toggle.click();

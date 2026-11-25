@@ -128,7 +128,9 @@ export function parseInstalledAppsPayload(value: unknown): InstalledAppRecord[] 
       available: item.available,
       managed: item.managed,
       actions: item.actions,
-      logs: Boolean(source && typeof source.instanceId === 'string' && logDrivers.has(source.instanceId)),
+      logs: Boolean(
+        source && typeof source.instanceId === 'string' && logDrivers.has(source.instanceId),
+      ),
       updateAvailable,
       sourceKind: 'haus-app',
       ...(isRec(item.accessories)
@@ -143,8 +145,23 @@ export function parseInstalledAppsPayload(value: unknown): InstalledAppRecord[] 
   });
 }
 
+export function parseAppLogsPayload(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!isRec(value)) return '';
+  if (typeof value.logs === 'string') return value.logs;
+  if (typeof value.data === 'string') return value.data;
+  if (isRec(value.data) && typeof value.data.logs === 'string') return value.data.logs;
+  return '';
+}
+
 export function parseCatalogAppsPayload(value: unknown): CatalogAppRecord[] {
-  const raw = isRec(value) && Array.isArray(value.apps) ? value.apps : Array.isArray(value) ? value : [];
+  const raw = Array.isArray(value)
+    ? value
+    : isRec(value) && Array.isArray(value.entries)
+      ? value.entries
+      : isRec(value) && Array.isArray(value.apps)
+        ? value.apps
+        : [];
   const items: CatalogAppRecord[] = [];
   for (const entry of raw) {
     if (!isRec(entry) || typeof entry.id !== 'string' || typeof entry.name !== 'string') continue;
@@ -169,18 +186,15 @@ export function parseSupervisorAddonsPayload(
   addonsPayload: unknown,
   storePayload?: unknown,
 ): { readonly installed: InstalledAppRecord[]; readonly catalog: CatalogAppRecord[] } {
-  const rawAddons = isRec(addonsPayload) && Array.isArray(addonsPayload.addons) ? addonsPayload.addons : [];
+  const rawAddons =
+    isRec(addonsPayload) && Array.isArray(addonsPayload.addons) ? addonsPayload.addons : [];
   const installed: InstalledAppRecord[] = [];
   const installedSlugs = new Set<string>();
   for (const addon of rawAddons) {
     if (!isRec(addon) || typeof addon.slug !== 'string' || typeof addon.name !== 'string') continue;
     installedSlugs.add(addon.slug);
     const state: AppLifecycleState =
-      addon.state === 'started'
-        ? 'running'
-        : addon.state === 'stopped'
-          ? 'stopped'
-          : 'unknown';
+      addon.state === 'started' ? 'running' : addon.state === 'stopped' ? 'stopped' : 'unknown';
     installed.push({
       id: addon.slug,
       externalId: addon.slug,
@@ -334,7 +348,8 @@ export function buildDemoAppsState(): DemoAppsState {
     },
   ];
   const logsById: Record<string, string> = {
-    zigbee2mqtt: '[info] Coordinator ready on /dev/ttyACM0\n[info] MQTT bridge connected (28 entities published)',
+    zigbee2mqtt:
+      '[info] Coordinator ready on /dev/ttyACM0\n[info] MQTT bridge connected (28 entities published)',
     go2rtc: '[info] Relay listener ready on :1984\n[info] 3 local camera streams warming',
     'thread-border': '[info] Service stopped by user',
   };

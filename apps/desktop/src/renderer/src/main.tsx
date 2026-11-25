@@ -38,7 +38,10 @@ ReactDOM.createRoot(document.getElementById('root')!, {
 }).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <HausUiProvider mode="auto" portal={(node) => createPortal(node, document.body)}>
+      <HausUiProvider
+        mode="auto"
+        portal={(node) => createPortal(node, document.fullscreenElement ?? document.body)}
+      >
         <App />
         <WindowControls />
         <RendererReady />

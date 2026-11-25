@@ -7,14 +7,14 @@ import {
   extractPrinterSupplies,
   friendlyEntityLabel,
   hsvToRgb,
-  orderPowerStripOutlets,
   rgbToHsv,
 } from '@haus/core/transport';
 import { lightColor } from '@haus/ha/light-color';
+import { presentPowerOutlets } from '@haus/ha/view/device-relationships';
 import {
   lightActiveEffect,
   lightDisableEffect,
-  lightEffects,
+  lightEffectOptions,
   lightProfile,
   lightStateDescription,
   lightTemperature,
@@ -23,12 +23,18 @@ import type { HassEntity, Snapshot } from '@haus/ha/types';
 import { HausSlider, HausSwitch, Row, Stack, Text } from '@haus/ui/primitives';
 import {
   LightColorPanel,
+  LightEffectsPanel,
   LightGroupPanel,
   NetworkDetailsPanel,
   PowerStripPanel,
   PrinterSuppliesPanel,
 } from '@haus/ui/components';
-import { availableAction, type DeviceIntent, type HomeDevice } from './model.js';
+import {
+  availableAction,
+  availableDeviceActions,
+  type DeviceIntent,
+  type HomeDevice,
+} from './model.js';
 import type { DeviceControl } from './cards.js';
 
 export interface RangeProps {
@@ -119,22 +125,16 @@ export function LightControlsSection({
   const entity = accessory.state;
   const profile = lightProfile(entity);
   const lightGroup = accessory.lightGroup;
-  const targets = lightGroup
-    ? lightGroup.members.map((member) => member.primaryEntityId)
-    : [id];
+  const target = lightGroup ? lightGroup.members.map((member) => member.primaryEntityId) : id;
 
   const sendTargets = (intent: DeviceIntent, value?: unknown) => {
-    for (const targetId of targets) {
-      if (availableAction(snapshot, targetId, intent, value)) {
-        onControl(targetId, intent, value);
-      }
-    }
+    if (availableDeviceActions(snapshot, target, intent, value).length)
+      onControl(target, intent, value);
   };
 
-  const canToggle = targets.some((targetId) => availableAction(snapshot, targetId, 'toggle'));
+  const canToggle = availableDeviceActions(snapshot, target, 'toggle').length > 0;
   const canBrightness =
-    profile.brightness &&
-    targets.some((targetId) => availableAction(snapshot, targetId, 'brightness', 50));
+    profile.brightness && availableDeviceActions(snapshot, target, 'brightness', 50).length > 0;
   const rawBrightness =
     typeof entity.attributes.brightness === 'number'
       ? Math.round(Math.max(0, Math.min(255, entity.attributes.brightness)) / 2.55)
@@ -155,7 +155,9 @@ export function LightControlsSection({
     typeof entity.attributes.max_color_temp_kelvin === 'number'
       ? entity.attributes.max_color_temp_kelvin
       : 6500;
-  const effects = lightEffects(entity);
+  const effects = lightEffectOptions(entity).filter(
+    (item) => availableDeviceActions(snapshot, target, 'effect', item.value).length > 0,
+  );
   const activeEffect = lightActiveEffect(entity);
   const disableEffect = lightDisableEffect(entity);
 
@@ -196,20 +198,19 @@ export function LightControlsSection({
         maxKelvin={maxKelvin}
         canColor={profile.color}
         canTemperature={profile.temperature}
-        effects={effects}
-        activeEffect={activeEffect}
         disabled={disabled}
         presets={LIGHT_COLOUR_PRESETS}
         onColorRgb={(nextRgb) => sendTargets('color', nextRgb)}
         onColorHsv={(nextHue, nextSat) => sendTargets('color', hsvToRgb(nextHue, nextSat))}
         onTemperature={(nextKelvin) => sendTargets('temperature', nextKelvin)}
-        onEffect={(effect) => {
-          if (activeEffect === effect && disableEffect) {
-            sendTargets('effect', disableEffect);
-            return;
-          }
-          sendTargets('effect', effect);
-        }}
+      />
+      <LightEffectsPanel
+        idPrefix={`control-${id}`}
+        options={effects}
+        active={activeEffect}
+        stop={disableEffect}
+        disabled={disabled}
+        onSelect={(effect) => sendTargets('effect', effect)}
       />
       {lightGroup && onSeparateLightGroup && (
         <LightGroupPanel
@@ -239,19 +240,13 @@ export function PowerStripSection({
   readonly onControl: DeviceControl;
 }) {
   const { accessory } = device;
-  const outlets = orderPowerStripOutlets(
+  const outlets = presentPowerOutlets(
     [accessory.state, ...accessory.secondaryEntities],
     accessory.name,
   );
   return (
     <PowerStripPanel
-      outlets={outlets.map((item) => ({
-        id: item.entity.entity_id,
-        label: item.label,
-        active: item.active,
-        available: item.available,
-        isMaster: item.isMaster,
-      }))}
+      outlets={outlets}
       disabled={disabled}
       onToggle={(outletId) => {
         if (availableAction(snapshot, outletId, 'toggle')) {

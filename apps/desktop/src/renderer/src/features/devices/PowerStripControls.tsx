@@ -5,10 +5,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Power } from 'lucide-react';
-import { Box, HausButton, Text } from '@haus/ui';
+import { presentPowerOutlets } from '@haus/ha/view/device-relationships';
+import { PowerStripPanel } from '@haus/ui/components';
 import { buildAction, type HassEntity } from '../../model';
-import { deviceDisplayName } from '../../model/device-name';
 export function PowerStripControls({
   entities,
   name,
@@ -18,46 +17,14 @@ export function PowerStripControls({
   name: string;
   onAction: (action: ReturnType<typeof buildAction>) => void;
 }) {
-  const switches = entities.filter((item) => item.entity_id.startsWith('switch.'));
-  const ordered = [
-    ...switches.filter((item) => item.attributes.haus_outlet_role !== 'master'),
-    ...switches.filter((item) => item.attributes.haus_outlet_role === 'master'),
-  ];
+  const outlets = presentPowerOutlets(entities, name);
   return (
-    <Box semantic="section" className="power-strip-controls" ariaLabel="Individual outlets">
-      {ordered.map((item) => {
-        const isMaster = item.attributes.haus_outlet_role === 'master';
-        const label = isMaster
-          ? 'All Outlets'
-          : deviceDisplayName(
-              String(item.attributes.friendly_name ?? item.entity_id),
-              name,
-              'Outlet',
-            );
-        const active = item.state === 'on';
-        return (
-          <Box className={`power-strip-outlet${isMaster ? ' is-master' : ''}`} key={item.entity_id}>
-            <HausButton
-              isIconOnly
-              variant="ghost"
-              aria-label={`${active ? 'Turn off' : 'Turn on'} ${label}`}
-              aria-pressed={active}
-              isDisabled={['unavailable', 'unknown'].includes(item.state)}
-              onPress={() => onAction(buildAction(item, 'toggle'))}
-            >
-              <Power size={32} strokeWidth={1.5} />
-            </HausButton>
-            <Text semantic="strong">{label}</Text>
-            <Text semantic="small">
-              {['unavailable', 'unknown'].includes(item.state)
-                ? 'No response'
-                : active
-                  ? 'On'
-                  : 'Off'}
-            </Text>
-          </Box>
-        );
-      })}
-    </Box>
+    <PowerStripPanel
+      outlets={outlets}
+      onToggle={(id) => {
+        const outlet = outlets.find((item) => item.id === id);
+        if (outlet?.available) onAction(buildAction(outlet.entity, 'toggle'));
+      }}
+    />
   );
 }

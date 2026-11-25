@@ -5,20 +5,57 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { ServerIcon } from '../../components/icons/ServerIcon';
-import { hostBatteryStatus } from './host-system';
-import { BatteryLevelIcon } from '../../components/icons/Icon';
-import { Eye, Heart, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Box, Pressable, Text } from '@haus/ui';
+import type { ServerSummaryRecord } from '@haus/core/transport';
+import { ServerCardTile } from '@haus/ui/components';
 import { ContextMenu } from '@haus/ui/web';
+import { ServerIcon } from '../../components/icons/ServerIcon';
 import type { ContextMenuItem } from '../../../../shared/native';
-import { percent, ratio, telemetryIsFresh } from './presentation';
+import { telemetryIsFresh } from './presentation';
 import type { HomeServer } from './types';
 import type { ServerDevicePreference } from '../../model/preferences';
 import type { ServerRoom } from './server-rooms';
 import { serverContextItems, serverContextPreference } from './server-context-menu';
+
+function toServerSummary(
+  server: HomeServer,
+  room: string | undefined,
+  telemetryFresh: boolean,
+  preference: ServerDevicePreference | undefined,
+): ServerSummaryRecord {
+  const host = server.host;
+  const battery = telemetryFresh ? host?.battery : null;
+  return {
+    id: server.id,
+    managedId: server.managedId,
+    name: server.name,
+    kind: server.kind,
+    roomName: room,
+    favorite: Boolean(preference?.favorite),
+    online: server.online,
+    enabled: server.enabled !== false,
+    local: server.local,
+    url: server.url,
+    lastSeen: server.lastSeen,
+    osLabel: host?.osName ?? host?.distribution ?? host?.platform ?? '',
+    cpuModel: host?.cpu?.model ?? '',
+    cpuCores: host?.cpu?.logicalCores ?? null,
+    cpuUsage: telemetryFresh ? (host?.cpu?.usage ?? null) : null,
+    loadAverageLabel: '',
+    memoryUsedBytes: telemetryFresh ? (host?.memory?.usedBytes ?? null) : null,
+    memoryTotalBytes: telemetryFresh ? (host?.memory?.totalBytes ?? null) : null,
+    uptimeSeconds: host?.uptimeSeconds ?? null,
+    ...(battery
+      ? {
+          batteryLevel: battery.level ?? null,
+          batteryCharging: battery.charging === true || battery.powerConnected === true,
+        }
+      : {}),
+    disks: [],
+    services: [],
+  };
+}
 
 export function ServerCard({
   server,
@@ -44,35 +81,20 @@ export function ServerCard({
   hidden?: boolean;
 }) {
   const telemetryFresh = telemetryIsFresh(server, fresh, now);
-  const state = !fresh
-    ? 'Last known status'
-    : server.enabled === false
-      ? 'Paused'
-      : server.online === true
-        ? 'Connected'
-        : server.online === false
-          ? 'Offline'
-          : 'Not checked';
-  const battery = telemetryFresh ? server.host?.battery : null;
-  const batteryLevel = battery?.level ?? undefined;
-  const batteryCharging = battery?.charging === true || battery?.powerConnected === true;
-  const batteryStatus = hostBatteryStatus(battery);
-  const summary =
-    !hidden && server.enabled !== false && telemetryFresh && server.host?.cpu && server.host?.memory
-      ? `CPU ${percent(server.host.cpu.usage)} · RAM ${percent(ratio(server.host.memory.usedBytes, server.host.memory.totalBytes))}`
-      : state;
   const [menu, setMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number }>();
   const [menuError, setMenuError] = useState('');
+
   const applyMenuAction = async (selected: string) => {
     setMenu(undefined);
     if (selected === 'details') return onOpen();
     const next = serverContextPreference(selected, rooms, preference);
     if (next && onSavePreference) await onSavePreference(next);
   };
-  const showMenu = async (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.nativeEvent.stopImmediatePropagation();
+
+  const showMenu = async (event?: React.MouseEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    event?.nativeEvent?.stopImmediatePropagation();
     setMenuError('');
     const items = serverContextItems(rooms, preference, Boolean(onSavePreference));
     if (window.hausNative?.showContextMenu) {
@@ -83,79 +105,37 @@ export function ServerCard({
         setMenuError('Your server settings could not be saved. Try again.');
       }
     } else {
+      const x = event ? event.clientX : 120;
+      const y = event ? event.clientY : 120;
       setMenu({
         items,
-        x: Math.max(8, Math.min(event.clientX, window.innerWidth - 240)),
-        y: Math.max(8, Math.min(event.clientY, window.innerHeight - 210)),
+        x: Math.max(8, Math.min(x, window.innerWidth - 240)),
+        y: Math.max(8, Math.min(y, window.innerHeight - 210)),
       });
     }
   };
+
   return (
-    <Box
-      semantic="article"
-      id={`server-card-${server.id}`}
-      tabIndex={-1}
-      className={`accessory-tile server-tile ${fresh && server.online === false ? 'is-unavailable' : ''}`}
-      onContextMenu={(event) => void showMenu(event)}
-    >
-      <Box className="tile-top">
-        <Pressable className="accessory-icon" onPress={onOpen} ariaLabel={`Open ${server.name}`}>
-          <ServerIcon server={server} icon={icon} />
-        </Pressable>
-        <Text className="server-tile-status">
-          {(typeof batteryLevel === 'number' ||
-            typeof battery?.charging === 'boolean' ||
-            typeof battery?.powerConnected === 'boolean') && (
-            <Text
-              className={`battery-tile-reading server-tile-battery ${typeof batteryLevel === 'number' && batteryLevel <= 20 ? 'is-low' : ''} ${batteryCharging ? 'is-charging' : ''}`}
-              dataAttrs={{
-                'data-hover-only':
-                  (typeof batteryLevel === 'number' && batteryLevel >= 75 && !batteryCharging) ||
-                  undefined,
-              }}
-              ariaLabel={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery'}${batteryStatus ? `, ${batteryStatus.toLowerCase()}` : ''}`}
-              title={`${typeof batteryLevel === 'number' ? `Battery ${Math.round(batteryLevel)}%` : 'Battery status'}${batteryStatus ? ` · ${batteryStatus}` : ''}`}
-            >
-              <BatteryLevelIcon level={batteryLevel} charging={batteryCharging} size={10.5} />
-            </Text>
-          )}
-          {preference?.favorite && <Heart size={13} fill="currentColor" aria-label="Favorite" />}
-        </Text>
-      </Box>
-      <Pressable
-        className="tile-body"
-        onPress={onOpen}
-        ariaLabel={`${server.name}, ${room ?? 'Unassigned'}, ${state}${summary !== state ? `, ${summary}` : ''}`}
-      >
-        <Text semantic="small">{room ?? 'Unassigned'}</Text>
-        <Text semantic="strong">{server.name}</Text>
-        <Text title={state}>{summary}</Text>
-      </Pressable>
-      <Pressable
-        className="tile-more"
-        ariaLabel={`Options for ${server.name}`}
-        onPress={(event) => void showMenu(event)}
-      >
-        <MoreHorizontal size={17} />
-      </Pressable>
-      {hidden && onSavePreference && (
-        <Pressable
-          className="tile-restore"
-          onPress={() =>
-            void applyMenuAction('app-visibility').catch(() =>
-              setMenuError('Your server settings could not be saved. Try again.'),
-            )
-          }
-        >
-          <Eye size={14} />
-          Restore to Haus
-        </Pressable>
-      )}
-      {menuError && (
-        <Text className="server-card-error" role="alert">
-          {menuError}
-        </Text>
-      )}
+    <>
+      <ServerCardTile
+        server={toServerSummary(server, room, telemetryFresh, preference)}
+        room={room ?? 'Unassigned'}
+        fresh={fresh}
+        hidden={hidden}
+        iconSlot={<ServerIcon server={server} icon={icon} />}
+        errorText={menuError || undefined}
+        onOpen={onOpen}
+        onOptions={(event) => void showMenu(event)}
+        onContextMenu={(event) => void showMenu(event)}
+        onRestore={
+          hidden && onSavePreference
+            ? () =>
+                void applyMenuAction('app-visibility').catch(() =>
+                  setMenuError('Your server settings could not be saved. Try again.'),
+                )
+            : undefined
+        }
+      />
       {menu &&
         createPortal(
           <ContextMenu
@@ -169,6 +149,6 @@ export function ServerCard({
           />,
           document.body,
         )}
-    </Box>
+    </>
   );
 }

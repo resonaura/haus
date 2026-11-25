@@ -1,0 +1,304 @@
+{
+  "timestamp": "2026-11-25T09:10:17.015Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "rssEndMb": 217.6,
+  "results": [
+    {
+      "name": "preview_home_mount",
+      "samples": 1,
+      "stats": {
+        "minMs": 1436.569,
+        "p50Ms": 1436.569,
+        "p95Ms": 1436.569,
+        "p99Ms": 1436.569,
+        "maxMs": 1436.569,
+        "avgMs": 1436.569
+      },
+      "extra": {
+        "divCount": 238,
+        "textCount": 320,
+        "svgCount": 84,
+        "imgCount": 3,
+        "rssMb": 146.66
+      }
+    },
+    {
+      "name": "scroll_horiz_over_vert_bug_check",
+      "samples": 4,
+      "stats": {
+        "minMs": 0,
+        "p50Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "avgMs": 0
+      },
+      "extra": {
+        "mainOffsetAfterPureHoriz": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "scroll_diag_horiz_dominant_over_rail",
+      "samples": 6,
+      "stats": {
+        "minMs": 0,
+        "p50Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "avgMs": 0
+      },
+      "extra": {
+        "railAfter": [
+          -27,
+          0
+        ],
+        "mainBefore": [
+          0,
+          0
+        ],
+        "mainAfter": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "preview_home_vertical_scroll",
+      "samples": 40,
+      "stats": {
+        "minMs": 11.89,
+        "p50Ms": 13.486,
+        "p95Ms": 16.032,
+        "p99Ms": 16.241,
+        "maxMs": 18.293,
+        "avgMs": 13.569
+      },
+      "extra": {
+        "rssMb": 142.13,
+        "perf": {
+          "requestLayoutMs": 2.1725,
+          "prepaintMs": 0.6947089999999999,
+          "paintMs": 1.150125,
+          "a11yMs": 0.051916000000000004,
+          "sceneFinishMs": 0.142917,
+          "presentMs": 0,
+          "totalDrawMs": 4.321583,
+          "drawCount": 120,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 645
+        }
+      }
+    },
+    {
+      "name": "preview_hover_sweep",
+      "samples": 30,
+      "stats": {
+        "minMs": 10.552,
+        "p50Ms": 15.814,
+        "p95Ms": 19.082,
+        "p99Ms": 20.112,
+        "maxMs": 20.569,
+        "avgMs": 15.773
+      },
+      "extra": {
+        "rssMb": 145.74,
+        "perf": {
+          "requestLayoutMs": 1.776791,
+          "prepaintMs": 0.570542,
+          "paintMs": 0.802708,
+          "a11yMs": 0.038958,
+          "sceneFinishMs": 0.134917,
+          "presentMs": 0,
+          "totalDrawMs": 3.415416,
+          "drawCount": 112,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 645
+        }
+      }
+    },
+    {
+      "name": "synthetic_hover_120_cards_native",
+      "samples": 24,
+      "stats": {
+        "minMs": 5.228,
+        "p50Ms": 5.745,
+        "p95Ms": 6.019,
+        "p99Ms": 6.041,
+        "maxMs": 6.526,
+        "avgMs": 5.666
+      },
+      "extra": {
+        "commits": 0,
+        "perf": {
+          "requestLayoutMs": 0.7518750000000001,
+          "prepaintMs": 0.1785,
+          "paintMs": 0.411166,
+          "a11yMs": 0.008749999999999999,
+          "sceneFinishMs": 0.01525,
+          "presentMs": 0,
+          "totalDrawMs": 1.407792,
+          "drawCount": 96,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 241
+        }
+      }
+    },
+    {
+      "name": "synthetic_hover_120_cards_js_state",
+      "samples": 24,
+      "stats": {
+        "minMs": 2.374,
+        "p50Ms": 2.96,
+        "p95Ms": 3.573,
+        "p99Ms": 5.132,
+        "maxMs": 5.683,
+        "avgMs": 3.157
+      },
+      "extra": {
+        "commits": 20,
+        "perf": {
+          "requestLayoutMs": 0.585625,
+          "prepaintMs": 0.228792,
+          "paintMs": 0.24829099999999998,
+          "a11yMs": 0.005959,
+          "sceneFinishMs": 0.024166,
+          "presentMs": 0,
+          "totalDrawMs": 1.14375,
+          "drawCount": 72,
+          "presentCount": 0,
+          "applyBatchCount": 20,
+          "applyBatchMs": 0.124709,
+          "retainedElements": 241
+        }
+      }
+    },
+    {
+      "name": "scroll_long_list_1000",
+      "samples": 30,
+      "stats": {
+        "minMs": 26.116,
+        "p50Ms": 28.313,
+        "p95Ms": 32.513,
+        "p99Ms": 33.534,
+        "maxMs": 34.499,
+        "avgMs": 28.96
+      },
+      "extra": {
+        "rssMb": 157.88,
+        "perf": {
+          "requestLayoutMs": 5.169207999999999,
+          "prepaintMs": 2.068875,
+          "paintMs": 1.811417,
+          "a11yMs": 0.007791,
+          "sceneFinishMs": 0.175958,
+          "presentMs": 0,
+          "totalDrawMs": 9.556917,
+          "drawCount": 90,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 2001
+        }
+      }
+    },
+    {
+      "name": "scroll_long_list_5000",
+      "samples": 30,
+      "stats": {
+        "minMs": 149.133,
+        "p50Ms": 181.804,
+        "p95Ms": 454.504,
+        "p99Ms": 767.085,
+        "maxMs": 946.268,
+        "avgMs": 244.035
+      },
+      "extra": {
+        "rssMb": 247.55,
+        "perf": {
+          "requestLayoutMs": 27.756083,
+          "prepaintMs": 11.928374999999999,
+          "paintMs": 9.861208,
+          "a11yMs": 0.011250000000000001,
+          "sceneFinishMs": 0.7010000000000001,
+          "presentMs": 0,
+          "totalDrawMs": 51.402125,
+          "drawCount": 90,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 10001
+        }
+      }
+    },
+    {
+      "name": "compositor_liquid_glass_panel",
+      "samples": 20,
+      "stats": {
+        "minMs": 0.49,
+        "p50Ms": 0.524,
+        "p95Ms": 0.608,
+        "p99Ms": 0.608,
+        "maxMs": 0.742,
+        "avgMs": 0.538
+      },
+      "extra": {
+        "rssMb": 216.3,
+        "perf": {
+          "requestLayoutMs": 0.0805,
+          "prepaintMs": 0.021958,
+          "paintMs": 0.051209,
+          "a11yMs": 0.0006659999999999999,
+          "sceneFinishMs": 0.0027089999999999996,
+          "presentMs": 0,
+          "totalDrawMs": 0.161333,
+          "drawCount": 60,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 50
+        }
+      }
+    },
+    {
+      "name": "native_motion_spring_transforms_0_commits",
+      "samples": 30,
+      "stats": {
+        "minMs": 0.252,
+        "p50Ms": 0.26,
+        "p95Ms": 0.381,
+        "p99Ms": 0.432,
+        "maxMs": 0.675,
+        "avgMs": 0.287
+      },
+      "extra": {
+        "commits": 0,
+        "rssMb": 217.56,
+        "perf": {
+          "requestLayoutMs": 0.082459,
+          "prepaintMs": 0.011667,
+          "paintMs": 0.035375,
+          "a11yMs": 0.001,
+          "sceneFinishMs": 0.001333,
+          "presentMs": 0,
+          "totalDrawMs": 0.135166,
+          "drawCount": 60,
+          "presentCount": 0,
+          "applyBatchCount": 0,
+          "applyBatchMs": 0,
+          "retainedElements": 25
+        }
+      }
+    }
+  ]
+}

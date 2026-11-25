@@ -6,10 +6,8 @@
  */
 
 import type { HassEntity } from './types';
-import { lightColor } from './light-color';
-import { lightActiveEffectOption, type LightEffectOption } from './light-profile';
-
-import { isEntityActive } from '@haus/ha/view/device-state';
+import type { LightEffectOption } from './light-profile';
+import { resolveDeviceAppearance } from '@haus/ha/view/device-state';
 export { isEntityActive, binaryStateDescription } from '@haus/ha/view/device-state';
 
 export interface DeviceAppearance {
@@ -21,13 +19,16 @@ export interface DeviceAppearance {
 
 /** Light output keeps its color or active effect palette; other active devices share a neutral highlight. */
 export function deviceAppearance(entity: HassEntity): DeviceAppearance {
-  const active = isEntityActive(entity);
-  const domain = entity.entity_id.split('.')[0];
-  const effect = active && domain === 'light' ? lightActiveEffectOption(entity) : undefined;
-  const actualColor = active ? (effect?.palette[0] ?? lightColor(entity)) : undefined;
-  const accent =
-    domain === 'light' ? (actualColor ?? 'var(--cat-lights)') : 'var(--device-neutral)';
-  return { active, accent, actualColor, ...(effect ? { effect } : {}) };
+  const resolved = resolveDeviceAppearance(entity);
+  const accent = resolved.isLight
+    ? (resolved.actualColor ?? 'var(--cat-lights)')
+    : 'var(--device-neutral)';
+  return {
+    active: resolved.active,
+    accent,
+    actualColor: resolved.actualColor,
+    ...(resolved.effect ? { effect: resolved.effect } : {}),
+  };
 }
 
 /** Builds unified CSS custom property map for solid light color or animated effect light wash. */

@@ -19,19 +19,7 @@ import {
   Text,
   VideoSurface,
 } from '@haus/ui';
-import {
-  Settings2,
-  Video,
-  Play,
-  Pause,
-  Expand,
-  Minimize,
-  Scan,
-  Shrink,
-  LoaderCircle,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { Video, LoaderCircle } from 'lucide-react';
 import { useCameraLiveStream } from './useCameraLiveStream';
 import { useCameraHandoff, useRetainedLive } from './useCameraHandoff';
 const CameraDeviceSettings = lazy(() =>
@@ -39,6 +27,15 @@ const CameraDeviceSettings = lazy(() =>
 );
 import { type HassEntity, type HausAccessory } from '../../model';
 import { message, type Action } from '../../hooks/useHaus';
+import {
+  CameraStageBackdrop,
+  CameraToolbar,
+  CameraToolButton,
+  CameraSurfaceTheme,
+  CameraViewPicker,
+  type CameraViewMode,
+} from '@haus/ui/components';
+import { insets } from '@haus/ui/ir';
 import { SmoothImage } from '@haus/ui/web';
 import { useDelayedPending } from '../../hooks/useDelayedPending';
 import { CameraTimeline, type CameraEvent } from './CameraTimeline';
@@ -145,7 +142,14 @@ export function CameraModal({
   useEffect(() => {
     if (!controlsOpen) return;
     const dismiss = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || document.querySelector('[role="listbox"]')) return;
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        document.querySelector('[role="listbox"]') ||
+        document.querySelector('[data-haus-kind="popover"]')
+      ) {
+        return;
+      }
       event.stopPropagation();
       setControlsOpen(false);
     };
@@ -153,7 +157,7 @@ export function CameraModal({
     return () => document.removeEventListener('keydown', dismiss, true);
   }, [controlsOpen]);
   const [videoReady, setVideoReady] = useState(false);
-  const [view, setView] = useState<'live' | 'events'>('live');
+  const [view, setView] = useState<CameraViewMode>('live');
   const [endedId, setEndedId] = useState<string>();
   const [playback, setPlayback] = useState({ seconds: 0, duration: 0, playing: false });
   const [recording, setRecording] = useState<CameraEvent>();
@@ -275,7 +279,7 @@ export function CameraModal({
     setStillUpdatedAt,
     setRetry,
   });
-  return (
+  const dialog = (
     <Modal
       isOpen
       onOpenChange={(open) => {
@@ -284,6 +288,7 @@ export function CameraModal({
     >
       <Modal.Backdrop
         variant="blur"
+        style={{ layout: { padding: insets(0) } }}
         isDismissable={!controlsOpen}
         onPointerDownCapture={(event) => {
           const target = event.target;
@@ -300,21 +305,26 @@ export function CameraModal({
       >
         <Modal.Container size="cover" className="camera-modal-container">
           <Modal.Dialog
+            size="cover"
             className="camera-dialog camera-viewer"
             data-camera-view={view}
-            data-video-fill={fill}
+            data-video-fill={String(fill)}
           >
-            <Modal.CloseTrigger />
-            <Button
-              isIconOnly
-              variant="ghost"
+            <CameraToolButton
+              circular
+              icon="x"
+              label="Close dialog"
+              className="camera-close-trigger"
+              onPress={onClose}
+            />
+            <CameraToolButton
+              circular
+              icon="settings-2"
+              label="Camera settings"
               className="camera-settings-trigger"
-              aria-label="Camera settings"
-              aria-expanded={controlsOpen}
+              active={controlsOpen}
               onPress={() => setControlsOpen((value) => !value)}
-            >
-              <Settings2 size={19} />
-            </Button>
+            />
             <Modal.Header className="camera-modal-header">
               <Box className="camera-modal-title">
                 {room && (
@@ -330,25 +340,14 @@ export function CameraModal({
                   )}
                 </Modal.Heading>
               </Box>
-              <Box className="camera-view-picker" ariaLabel="Camera view">
-                <Button
-                  variant="ghost"
-                  aria-pressed={view === 'live'}
-                  onPress={() => {
-                    setView('live');
-                    chooseRecording(undefined);
-                  }}
-                >
-                  Live
-                </Button>
-                <Button
-                  variant="ghost"
-                  aria-pressed={view === 'events'}
-                  onPress={() => setView('events')}
-                >
-                  Events
-                </Button>
-              </Box>
+              <CameraViewPicker
+                className="camera-view-picker"
+                view={view}
+                onChange={(mode) => {
+                  setView(mode);
+                  if (mode === 'live') chooseRecording(undefined);
+                }}
+              />
               <Box className="camera-calendar-host" boxRef={setCalendarHost} />
             </Modal.Header>
             <Modal.Body className="camera-modal-body">
@@ -555,101 +554,76 @@ export function CameraModal({
                         </Text>
                       )}
                     </Box>
-                    <Box className="camera-toolbar">
-                      {recording && (
-                        <Button
-                          isIconOnly
-                          variant="ghost"
-                          aria-label={playback.playing ? 'Pause recording' : 'Play recording'}
-                          onPress={() => {
-                            const element = recordedVideo.current;
-                            if (!element) return;
-                            desiredPlayback.current = element.paused;
-                            if (element.paused) void element.play().catch(() => {});
-                            else element.pause();
-                          }}
-                        >
-                          {playback.playing ? <Pause size={19} /> : <Play size={19} />}
-                        </Button>
-                      )}
-                      {!recording && (
-                        <CameraPtzControls
-                          entities={[
-                            ...new Map(
-                              related
-                                .flatMap((accessory) => [
-                                  accessory.state,
-                                  ...accessory.secondaryEntities,
-                                ])
-                                .map((item) => [item.entity_id, item]),
-                            ).values(),
-                          ]}
-                          onAction={onAction}
-                          onError={(reason) => setError(message(reason))}
-                        />
-                      )}
-                      {!recording && (
-                        <CameraTalk
-                          cameraId={entity.entity_id}
-                          demo={demo}
-                          providerHint={talkProviderHint}
-                        />
-                      )}
-                      <Button
-                        isIconOnly
-                        variant="ghost"
-                        aria-label={
-                          !recordingHasAudio
-                            ? 'No audio was recorded'
-                            : muted
-                              ? 'Unmute camera'
-                              : 'Mute camera'
-                        }
-                        onPress={() => setMuted((v) => !v)}
-                        isDisabled={
-                          demo ||
-                          !recordingHasAudio ||
-                          (!recording && !streamState.startsWith('Live'))
-                        }
-                      >
-                        {muted || !recordingHasAudio ? (
-                          <VolumeX size={20} />
-                        ) : (
-                          <Volume2 size={20} />
-                        )}
-                      </Button>
-                      <Text>
-                        {demo
-                          ? 'Sample imagery · Connect your home for live video'
-                          : error || 'A little peace of mind.'}
-                      </Text>
-                      <Button
-                        isIconOnly
-                        variant="ghost"
-                        aria-label={fill ? 'Fit video inside viewer' : 'Fill viewer with video'}
-                        aria-pressed={fill}
-                        onPress={() => setFill((value) => !value)}
-                      >
-                        {fill ? <Shrink size={19} /> : <Scan size={19} />}
-                      </Button>
-                      <Button
-                        isIconOnly
-                        variant="ghost"
-                        aria-label={fullscreen ? 'Exit full screen' : 'Full screen camera'}
-                        onPress={() => {
-                          const operation = document.fullscreenElement
-                            ? document.exitFullscreen()
-                            : (
-                                viewer.current?.closest('.camera-dialog') as HTMLElement | null
-                              )?.requestFullscreen();
-                          void operation?.catch((reason) => setError(message(reason)));
-                        }}
-                      >
-                        {fullscreen ? <Minimize size={19} /> : <Expand size={19} />}
-                      </Button>
-                    </Box>
+                    <CameraToolbar
+                      className="camera-toolbar"
+                      fill={fill}
+                      muted={muted || !recordingHasAudio}
+                      muteLabel={
+                        !recordingHasAudio
+                          ? 'No audio was recorded'
+                          : muted
+                            ? 'Unmute camera'
+                            : 'Mute camera'
+                      }
+                      muteDisabled={
+                        demo ||
+                        !recordingHasAudio ||
+                        (!recording && !streamState.startsWith('Live'))
+                      }
+                      playing={playback.playing}
+                      fullscreen={fullscreen}
+                      onToggleMute={() => setMuted((value) => !value)}
+                      onToggleFill={() => setFill((value) => !value)}
+                      onTogglePlay={
+                        recording
+                          ? () => {
+                              const element = recordedVideo.current;
+                              if (!element) return;
+                              desiredPlayback.current = element.paused;
+                              if (element.paused) void element.play().catch(() => {});
+                              else element.pause();
+                            }
+                          : undefined
+                      }
+                      onToggleFullscreen={() => {
+                        const operation = document.fullscreenElement
+                          ? document.exitFullscreen()
+                          : (
+                              viewer.current?.closest('.camera-dialog') as HTMLElement | null
+                            )?.requestFullscreen();
+                        void operation?.catch((reason) => setError(message(reason)));
+                      }}
+                      extras={
+                        <>
+                          {!recording && (
+                            <CameraPtzControls
+                              entities={[
+                                ...new Map(
+                                  related
+                                    .flatMap((accessory) => [
+                                      accessory.state,
+                                      ...accessory.secondaryEntities,
+                                    ])
+                                    .map((item) => [item.entity_id, item]),
+                                ).values(),
+                              ]}
+                              onAction={onAction}
+                              onError={(reason) => setError(message(reason))}
+                            />
+                          )}
+                          {!recording && (
+                            <CameraTalk
+                              cameraId={entity.entity_id}
+                              demo={demo}
+                              providerHint={talkProviderHint}
+                            />
+                          )}
+                        </>
+                      }
+                    />
                   </Box>
                 )}
+                <CameraStageBackdrop />
                 <CameraTimeline
                   calendarHost={calendarHost}
                   onScrub={(event, seconds, playing) => {
@@ -756,4 +730,5 @@ export function CameraModal({
       </Modal.Backdrop>
     </Modal>
   );
+  return <CameraSurfaceTheme>{dialog}</CameraSurfaceTheme>;
 }

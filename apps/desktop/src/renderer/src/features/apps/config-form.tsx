@@ -1,19 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { useEffect, useState } from 'react';
+import {
+  REDACTED_SECRET_PLACEHOLDER,
+  isSecretConfigKey,
+  type NativeConfigFieldMeta,
+} from '@haus/core/transport';
 import { Box, HausSwitch, SelectInput, Text, TextArea, TextInput } from '@haus/ui';
 import type { AppOptionSchema, AppSecretDeclaration } from '@haus/apps';
 
-export const REDACTED_SECRET_PLACEHOLDER = '<unchanged>';
-
-const SECRET_KEY_RE = /^(?:.*[_-])?(?:pass(?:word)?|secret|token|api_?key)$/i;
-
-export interface NativeConfigFieldMeta {
-  readonly title?: string;
-  readonly description?: string;
-  readonly type?: 'string' | 'number' | 'boolean' | 'select' | 'object' | 'array';
-  readonly secret?: boolean;
-  readonly choices?: readonly (string | number)[];
-}
+export { REDACTED_SECRET_PLACEHOLDER, type NativeConfigFieldMeta };
 
 function NestedJsonOption({
   name,
@@ -120,8 +115,7 @@ export function NativeAppConfigFields({
         const isSecret =
           value === REDACTED_SECRET_PLACEHOLDER ||
           Boolean(configuredSecrets?.has(key)) ||
-          meta?.secret === true ||
-          SECRET_KEY_RE.test(key);
+          isSecretConfigKey(key, meta);
 
         if (isSecret && (typeof value === 'string' || value === undefined || value === null)) {
           const isUnchanged = value === REDACTED_SECRET_PLACEHOLDER;

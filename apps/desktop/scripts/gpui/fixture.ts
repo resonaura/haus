@@ -106,6 +106,7 @@ export async function openCameraFixture(
     firstRelease: firstRelease.promise,
     allowRelease: allowRelease.resolve,
     activationRequests: () => activationRequests,
+    activeLeasesTaken: () => activations,
     viewer: () =>
       new HausHelper({
         connected: true,

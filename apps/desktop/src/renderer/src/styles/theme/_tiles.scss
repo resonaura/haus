@@ -10,7 +10,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
-.accessory-tile {
+.accessory-tile:not([data-haus-device-tile='shared']) {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -22,18 +22,18 @@
     transform 0.18s,
     box-shadow 0.18s;
 }
-.accessory-tile:hover {
+.accessory-tile:not([data-haus-device-tile='shared']):hover {
   transform: translateY(-2px);
   border-color: #ccd1bc;
   box-shadow: 0 5px 15px #30342105;
 }
-.tile-top {
+.accessory-tile:not([data-haus-device-tile='shared']) .tile-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
 }
-.accessory-icon {
+.accessory-tile:not([data-haus-device-tile='shared']) .accessory-icon {
   display: flex;
   width: 30px;
   height: 30px;
@@ -44,11 +44,11 @@
   color: #929687;
   transition: background 0.18s;
 }
-.accessory-icon svg {
+.accessory-tile:not([data-haus-device-tile='shared']) .accessory-icon svg {
   width: 16px;
   height: 16px;
 }
-.is-active .accessory-icon {
+.accessory-tile:not([data-haus-device-tile='shared']).is-active .accessory-icon {
   background: #f7e9bf;
   color: #b29445;
 }

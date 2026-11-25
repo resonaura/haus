@@ -6,17 +6,15 @@
  */
 
 import { stripOutlets } from '../../model/device-relationships';
-import { useState, type ReactNode, type Ref } from 'react';
-import { Pressable, Text } from '@haus/ui';
-import { DeviceTile, UiIcon } from '@haus/ui/components';
+import { type ReactNode, type Ref } from 'react';
+import { colorToken, mixColor, rgba, transparentColor } from '@haus/ui';
+import { DeviceTile, parseCssColor } from '@haus/ui/components';
 import type { HausAccessory } from '../../model';
 import { deviceAppearance, deviceSurfaceVars } from '../../model/device-appearance';
 import { deviceSource } from '../../model/device-name';
 import { accessoryDisplayName } from '../../model/accessory-name';
 import { describeAccessory } from '../../model/presentation';
-import { useDelayedPending } from '../../hooks/useDelayedPending';
-import { AccessoryIcon, BatteryLevelIcon } from '../../components/icons/Icon';
-import { LightEffectIcon } from './controls/LightEffectIcon';
+import { AccessoryIcon } from '../../components/icons/Icon';
 
 export interface AccessoryTileProps {
   accessory: HausAccessory;
@@ -89,13 +87,9 @@ export function AccessoryTile({
       ? { ...a.state, state: outlets.some((item) => item.state === 'on') ? 'on' : 'off' }
       : a.state,
   );
-  const charging = a.batteryCharging === true;
   const active = a.availability === 'available' && appearance.active;
+  const activeEffect = active ? appearance.effect : undefined;
   const swatch = active ? appearance.actualColor : undefined;
-  const slowPending = useDelayedPending(Boolean(a.pending), a.pendingSince);
-  // Retain the last output while the wash fades out, rather than fading via white.
-  const [outputAccent, setOutputAccent] = useState(appearance.accent);
-  if (active && outputAccent !== appearance.accent) setOutputAccent(appearance.accent);
 
   const displayName =
     title ??
@@ -109,21 +103,54 @@ export function AccessoryTile({
       : describeAccessory(a));
   const isQuickDisabled = quickDisabled ?? (a.availability !== 'available' && !a.managementUrl);
   const isDraggable = draggable ?? !hidden;
+  const selectionStyle =
+    selected || included
+      ? {
+          border: { width: 1, color: mixColor(transparentColor, colorToken('ink'), 0.38) },
+          shadows: [
+            {
+              offsetX: 0,
+              offsetY: 0,
+              blurRadius: 0,
+              spreadRadius: 1,
+              color: mixColor(transparentColor, colorToken('ink'), 0.14),
+            },
+            { offsetX: 0, offsetY: 5, blurRadius: 16, color: rgba(0, 0, 0, 0.1) },
+          ],
+        }
+      : undefined;
 
   return (
     <DeviceTile
+      desktop
       available={a.availability === 'available'}
+      active={active}
+      category={a.category}
+      favorite={favorite}
+      accent={parseCssColor(appearance.actualColor)}
+      colorSwatch={parseCssColor(swatch)}
+      lightEffect={activeEffect}
+      pending={Boolean(a.pending)}
+      pendingSince={a.pendingSince}
+      groupCount={a.lightGroup?.members.length}
+      battery={
+        typeof a.batteryLevel === 'number' || typeof a.batteryCharging === 'boolean'
+          ? { level: a.batteryLevel, charging: a.batteryCharging }
+          : undefined
+      }
+      sourceBadge={subtitle === undefined ? deviceSource(a.name) : undefined}
+      showStatusDot={showStatusDot}
+      topRight={topRight}
       frame={{
         boxRef: tileRef,
-        surfaceTokens: deviceSurfaceVars(outputAccent, active ? appearance.effect : undefined),
+        surfaceTokens: deviceSurfaceVars(appearance.accent, activeEffect),
         className:
           `accessory-tile accessory-${a.category} ${active ? 'is-active' : ''} ${a.availability !== 'available' ? 'is-unavailable' : ''} ${isDragging ? 'is-dragging' : ''} ${isDragOver ? 'is-drag-over' : ''} ${className}`.trim(),
         dataAttrs: {
-          'data-pending': a.pending || undefined,
           'data-selected': selected || undefined,
           'data-included': included || undefined,
-          'data-light-effect': active ? appearance.effect?.motion : undefined,
         },
+        style: selectionStyle,
         draggable: isDraggable,
         onDragStart,
         onDragOver,
@@ -132,9 +159,10 @@ export function AccessoryTile({
         onContextMenu,
       }}
       name={displayName}
+      subtitle={subtitle ?? (nameWithRoom ? 'Light' : (room ?? 'Other'))}
       state={resolvedStateText}
       stateKey={`${a.state.state}:${resolvedStateText}`}
-      icon={<AccessoryIcon accessory={a} />}
+      icon={<AccessoryIcon accessory={a} size={19} />}
       quickLabel={
         iconActionLabel ??
         (a.managementUrl ? `Open ${a.name} in browser` : `Quick control ${a.name}`)
@@ -142,101 +170,20 @@ export function AccessoryTile({
       quickDisabled={isQuickDisabled}
       onQuick={onQuick}
       onOpen={onOpen}
+      onMorePress={
+        showMore
+          ? (event) => {
+              if (onContextMenu) {
+                onContextMenu(event);
+              } else {
+                onOpen();
+              }
+            }
+          : undefined
+      }
+      onRestore={hidden && onRestore ? onRestore : undefined}
       selected={bodyAriaPressed}
       opened={bodyAriaExpanded}
-      indicators={
-        <>
-          {slowPending && (
-            <Text className="tile-pending-indicator" ariaLabel="Updating device" title="Updating…">
-              <UiIcon name="loader-circle" size={13} className="spin" />
-            </Text>
-          )}
-          {favorite ? <UiIcon name="heart" size={13} fill="currentColor" /> : null}
-          {a.lightGroup && (
-            <Text
-              semantic="bold"
-              className="light-group-count"
-              ariaLabel={`${a.lightGroup.members.length} lights grouped`}
-            >
-              {a.lightGroup.members.length}
-            </Text>
-          )}
-          {(typeof a.batteryLevel === 'number' || typeof a.batteryCharging === 'boolean') && (
-            <Text
-              className={`battery-tile-reading ${typeof a.batteryLevel === 'number' && a.batteryLevel <= 20 ? 'is-low' : ''} ${a.batteryCharging ? 'is-charging' : ''}`}
-              dataAttrs={{
-                'data-hover-only':
-                  (typeof a.batteryLevel === 'number' && a.batteryLevel >= 75 && !charging) ||
-                  undefined,
-              }}
-              ariaLabel={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery'}${a.batteryCharging ? ', charging' : ''}`}
-              title={`${typeof a.batteryLevel === 'number' ? `Battery ${Math.round(a.batteryLevel)}%` : 'Battery status'}${a.batteryCharging ? ' · Charging' : ''}`}
-            >
-              <BatteryLevelIcon level={a.batteryLevel} charging={a.batteryCharging} size={10.5} />
-            </Text>
-          )}
-          {showStatusDot &&
-            (active && appearance.effect ? (
-              <Text
-                className="light-effect-badge"
-                title={`Effect: ${appearance.effect.label}`}
-                ariaLabel={`Effect: ${appearance.effect.label}`}
-              >
-                <LightEffectIcon icon={appearance.effect.icon} size={11} />
-              </Text>
-            ) : swatch ? (
-              <Text
-                semantic="swatch"
-                className="light-color-swatch"
-                surfaceTokens={{ background: swatch }}
-                title="Current light color"
-              />
-            ) : null)}
-          {topRight}
-        </>
-      }
-      subtitle={
-        subtitle ?? (
-          <>
-            {nameWithRoom ? 'Light' : (room ?? 'Other')}
-            {deviceSource(a.name) && (
-              <Text
-                semantic="bold"
-                className="scene-source-badge scene-source-inline device-source-badge"
-              >
-                Hue
-              </Text>
-            )}
-          </>
-        )
-      }
-      actions={
-        <>
-          {showMore && (
-            <Pressable
-              className="tile-more"
-              ariaLabel={`Options for ${a.name}`}
-              onPress={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-                if (onContextMenu) {
-                  onContextMenu(e);
-                } else {
-                  onOpen();
-                }
-              }}
-            >
-              <UiIcon name="more-horizontal" size={17} />
-            </Pressable>
-          )}
-          {hidden && onRestore && (
-            <Pressable className="tile-restore" onPress={onRestore}>
-              <UiIcon name="eye" size={14} />
-              Restore to app
-            </Pressable>
-          )}
-        </>
-      }
     />
   );
 }

@@ -3,7 +3,8 @@
   "workspaceLayout": {
     "gpuix": "vendor/gpuix",
     "gpui": "vendor/gpui",
-    "gpuiRuntimeCrates": 27
+    "gpuiRuntimeCrates": 25,
+    "vendoredDirectly": true
   },
   "gpuix": {
     "repo": "https://github.com/remorses/gpuix.git",

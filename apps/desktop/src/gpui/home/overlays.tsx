@@ -32,6 +32,7 @@ export interface CameraModalOverlayProps {
   readonly cameraApi?: GpuiCameraApi;
   readonly fetchSnapshot?: (id: string) => Promise<string | null>;
   readonly onControl: DeviceControl;
+  readonly onToggleFullscreen?: () => void;
   readonly onPreferencesPatch?: (patch: Partial<Preferences>) => void;
   readonly onClose: () => void;
 }

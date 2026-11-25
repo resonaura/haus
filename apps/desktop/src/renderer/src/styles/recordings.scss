@@ -5,33 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-.camera-view-picker {
-  display: flex;
-  gap: 4px;
-  width: fit-content;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
-  margin-bottom: 18px;
-  corner-shape: var(--continuous-corner);
-}
-.camera-view-picker .button {
-  min-width: 90px;
-  border-radius: 16px;
-  height: 32px;
-  font-size: 11px;
-  background: transparent;
-  color: var(--muted-ink);
-  transition:
-    background 200ms,
-    color 200ms;
-}
-.camera-view-picker .button[aria-pressed='true'] {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 10%, transparent);
-}
 .camera-timeline {
   animation: state-arrive 240ms ease-out;
   min-height: 280px;
@@ -295,7 +268,6 @@
   .recording-event {
     animation: none;
   }
-  .camera-view-picker .button,
   .recording-event,
   .recording-filters > button,
   .recording-ruler > button {

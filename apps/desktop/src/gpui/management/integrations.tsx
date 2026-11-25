@@ -29,7 +29,10 @@ import {
   type PortableIntegrationEntryItem,
   type PortableIntegrationFilterTab,
 } from '@haus/ui/components';
+import type { GpuiPlatform } from '../platform.js';
 import type { GpuiAddDeviceRequest } from './add-device.js';
+import { GpuiHaDataImportModal } from './ha-data-import.js';
+import { GpuiHacsView } from './hacs.js';
 import type { homeDashboard } from '../home/model.js';
 
 export type GpuiRpcRequest = <T = unknown>(message: Record<string, unknown>) => Promise<T>;
@@ -40,6 +43,8 @@ export function GpuiIntegrationsView({
   columns = 3,
   demo,
   requestRpc,
+  openExternal,
+  openPaths,
   onOpenEntity,
   onAddDevice,
   onSaved,
@@ -49,20 +54,23 @@ export function GpuiIntegrationsView({
   readonly columns?: number;
   readonly demo?: boolean;
   readonly requestRpc?: GpuiRpcRequest;
+  readonly openExternal?: (url: string) => Promise<void>;
+  readonly openPaths?: GpuiPlatform['openPaths'];
   readonly onOpenEntity?: (entityId: string) => void;
   readonly onAddDevice?: (request?: GpuiAddDeviceRequest) => void;
   readonly onSaved?: () => void;
 }) {
   const demoInitial = useMemo(() => (demo ? buildDemoIntegrationsState() : undefined), [demo]);
-  const [subView, setSubView] = useState<'list' | 'repairs' | 'updates'>('list');
+  const [subView, setSubView] = useState<'list' | 'repairs' | 'updates' | 'hacs'>('list');
+  const [haImportOpen, setHaImportOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<IntegrationFilterId>('all');
   const [entries, setEntries] = useState<readonly IntegrationEntryRecord[]>(
     () => demoInitial?.entries ?? [],
   );
-  const [metaByDomain, setMetaByDomain] = useState<ReadonlyMap<string, IntegrationDomainMetaRecord>>(
-    () => demoInitial?.metaByDomain ?? new Map(),
-  );
+  const [metaByDomain, setMetaByDomain] = useState<
+    ReadonlyMap<string, IntegrationDomainMetaRecord>
+  >(() => demoInitial?.metaByDomain ?? new Map());
   const [titles, setTitles] = useState<Readonly<Record<string, string>>>(
     () => demoInitial?.titles ?? {},
   );
@@ -101,7 +109,9 @@ export function GpuiIntegrationsView({
     try {
       const [loadedEntries, loadedMeta] = await Promise.all([
         requestRpc<IntegrationEntryRecord[]>({ type: 'config_entries/get' }),
-        requestRpc<IntegrationDomainMetaRecord[]>({ type: 'haus/integration_meta' }).catch(() => []),
+        requestRpc<IntegrationDomainMetaRecord[]>({ type: 'haus/integration_meta' }).catch(
+          () => [],
+        ),
       ]);
       setEntries(Array.isArray(loadedEntries) ? loadedEntries : []);
       setMetaByDomain(
@@ -136,7 +146,8 @@ export function GpuiIntegrationsView({
   }, [load]);
 
   const resolveTitle = useCallback(
-    (domain: string) => titles[domain] ?? metaByDomain.get(domain)?.name ?? humanizeIdentifier(domain),
+    (domain: string) =>
+      titles[domain] ?? metaByDomain.get(domain)?.name ?? humanizeIdentifier(domain),
     [metaByDomain, titles],
   );
 
@@ -189,27 +200,34 @@ export function GpuiIntegrationsView({
 
   const activeRepairCount = issues.filter((item) => !item.ignored).length;
   const availableUpdateCount = updates?.availableCount ?? 0;
+  const hacsEntry = entries.find((entry) => entry.domain === 'hacs');
+  const hasHacs = Boolean(
+    demo || hacsEntry || updates?.items.some((item) => item.category === 'hacs'),
+  );
 
   const selectedGroup = selectedDomain
     ? groups.find((group) => group.domain === selectedDomain)
     : undefined;
   const selectedMeta = selectedGroup ? metaByDomain.get(selectedGroup.domain) : undefined;
-  const selectedEntries: PortableIntegrationEntryItem[] = (selectedGroup?.entries ?? []).map((entry) => ({
-    entryId: entry.entry_id,
-    title: entry.title,
-    domain: entry.domain,
-    state: entry.state,
-    disabledBy: entry.disabled_by,
-    reason: entry.reason,
-    canUnload: entry.supports_unload !== false,
-  }));
+  const selectedEntries: PortableIntegrationEntryItem[] = (selectedGroup?.entries ?? []).map(
+    (entry) => ({
+      entryId: entry.entry_id,
+      title: entry.title,
+      domain: entry.domain,
+      state: entry.state,
+      disabledBy: entry.disabled_by,
+      reason: entry.reason,
+      canUnload: entry.supports_unload !== false,
+    }),
+  );
 
   const linkedDevices = useMemo(() => {
     if (!selectedGroup) return [];
     const ids = new Set(selectedGroup.entries.map((item) => item.entry_id));
     return snapshot.devices
-      .filter((device) =>
-        Array.isArray(device.config_entries) && device.config_entries.some((id) => ids.has(id)),
+      .filter(
+        (device) =>
+          Array.isArray(device.config_entries) && device.config_entries.some((id) => ids.has(id)),
       )
       .map((device) => ({
         id: device.id,
@@ -293,6 +311,27 @@ export function GpuiIntegrationsView({
     );
   }
 
+  if (subView === 'hacs') {
+    return (
+      <GpuiHacsView
+        demo={demo}
+        hacsEntry={
+          hacsEntry
+            ? { entry_id: hacsEntry.entry_id, supports_options: hacsEntry.supports_options }
+            : undefined
+        }
+        requestRpc={requestRpc}
+        onAddDevice={onAddDevice}
+        openExternal={openExternal}
+        onBack={() => setSubView('list')}
+        onSaved={() => {
+          onSaved?.();
+          void load();
+        }}
+      />
+    );
+  }
+
   if (subView === 'updates') {
     return (
       <UpdatesPanelView
@@ -300,6 +339,7 @@ export function GpuiIntegrationsView({
         checking={checkingUpdates}
         installingId={installingId}
         onBack={() => setSubView('list')}
+        onOpenHacs={hasHacs ? () => setSubView('hacs') : undefined}
         onCheck={() => {
           if (demo) {
             setNotice('Updates checked.');
@@ -333,7 +373,9 @@ export function GpuiIntegrationsView({
           setInstallingId(item.id);
           void requestRpc({ type: 'haus/updates/install', update_id: item.id })
             .then(() => load())
-            .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Install failed.'))
+            .catch((err: unknown) =>
+              setError(err instanceof Error ? err.message : 'Install failed.'),
+            )
             .finally(() => setInstallingId(null));
         }}
         onInstallAll={(items) => {
@@ -350,6 +392,8 @@ export function GpuiIntegrationsView({
       />
     );
   }
+
+  const canImportHa = Boolean(demo || (snapshot.user.is_admin && requestRpc));
 
   return (
     <>
@@ -370,6 +414,8 @@ export function GpuiIntegrationsView({
         onRefresh={() => void load()}
         onOpenRepairs={() => setSubView('repairs')}
         onOpenUpdates={() => setSubView('updates')}
+        onOpenHacs={hasHacs ? () => setSubView('hacs') : undefined}
+        onImportHa={canImportHa ? () => setHaImportOpen(true) : undefined}
         onConfigureDiscovered={onAddDevice ? () => onAddDevice({ mode: 'picker' }) : undefined}
         onAddDevice={onAddDevice ? () => onAddDevice({ mode: 'picker' }) : undefined}
         onSelectDomain={(domain) => {
@@ -378,6 +424,20 @@ export function GpuiIntegrationsView({
           setSelectedDomain(domain);
         }}
       />
+      {haImportOpen && (
+        <GpuiHaDataImportModal
+          demo={demo}
+          busy={busy}
+          formatDomain={resolveTitle}
+          requestRpc={requestRpc}
+          openPaths={openPaths}
+          onClose={() => setHaImportOpen(false)}
+          onComplete={() => {
+            void load();
+            onSaved?.();
+          }}
+        />
+      )}
       {selectedGroup && (
         <IntegrationDetailsModal
           title={selectedGroup.name}

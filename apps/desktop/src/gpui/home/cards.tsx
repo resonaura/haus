@@ -2,37 +2,37 @@
 
 import { useEffect, useState } from 'react';
 import type { HassEntity, Snapshot } from '@haus/ha/types';
-import { lightColor } from '@haus/ha/light-color';
+import { resolveDeviceAppearance } from '@haus/ha/view/device-state';
 import { lightStateDescription } from '@haus/ha/light-profile';
 import type { RegistryController } from '@haus/ha/ui/registry';
-import { isEntityActive } from '@haus/ha/view/device-state';
 import type { Preferences } from '@haus/ha/view/preferences';
 import type { HausAccessory } from '@haus/ha/view/types';
 import { getCategoryMetadata } from '@haus/ui/categories';
 import {
   CameraPreviewTile,
+  cameraPreviewMediaStyle,
   DashboardGrid,
   DeviceTile,
+  parseCssColor,
   SceneCard,
+  UiIcon,
 } from '@haus/ui/components';
-import { Image } from '@haus/ui/primitives';
-import { pct, rgba, type ColorValue } from '@haus/ui/ir';
+import { Box, Image } from '@haus/ui/primitives';
+import { pct } from '@haus/ui/ir';
+import { resolveAccessoryIconName } from './device-icon.js';
 import { demoCameraPreviewSrc } from '../camera/preview-image.js';
 import { DeviceDetailsModal } from './device-modal.js';
 import type { StatisticsRequest } from './history.js';
 import {
   availableAction,
+  availableDeviceActions,
   type DeviceIntent,
+  type DeviceTarget,
   type HomeDevice,
   type homeDashboard,
 } from './model.js';
 
-export type DeviceControl = (id: string, intent: DeviceIntent, value?: unknown) => void;
-
-function accent(value: string | undefined): ColorValue | undefined {
-  const rgb = /^rgb\((\d+), (\d+), (\d+)\)$/.exec(value ?? '');
-  return rgb ? rgba(Number(rgb[1]), Number(rgb[2]), Number(rgb[3])) : undefined;
-}
+export type DeviceControl = (target: DeviceTarget, intent: DeviceIntent, value?: unknown) => void;
 
 function resolveModalDevice(
   cards: readonly HomeDevice[],
@@ -47,16 +47,26 @@ function resolveModalDevice(
       (item) => item.primaryEntityId === selected,
     );
     if (member) {
+      const appearance = resolveDeviceAppearance(member.state);
+      const stateText = lightStateDescription(member.state);
       return {
         id: member.primaryEntityId,
         accessory: member,
         name: member.name,
         category: member.category,
         categoryLabel: getCategoryMetadata(member.category).label,
-        state: lightStateDescription(member.state),
+        state: stateText,
         available: member.availability === 'available',
+        active: member.availability === 'available' && appearance.active,
         favorite: Boolean(preferences?.favorites.some((fav) => member.entityIds.includes(fav))),
-        accent: isEntityActive(member.state) ? lightColor(member.state) : undefined,
+        accent: appearance.actualColor,
+        colorSwatch:
+          member.availability === 'available' && appearance.active
+            ? appearance.actualColor
+            : undefined,
+        lightEffect: appearance.effect,
+        iconName: resolveAccessoryIconName(member),
+        stateKey: `${member.state.state}:${stateText}`,
       };
     }
   }
@@ -115,13 +125,14 @@ export function DeviceCards({
               ? 'press'
               : undefined;
           const managementUrl = accessory.managementUrl;
+          const target =
+            accessory.lightGroup?.members.map((member) => member.primaryEntityId) ?? device.id;
           const action = managementUrl
             ? onManage && (() => onManage(managementUrl))
             : quick &&
-                !accessory.lightGroup &&
                 !accessory.powerStrip &&
-                availableAction(snapshot, device.id, quick)
-              ? () => onControl(device.id, quick)
+                availableDeviceActions(snapshot, target, quick).length
+              ? () => onControl(target, quick)
               : undefined;
           const room = snapshot.areas.find((area) => area.area_id === accessory.areaId);
           return (
@@ -134,16 +145,29 @@ export function DeviceCards({
               name={device.name}
               category={device.category}
               state={device.state}
+              stateKey={device.stateKey}
               subtitle={room?.name ?? 'Other'}
               available={device.available}
+              active={device.active}
               favorite={device.favorite}
-              accent={accent(device.accent)}
+              accent={parseCssColor(device.accent)}
+              colorSwatch={parseCssColor(device.colorSwatch)}
+              lightEffect={device.lightEffect}
+              groupCount={device.groupCount}
+              battery={device.battery}
+              sourceBadge={device.sourceBadge}
+              iconName={device.iconName}
               desktop
               onQuick={action}
               quickDisabled={disabled || (!managementUrl && !device.available)}
               quickLabel={managementUrl ? `Open ${device.name} in browser` : undefined}
               opened={selected === device.id}
               onOpen={() => setSelected(selected === device.id ? '' : device.id)}
+              onMore={() =>
+                onContextMenu
+                  ? onContextMenu(device)
+                  : setSelected(selected === device.id ? '' : device.id)
+              }
             />
           );
         })}
@@ -220,23 +244,69 @@ export function LiveCameraThumbnail({
   demo,
   demoScene,
   index,
+  available = true,
   fetchSnapshot,
+  onSnapshotLoaded,
+  onOfflineChange,
+  onRecoveryChange,
 }: {
   cameraId: string;
   name: string;
   demo?: boolean;
   demoScene?: string;
   index: number;
+  available?: boolean;
   fetchSnapshot?: (id: string) => Promise<string | null>;
+  onSnapshotLoaded?: (timestamp: number) => void;
+  onOfflineChange?: (offline: boolean) => void;
+  onRecoveryChange?: (recovering: boolean) => void;
 }) {
   const [liveSrc, setLiveSrc] = useState<string | null>(null);
+
   useEffect(() => {
-    if (demo || !fetchSnapshot) return;
+    if (demo) {
+      onOfflineChange?.(false);
+      onRecoveryChange?.(false);
+      return;
+    }
+    if (!available) {
+      onOfflineChange?.(true);
+      onRecoveryChange?.(false);
+      return;
+    }
+    if (!fetchSnapshot) return;
     let alive = true;
+    let isOffline = false;
+    let offlineTimer: ReturnType<typeof setTimeout> | undefined;
+    let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const armOfflineTimer = () => {
+      if (offlineTimer) clearTimeout(offlineTimer);
+      offlineTimer = setTimeout(() => {
+        if (!alive) return;
+        isOffline = true;
+        onOfflineChange?.(true);
+      }, 30_000);
+    };
+
+    armOfflineTimer();
     const poll = () => {
       void fetchSnapshot(cameraId)
         .then((next) => {
-          if (alive && next) setLiveSrc(next);
+          if (!alive || !next) return;
+          const now = Date.now();
+          armOfflineTimer();
+          if (isOffline) {
+            isOffline = false;
+            onOfflineChange?.(false);
+            onRecoveryChange?.(true);
+            if (recoveryTimer) clearTimeout(recoveryTimer);
+            recoveryTimer = setTimeout(() => {
+              if (alive) onRecoveryChange?.(false);
+            }, 1200);
+          }
+          setLiveSrc(next);
+          onSnapshotLoaded?.(now);
         })
         .catch(() => undefined);
     };
@@ -245,18 +315,108 @@ export function LiveCameraThumbnail({
     return () => {
       alive = false;
       clearInterval(timer);
+      if (offlineTimer) clearTimeout(offlineTimer);
+      if (recoveryTimer) clearTimeout(recoveryTimer);
     };
-  }, [cameraId, demo, fetchSnapshot]);
+  }, [
+    available,
+    cameraId,
+    demo,
+    fetchSnapshot,
+    onOfflineChange,
+    onRecoveryChange,
+    onSnapshotLoaded,
+  ]);
 
   const src = demo ? demoCameraPreviewSrc(demoScene, index) : liveSrc;
-  if (!src) return null;
+  if (!src) {
+    if (!demo && !available) return null;
+    return (
+      <Box
+        style={{
+          layout: {
+            width: pct(100),
+            height: pct(100),
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+        }}
+      >
+        <UiIcon name="camera" size={27} />
+      </Box>
+    );
+  }
   return (
     <Image
       src={src}
       alt={name}
       ariaHidden
       objectFit="cover"
-      style={{ layout: { width: pct(100), height: pct(100) } }}
+      transitionMs={demo ? undefined : 220}
+      style={cameraPreviewMediaStyle}
+    />
+  );
+}
+
+function GpuiCameraPreviewItem({
+  camera,
+  index,
+  demo,
+  fetchSnapshot,
+  onOpen,
+  onContextMenu,
+}: {
+  readonly camera: {
+    id: string;
+    name: string;
+    room?: string;
+    label?: string;
+    demoScene?: string;
+    available?: boolean;
+  };
+  readonly index: number;
+  readonly demo?: boolean;
+  readonly fetchSnapshot?: (id: string) => Promise<string | null>;
+  readonly onOpen: (id: string) => void;
+  readonly onContextMenu?: (id: string) => void;
+}) {
+  const sourceOffline = !demo && camera.available === false;
+  const [updatedAt, setUpdatedAt] = useState(0);
+  const [offline, setOffline] = useState(sourceOffline);
+  const [recovering, setRecovering] = useState(false);
+
+  useEffect(() => {
+    setOffline(sourceOffline);
+  }, [sourceOffline]);
+
+  const isOffline = !demo && (offline || sourceOffline);
+  return (
+    <CameraPreviewTile
+      id={`preview-${camera.id}`}
+      name={camera.name}
+      label={camera.label ?? camera.name}
+      room={camera.room}
+      demo={Boolean(demo)}
+      updatedAt={updatedAt}
+      offline={isOffline}
+      recovering={recovering}
+      preview={
+        <LiveCameraThumbnail
+          cameraId={camera.id}
+          name={camera.name}
+          demo={demo}
+          demoScene={camera.demoScene}
+          index={index}
+          available={camera.available !== false}
+          fetchSnapshot={fetchSnapshot}
+          onSnapshotLoaded={setUpdatedAt}
+          onOfflineChange={setOffline}
+          onRecoveryChange={setRecovering}
+        />
+      }
+      onSecondaryPress={onContextMenu ? () => onContextMenu(camera.id) : undefined}
+      onOpen={() => onOpen(camera.id)}
     />
   );
 }
@@ -286,25 +446,14 @@ export function CameraPreviews({
   return (
     <DashboardGrid columns={columns}>
       {cameras.map((camera, index) => (
-        <CameraPreviewTile
+        <GpuiCameraPreviewItem
           key={camera.id}
-          id={`preview-${camera.id}`}
-          name={camera.name}
-          label={camera.label ?? camera.name}
-          room={camera.room}
-          status={demo ? 'Preview' : camera.available === false ? 'Offline' : 'Live'}
-          preview={
-            <LiveCameraThumbnail
-              cameraId={camera.id}
-              name={camera.name}
-              demo={demo}
-              demoScene={camera.demoScene}
-              index={index}
-              fetchSnapshot={fetchSnapshot}
-            />
-          }
-          onSecondaryPress={onContextMenu ? () => onContextMenu(camera.id) : undefined}
-          onOpen={() => onOpen(camera.id)}
+          camera={camera}
+          index={index}
+          demo={demo}
+          fetchSnapshot={fetchSnapshot}
+          onOpen={onOpen}
+          onContextMenu={onContextMenu}
         />
       ))}
     </DashboardGrid>

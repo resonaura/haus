@@ -1,31 +1,24 @@
-/*
- * Haus — A thoughtful home.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { ConfigEditor } from '../editors/ConfigEditor';
-import { ScenePreviewModal } from './ScenePreviewModal';
 import { useState } from 'react';
 import {
   Box,
   HausButton as Button,
   HausMenu,
   HausScrollArea as ScrollShadow,
-  HausSelect,
   Heading,
   Pressable,
   SceneCard,
-  SceneRooms,
   Text,
-  TextInput,
   type HausMenuItem,
 } from '@haus/ui';
-import { Eye, EyeOff, FileUp, House, Info, MoreHorizontal, Search, Sparkles } from 'lucide-react';
-import type { HassEntity, HausModel, Snapshot } from '../../model';
+import { SceneRooms, ScenesLibraryView } from '@haus/ui/components';
 import { groupScenes, sceneCard } from '@haus/ha/view/scene-presentation';
+import { Eye, EyeOff, House, Info, MoreHorizontal, Sparkles } from 'lucide-react';
+import type { HassEntity, HausModel, Snapshot } from '../../model';
+import { ConfigEditor } from '../editors/ConfigEditor';
 import { SceneImportDialog } from './import';
+import { ScenePreviewModal } from './ScenePreviewModal';
 
 type Props = {
   demo: boolean;
@@ -43,6 +36,7 @@ type Props = {
   hiddenView?: boolean;
   showAccessoryCount?: boolean;
 };
+
 export function SceneCollection({
   scenes,
   demo,
@@ -67,6 +61,7 @@ export function SceneCollection({
   const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState('');
   const [menuScene, setMenuScene] = useState('');
+
   const run = async (scene: HassEntity) => {
     setPending(scene.entity_id);
     setError('');
@@ -80,8 +75,10 @@ export function SceneCollection({
       setPending((current) => (current === scene.entity_id ? '' : current));
     }
   };
+
   const placement = (scene: HassEntity) =>
     model.scenePlacements.find((p) => p.sceneId === scene.entity_id);
+
   const filtered = scenes.filter(
     (scene) =>
       (scope === 'all' || (placement(scene)?.areaId ?? 'home') === scope) &&
@@ -89,6 +86,7 @@ export function SceneCollection({
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
+
   const cards = (items: HassEntity[]) => (
     <Box className={`scene-collection ${horizontal ? 'scene-collection-rail' : ''}`}>
       {items.map((scene) => {
@@ -181,7 +179,22 @@ export function SceneCollection({
       })}
     </Box>
   );
+
   const previewCard = preview && sceneCard(preview, snapshot, model);
+  const scopeOptions = [
+    { value: 'all', label: 'Every room' },
+    { value: 'home', label: 'Whole home' },
+    ...model.rooms
+      .filter((r) => scenes.some((s) => placement(s)?.areaId === r.id))
+      .map((r) => ({ value: r.id, label: r.name })),
+  ];
+  const groups = groupScenes(filtered, model).map(({ id, name, items }) => ({
+    id,
+    name,
+    count: items.length,
+    children: cards(items),
+  }));
+
   return (
     <Box className="scenes-workspace">
       {editing !== undefined && (
@@ -194,6 +207,7 @@ export function SceneCollection({
           onSaved={onSaved}
         />
       )}
+
       {importOpen && (
         <SceneImportDialog
           existingIds={
@@ -208,99 +222,54 @@ export function SceneCollection({
           onComplete={onSaved}
         />
       )}
-      {library && (
+
+      {library ? (
+        <ScenesLibraryView
+          query={query}
+          scope={scope}
+          scopeOptions={scopeOptions}
+          canCreate={Boolean(demo || snapshot.user.is_admin)}
+          canImportHa={snapshot.config?.version === 'haus-hub'}
+          hasAnyScenes={scenes.length > 0}
+          hasFilteredScenes={filtered.length > 0}
+          error={error || undefined}
+          onQueryChange={setQuery}
+          onScopeChange={setScope}
+          onCreate={() => setEditing(null)}
+          onImportHa={() => setImportOpen(true)}
+        >
+          <SceneRooms portable={false} groups={groups} />
+        </ScenesLibraryView>
+      ) : (
         <>
-          <Box className="management-intro">
-            <Text className="management-intro-icon">
-              <Sparkles size={25} />
+          {error && (
+            <Text semantic="p" role="alert" className="form-error">
+              {error}
             </Text>
-            <Box>
-              <Text semantic="strong">A different feeling. One tap away.</Text>
+          )}
+          {horizontal ? (
+            <ScrollShadow className="mood-scroll" orientation="horizontal" size={24} hideScrollBar>
+              {cards(filtered)}
+            </ScrollShadow>
+          ) : (
+            cards(filtered)
+          )}
+          {!filtered.length && (
+            <Box className="management-empty">
+              <Sparkles size={28} />
+              <Heading level={3}>
+                {scenes.length ? 'No scenes match' : 'Set the feeling of home'}
+              </Heading>
               <Text semantic="p">
-                Tap a scene to apply it. Use the menu on a card to inspect its settings.
+                {scenes.length
+                  ? 'Try another room or scene name.'
+                  : 'Create a scene to bring your favorite device settings together.'}
               </Text>
             </Box>
-            <Box className="management-actions">
-              {snapshot.config?.version === 'haus-hub' && (
-                <Button
-                  variant="secondary"
-                  isDisabled={!snapshot.user.is_admin}
-                  onPress={() => setImportOpen(true)}
-                >
-                  <FileUp size={15} />
-                  Import HA scenes
-                </Button>
-              )}
-              <Button
-                variant="secondary"
-                isDisabled={!demo && !snapshot.user.is_admin}
-                onPress={() => setEditing(null)}
-              >
-                <Sparkles size={15} />
-                Create scene
-              </Button>
-            </Box>
-          </Box>
-          <Box className="management-toolbar">
-            <Text semantic="label" className="management-search">
-              <Search size={17} />
-              <TextInput
-                ariaLabel="Search scenes"
-                placeholder="Find a mood or a moment"
-                value={query}
-                onChange={setQuery}
-              />
-            </Text>
-            <HausSelect
-              aria-label="Filter scenes by room"
-              value={scope}
-              options={[
-                { value: 'all', label: 'Every room' },
-                { value: 'home', label: 'Whole home' },
-                ...model.rooms
-                  .filter((r) => scenes.some((s) => placement(s)?.areaId === r.id))
-                  .map((r) => ({ value: r.id, label: r.name })),
-              ]}
-              onChange={setScope}
-            />
-          </Box>
+          )}
         </>
       )}
-      {error && (
-        <Text semantic="p" role="alert" className="form-error">
-          {error}
-        </Text>
-      )}
-      {horizontal ? (
-        <ScrollShadow className="mood-scroll" orientation="horizontal" size={24} hideScrollBar>
-          {cards(filtered)}
-        </ScrollShadow>
-      ) : library ? (
-        <SceneRooms
-          portable={false}
-          groups={groupScenes(filtered, model).map(({ id, name, items }) => ({
-            id,
-            name,
-            count: items.length,
-            children: cards(items),
-          }))}
-        />
-      ) : (
-        cards(filtered)
-      )}
-      {!filtered.length && (
-        <Box className="management-empty">
-          <Sparkles size={28} />
-          <Heading level={3}>
-            {scenes.length ? 'No scenes match' : 'Set the feeling of home'}
-          </Heading>
-          <Text semantic="p">
-            {scenes.length
-              ? 'Try another room or scene name.'
-              : 'Create a scene to bring your favorite device settings together.'}
-          </Text>
-        </Box>
-      )}
+
       {preview && previewCard && (
         <ScenePreviewModal
           scene={preview}
@@ -311,7 +280,7 @@ export function SceneCollection({
           snapshot={snapshot}
           hiddenView={hiddenView}
           pending={pending}
-          canEdit={demo || snapshot.user.is_admin}
+          canEdit={Boolean(demo || snapshot.user.is_admin)}
           onClose={() => setPreview(null)}
           onEdit={() => {
             setEditing(preview);

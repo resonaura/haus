@@ -39,11 +39,34 @@ export interface ServerNvrSummary {
   readonly limitBytes?: number | null;
 }
 
+export interface ServerGraphicsAdapterRecord {
+  readonly name: string;
+  readonly vendor?: string;
+  readonly utilization?: number | null;
+  readonly memoryUsedBytes?: number | null;
+  readonly memoryTotalBytes?: number | null;
+}
+
+export interface ServerResourceSample {
+  readonly time: number;
+  readonly cpu: number | null;
+  readonly memory: number | null;
+  readonly swap: number | null;
+}
+
 export interface ServerSummaryRecord {
   readonly id: string;
   readonly managedId?: string;
   readonly name: string;
   readonly kind: ServerKind;
+  readonly roomId?: string;
+  readonly roomName?: string;
+  readonly icon?: string;
+  readonly favorite?: boolean;
+  readonly hostname?: string;
+  readonly platform?: string;
+  readonly architecture?: string;
+  readonly reportingScope?: 'host' | 'container';
   readonly online: boolean | null;
   readonly enabled: boolean;
   readonly local?: boolean;
@@ -56,9 +79,14 @@ export interface ServerSummaryRecord {
   readonly loadAverageLabel: string;
   readonly memoryUsedBytes: number | null;
   readonly memoryTotalBytes: number | null;
+  readonly memoryInstalledBytes?: number | null;
+  readonly swapSupported?: boolean;
+  readonly swapUsedBytes?: number | null;
+  readonly swapTotalBytes?: number | null;
   readonly uptimeSeconds: number | null;
   readonly batteryLevel?: number | null;
   readonly batteryCharging?: boolean;
+  readonly graphics?: readonly ServerGraphicsAdapterRecord[];
   readonly disks: readonly ServerDiskRecord[];
   readonly services: readonly ServerServiceRow[];
   readonly nvr?: ServerNvrSummary;
@@ -68,6 +96,7 @@ export interface ServerSummaryRecord {
 export interface DemoServersState {
   readonly servers: readonly ServerSummaryRecord[];
   readonly logsByServerId: Readonly<Record<string, string>>;
+  readonly historyByServerId?: Readonly<Record<string, readonly ServerResourceSample[]>>;
 }
 
 export function formatBytes(bytes?: number | null): string {
@@ -241,23 +270,54 @@ export function runDemoTerminalCommand(
 }
 
 export function buildDemoServersState(): DemoServersState {
+  const now = Date.now();
+  const buildWave = (
+    baseCpu: number,
+    baseMem: number,
+    baseSwap: number,
+    phase: number,
+  ): ServerResourceSample[] =>
+    Array.from({ length: 36 }, (_, idx) => {
+      const t = now - (35 - idx) * 1500;
+      const w = (idx + phase) * 0.42;
+      return {
+        time: t,
+        cpu: Math.max(
+          0.03,
+          Math.min(0.95, baseCpu + Math.sin(w) * 0.045 + Math.cos(w * 0.5) * 0.02),
+        ),
+        memory: Math.max(0.08, Math.min(0.96, baseMem + Math.sin(w * 0.3) * 0.015)),
+        swap: Math.max(0, Math.min(0.9, baseSwap + Math.cos(w * 0.25) * 0.006)),
+      };
+    });
+
   const servers: ServerSummaryRecord[] = [
     {
       id: 'haus-hub-main',
       managedId: 'haus-hub-main',
       name: 'Willow Hub',
       kind: 'hub',
+      roomName: 'Utility',
+      hostname: 'willow-hub.local',
+      platform: 'linux',
+      architecture: 'arm64',
+      reportingScope: 'host',
+      favorite: true,
       online: true,
       enabled: true,
       local: true,
       url: 'https://willow-hub.local',
       osLabel: 'Ubuntu 24.04 LTS · Linux 6.8 arm64',
-      cpuModel: 'Apple M2 / ARMv8.5 (8 cores)',
+      cpuModel: 'Apple M2 / ARMv8.5',
       cpuCores: 8,
       cpuUsage: 0.18,
       loadAverageLabel: '0.42 · 0.39 · 0.36',
       memoryUsedBytes: 6.4 * 1024 ** 3,
       memoryTotalBytes: 16 * 1024 ** 3,
+      memoryInstalledBytes: 16 * 1024 ** 3,
+      swapSupported: true,
+      swapUsedBytes: 384 * 1024 ** 2,
+      swapTotalBytes: 4 * 1024 ** 3,
       uptimeSeconds: 18 * 86_400 + 6 * 3600,
       disks: [
         {
@@ -268,6 +328,15 @@ export function buildDemoServersState(): DemoServersState {
           totalBytes: 930 * 1024 ** 3,
           usedBytes: 312 * 1024 ** 3,
           availableBytes: 618 * 1024 ** 3,
+        },
+        {
+          id: 'nvme0n1p3',
+          name: 'Backups & Snapshots',
+          mountpoint: '/srv/backups',
+          filesystem: 'btrfs',
+          totalBytes: 512 * 1024 ** 3,
+          usedBytes: 168 * 1024 ** 3,
+          availableBytes: 344 * 1024 ** 3,
         },
       ],
       services: [
@@ -319,16 +388,25 @@ export function buildDemoServersState(): DemoServersState {
       managedId: 'nvr-node-garage',
       name: 'Garage NVR Node',
       kind: 'nvr',
+      roomName: 'Garage',
+      hostname: 'garage-nvr.local',
+      platform: 'linux',
+      architecture: 'arm64',
+      reportingScope: 'host',
       online: true,
       enabled: true,
       local: true,
       osLabel: 'Debian 12 · Linux 6.6 arm64',
-      cpuModel: 'Broadcom BCM2712 (4 cores)',
+      cpuModel: 'Broadcom BCM2712',
       cpuCores: 4,
       cpuUsage: 0.34,
       loadAverageLabel: '0.88 · 0.74 · 0.71',
       memoryUsedBytes: 3.1 * 1024 ** 3,
       memoryTotalBytes: 8 * 1024 ** 3,
+      memoryInstalledBytes: 8 * 1024 ** 3,
+      swapSupported: true,
+      swapUsedBytes: 120 * 1024 ** 2,
+      swapTotalBytes: 2 * 1024 ** 3,
       uptimeSeconds: 9 * 86_400 + 2 * 3600,
       disks: [
         {
@@ -372,5 +450,9 @@ export function buildDemoServersState(): DemoServersState {
     'nvr-node-garage':
       '[03:08:50] [node] Connected to Willow Hub as verified NVR peer\n[03:11:30] [motion] Driveway clip archived cleanly (1.8 MB)\n',
   };
-  return { servers, logsByServerId };
+  const historyByServerId: Record<string, readonly ServerResourceSample[]> = {
+    'haus-hub-main': buildWave(0.18, 0.4, 0.09, 0),
+    'nvr-node-garage': buildWave(0.34, 0.39, 0.06, 2.2),
+  };
+  return { servers, logsByServerId, historyByServerId };
 }

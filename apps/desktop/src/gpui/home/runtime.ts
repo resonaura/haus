@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { ManagementPort } from '@haus/core/transport';
+import type { AlertsTransport, ManagementPort } from '@haus/core/transport';
 import { defaults, type Preferences } from '@haus/ha/view/preferences';
 import type { PreferenceSync } from '@haus/ha/view/settings/sync';
 import type { CredentialStore } from '@haus/ha/native-types';
@@ -9,9 +9,9 @@ import { RegistryController } from '@haus/ha/ui/registry';
 import type { NativeEvent, NativeSession } from '../../shared/native.js';
 import { HomeAssistantConnection } from '../../main/connection.js';
 import { createDiscoveryTask, type DiscoveryTask } from '../../main/discovery.js';
-import { HubConnection, HUB_PAIRING_REQUIRED } from '../../main/hub/connection.js';
-import { HubCredentialSaveError, type HubSessionManagerDependencies } from '../../main/hub-session.js';
-import { normalizeServerUrl } from '../../main/validation.js';
+import { HubConnection } from '../../main/hub/connection.js';
+import type { HubSessionManagerDependencies } from '../../main/hub-session.js';
+import { connectHome } from './connect.js';
 import {
   createGpuiAlertsTransport,
   createGpuiCameraHelper,
@@ -25,7 +25,13 @@ import {
   startGpuiPreferencePoll,
   type GpuiHomeState,
 } from './ha-bridge.js';
-import { availableAction, lightCommand, updateFavorite, type DeviceIntent } from './model.js';
+import {
+  availableDeviceActions,
+  lightCommand,
+  updateFavorite,
+  type DeviceIntent,
+  type DeviceTarget,
+} from './model.js';
 import { createGpuiRuntimeSystem, type GpuiSystemPorts } from '../management/servers-port.js';
 
 const PREFERENCES_MS = 15_000;
@@ -38,6 +44,8 @@ export class GpuiHomeRuntime {
   private readonly lifetime = new AbortController();
   private generation = 0;
   readonly registry: RegistryController;
+  readonly alertsTransport: AlertsTransport;
+  readonly managementPort: ManagementPort;
   private readonly systemAccess: ReturnType<typeof createGpuiRuntimeSystem>;
   private discovery?: DiscoveryTask;
   private boot?: Promise<void>;
@@ -48,9 +56,8 @@ export class GpuiHomeRuntime {
   constructor(
     store: HubSessionManagerDependencies['store'] & Partial<CredentialStore>,
     fetchFn: typeof fetch = globalThis.fetch.bind(globalThis),
-    private readonly discover: (options?: { explicitHa?: boolean }) => DiscoveryTask = (
-      options,
-    ) => createDiscoveryTask(3500, undefined, undefined, options),
+    private readonly discover: (options?: { explicitHa?: boolean }) => DiscoveryTask = (options) =>
+      createDiscoveryTask(3500, undefined, undefined, options),
     private readonly appearance?: {
       theme: Preferences['theme'];
       save(theme: Preferences['theme']): Promise<void>;
@@ -96,13 +103,30 @@ export class GpuiHomeRuntime {
     });
     this.systemAccess = createGpuiRuntimeSystem({
       getHubAccess: () => {
-        const token = this.state.sessionKind === 'haus-hub' ? this.connection.getBearerToken() : undefined;
-        return this.connection.serverUrl && token ? { url: this.connection.serverUrl, token } : null;
+        const token =
+          this.state.sessionKind === 'haus-hub' ? this.connection.getBearerToken() : undefined;
+        return this.connection.serverUrl && token
+          ? { url: this.connection.serverUrl, token }
+          : null;
       },
       getHelper: () =>
-        this.state.sessionKind === 'haus-hub' && this.connection.serverUrl ? this.createCameraViewer(this.connection.serverUrl) : null,
+        this.state.sessionKind === 'haus-hub' && this.connection.serverUrl
+          ? this.createCameraViewer(this.connection.serverUrl)
+          : null,
       getRequestRpc: () => this.requestRpc,
       getSessionKind: () => this.state.sessionKind,
+    });
+    this.alertsTransport = createGpuiAlertsTransport({
+      sessionKind: () => this.state.sessionKind,
+      isConnected: () => this.activeConnected && !this.state.offline,
+      request: (msg) => this.requestActive(msg),
+      hubConnection: this.connection,
+    });
+    this.managementPort = createGpuiManagementPort({
+      sessionKind: () => this.state.sessionKind,
+      isConnected: () => this.activeConnected && !this.state.offline,
+      hubConnection: this.connection,
+      haConnection: this.ha,
     });
   }
 
@@ -120,45 +144,43 @@ export class GpuiHomeRuntime {
   }
 
   getSnapshot = () => this.state;
-  requestRpc = <T = unknown>(message: Record<string, unknown>): Promise<T> => this.requestActive<T>(message);
+  requestRpc = <T = unknown>(message: Record<string, unknown>): Promise<T> =>
+    this.requestActive<T>(message);
   readStatistics = (message: Record<string, unknown>): Promise<unknown> =>
-    readGpuiStatistics(Boolean(this.state.session && !this.state.offline), message, (msg) => this.requestActive(msg));
+    readGpuiStatistics(Boolean(this.state.session && !this.state.offline), message, (msg) =>
+      this.requestActive(msg),
+    );
   readCameraSnapshot = (entityId: string): Promise<string | null> =>
     this.state.session && !this.state.offline
       ? readGpuiCameraSnapshot(this.state.sessionKind, this.connection, this.ha, entityId)
       : Promise.resolve(null);
-  get alertsTransport() {
-    return createGpuiAlertsTransport({
-      sessionKind: () => this.state.sessionKind,
-      isConnected: () => this.activeConnected && !this.state.offline,
-      request: (msg) => this.requestActive(msg),
-      hubConnection: this.connection,
-    });
-  }
-  get managementPort(): ManagementPort {
-    return createGpuiManagementPort({
-      sessionKind: () => this.state.sessionKind,
-      isConnected: () => this.activeConnected && !this.state.offline,
-      hubConnection: this.connection,
-      haConnection: this.ha,
-    });
-  }
   get systemPorts(): GpuiSystemPorts {
     return this.systemAccess.snapshotPorts();
   }
   applySceneEntities = (entities: Record<string, unknown>): Promise<void> =>
-    this.requestActive({ type: 'call_service', domain: 'scene', service: 'apply', service_data: { entities } }).then(() => undefined);
+    this.requestActive({
+      type: 'call_service',
+      domain: 'scene',
+      service: 'apply',
+      service_data: { entities },
+    }).then(() => undefined);
   createCameraViewer = (hub: string) =>
     createGpuiCameraHelper({
       hub,
       sessionKind: () => this.state.sessionKind,
       isConnected: () => this.activeConnected,
       currentUrl: () => this.state.session?.url,
-      scope: () => (this.state.sessionKind === 'home-assistant' ? this.ha?.credentialScope : this.connection.credentialScope),
+      scope: () =>
+        this.state.sessionKind === 'home-assistant'
+          ? this.ha?.credentialScope
+          : this.connection.credentialScope,
       hubConnection: this.connection,
       request: (msg) => this.requestActive(msg),
     });
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
 
   start(): Promise<void> {
     this.boot ??= this.perform('The saved Hub session could not be opened.', async () => {
@@ -200,62 +222,19 @@ export class GpuiHomeRuntime {
   connect(address: string, code?: string, explicitHa = false): Promise<void> {
     return this.perform(
       explicitHa ? 'Could not connect to Home Assistant.' : 'Could not connect to the Haus Hub.',
-      async () => {
-        if (this.state.session && this.state.sessionKind === (explicitHa ? 'home-assistant' : 'haus-hub') && this.state.session.url === address) {
-          return;
-        }
-        let url: string;
-        try {
-          url = normalizeServerUrl(address, explicitHa ? 'Home Assistant' : 'Haus Hub');
-        } catch {
-          this.update({
-            error: explicitHa
-              ? 'Enter the Home Assistant base address. Use HTTPS outside the local network.'
-              : 'Enter the Haus Hub base address. Use HTTPS outside the local network.',
-          });
-          return;
-        }
-        this.discovery?.cancel();
-        if (explicitHa) {
-          if (!this.ha) {
-            this.update({ error: 'Home Assistant sign-in requires a browser launch handler.' });
-            return;
-          }
-          const session = await this.ha.connect(url);
-          if (this.state.sessionKind === 'haus-hub') {
-            await this.connection.disconnect().catch(() => undefined);
-          }
-          this.stopPreferenceSync();
-          this.update({ pairingUrl: null, sessionKind: 'home-assistant', preferenceStatus: 'offline' });
-          await this.loadHome(session, 'home-assistant');
-          return;
-        }
-
-        if (code && this.state.pairingUrl !== url) return;
-        try {
-          const session = await this.connection.connect(url, code);
-          if (this.ha && this.state.sessionKind === 'home-assistant') {
-            await this.ha.disconnect().catch(() => undefined);
-          }
-          this.update({ pairingUrl: null, sessionKind: 'haus-hub' });
-          await this.loadHome(session, 'haus-hub');
-        } catch (error) {
-          if (error instanceof Error && error.message === HUB_PAIRING_REQUIRED) {
-            this.update({ pairingUrl: url });
-            return;
-          }
-          this.update({ pairingUrl: null });
-          if (
-            error instanceof HubCredentialSaveError ||
-            (error instanceof Error &&
-              error.message === 'That pairing code is not correct. Start again.')
-          ) {
-            this.update({ error: error.message });
-            return;
-          }
-          throw error;
-        }
-      },
+      () =>
+        connectHome(
+          { address, code, explicitHa },
+          {
+            state: this.getSnapshot,
+            update: (patch) => this.update(patch),
+            cancelDiscovery: () => this.discovery?.cancel(),
+            stopPreferenceSync: () => this.stopPreferenceSync(),
+            loadHome: (session, kind) => this.loadHome(session, kind),
+            hub: this.connection,
+            ha: this.ha,
+          },
+        ),
     );
   }
 
@@ -307,22 +286,33 @@ export class GpuiHomeRuntime {
   toggleLight(id: string): Promise<void> {
     const command = this.state.snapshot && lightCommand(this.state.snapshot, id);
     return command
-      ? this.send(command, 'The command could not be confirmed. Check the light before trying again.')
+      ? this.send(
+          [command],
+          'The command could not be confirmed. Check the light before trying again.',
+        )
       : Promise.resolve();
   }
 
-  controlDevice(id: string, intent: DeviceIntent, value?: unknown): Promise<void> {
-    const action = this.state.snapshot && availableAction(this.state.snapshot, id, intent, value);
-    return action
-      ? this.send({ type: 'call_service', ...action }, 'The command could not be confirmed. Check the device before trying again.')
-      : Promise.resolve();
+  controlDevice(target: DeviceTarget, intent: DeviceIntent, value?: unknown): Promise<void> {
+    if (!this.state.snapshot) return Promise.resolve();
+    const actions = availableDeviceActions(this.state.snapshot, target, intent, value);
+    if (!actions.length) return Promise.resolve();
+    return this.send(
+      actions.map((action) => ({ type: 'call_service', ...action })),
+      'The command could not be confirmed. Check the device before trying again.',
+    );
   }
 
-  private send(command: Record<string, unknown>, failure: string) {
+  private send(commands: readonly Record<string, unknown>[], failure: string) {
     return this.perform(failure, async () => {
       if (!this.state.session || this.state.offline || !this.activeConnected) return;
+      const generation = this.generation;
       try {
-        await this.requestActive(command);
+        for (const command of commands) {
+          if (generation !== this.generation || this.state.offline || !this.activeConnected) return;
+          await this.requestActive(command);
+        }
+        if (generation !== this.generation) return;
         if (this.state.sessionKind === 'home-assistant' && this.ha) {
           const snapshot = await readHaSnapshot(this.ha);
           this.update({ snapshot, offline: false });
@@ -351,19 +341,29 @@ export class GpuiHomeRuntime {
   }
 
   setLightGrouping(enabled: boolean): Promise<void> {
-    return this.updateSharedPreferences({ autoGroupLights: enabled }, 'Could not update light grouping.');
+    return this.updateSharedPreferences(
+      { autoGroupLights: enabled },
+      'Could not update light grouping.',
+    );
   }
   savePreferences(patch: Partial<Preferences>): Promise<void> {
     return this.updateSharedPreferences(patch, 'Could not save desktop preferences.');
   }
   resetSeparatedLightGroups(): Promise<void> {
-    return this.updateSharedPreferences({ disabledLightGroups: [] }, 'Could not reset separated light groups.');
+    return this.updateSharedPreferences(
+      { disabledLightGroups: [] },
+      'Could not reset separated light groups.',
+    );
   }
   setFavorite(id: string, favorite: boolean): Promise<void> {
     return this.perform('Could not update favorites.', async () => {
       const { snapshot, preferences, offline, preferenceStatus } = this.state;
       if (!snapshot || offline) return;
-      if (this.state.sessionKind === 'haus-hub' && (preferenceStatus !== 'synced' || !this.preferenceSync)) return;
+      if (
+        this.state.sessionKind === 'haus-hub' &&
+        (preferenceStatus !== 'synced' || !this.preferenceSync)
+      )
+        return;
       const next = updateFavorite(snapshot, preferences, id, favorite);
       if (!next) return;
       this.update({ preferences: next });
@@ -381,10 +381,17 @@ export class GpuiHomeRuntime {
     this.listeners.clear();
   }
 
-  private async updateSharedPreferences(patch: Partial<Preferences>, failure: string): Promise<void> {
+  private async updateSharedPreferences(
+    patch: Partial<Preferences>,
+    failure: string,
+  ): Promise<void> {
     return this.perform(failure, async () => {
       const { offline, preferenceStatus, sessionKind, preferences } = this.state;
-      if (offline || (sessionKind === 'haus-hub' && (preferenceStatus !== 'synced' || !this.preferenceSync))) return;
+      if (
+        offline ||
+        (sessionKind === 'haus-hub' && (preferenceStatus !== 'synced' || !this.preferenceSync))
+      )
+        return;
       this.update({ preferences: { ...preferences, ...patch } });
       await this.preferenceSync?.sync();
     });
@@ -394,7 +401,8 @@ export class GpuiHomeRuntime {
     session: NativeSession,
     kind: 'haus-hub' | 'home-assistant',
   ): Promise<void> {
-    const connected = kind === 'home-assistant' ? Boolean(this.ha?.connected) : this.connection.connected;
+    const connected =
+      kind === 'home-assistant' ? Boolean(this.ha?.connected) : this.connection.connected;
     this.update({ session, sessionKind: kind, offline: !connected });
     if (!connected) return;
     try {

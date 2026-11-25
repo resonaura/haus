@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Image as HausImage, Text } from '../primitives/index.js';
+import { insets } from '../ir/geometry.js';
+import { Image as HausImage, ProgressiveBlur, Text } from '../primitives/index.js';
 
 /** Successive low-pass passes avoid the ringing of a large single-step reduction. */
 export async function resizeCameraImage(image: HTMLImageElement, width: number, height: number) {
@@ -132,13 +133,13 @@ export function SmoothImage({
           onLoad={() => loaded.current?.(frame.source)}
         />
       )}
-      {frame &&
-        progressiveBlur &&
-        [2, 6, 12].map((blur) => (
-          <Text key={blur} className={`smooth-image-blur blur-${blur}`} ariaHidden>
-            <HausImage src={frame.url} alt="" />
-          </Text>
-        ))}
+      {frame && progressiveBlur && (
+        <ProgressiveBlur
+          maxRadius={12}
+          start={0.35}
+          style={{ layout: { position: 'absolute', inset: insets(0) } }}
+        />
+      )}
     </Text>
   );
 }

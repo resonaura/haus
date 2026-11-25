@@ -3,8 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-type DemoSceneKey = 'entryway' | 'garden' | 'living-room';
+import { resolveDemoSceneKey, type DemoSceneKey } from '../../shared/camera-preview.js';
 
 const embeddedDemoAssets: Partial<Record<DemoSceneKey, string>> = {};
 const cachedAssets = new Map<DemoSceneKey, string>();
@@ -28,16 +27,6 @@ function candidateImagePath(key: DemoSceneKey): string | undefined {
     join(dirname(process.execPath), 'images', filename),
   ];
   return candidates.find((path) => existsSync(path));
-}
-
-export function resolveDemoSceneKey(
-  demoScene: string | undefined,
-  index = 0,
-): DemoSceneKey {
-  if (demoScene === 'front-door') return 'entryway';
-  if (demoScene === 'garden') return 'garden';
-  if (demoScene === 'living-room') return 'living-room';
-  return (['entryway', 'garden', 'living-room'] as const)[index % 3];
 }
 
 export function demoCameraPreviewSrc(demoScene: string | undefined, index = 0): string {

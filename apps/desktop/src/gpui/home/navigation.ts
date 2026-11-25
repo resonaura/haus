@@ -1,9 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { resolveRoomIconName } from '@haus/core/transport';
+import {
+  resolveRoomIconName,
+  type ServerDetailTabId,
+  type ServerSummaryRecord,
+} from '@haus/core/transport';
 import {
   DEVICE_ICONS,
+  resolveServerGlyphName,
   UI_ICONS,
+  type SidebarContextualItem,
+  type SidebarContextualNav,
   type SidebarGroup,
   type SidebarItem,
   type UiIconName,
@@ -88,4 +95,50 @@ export function navigation(
       ],
     },
   ];
+}
+
+export function buildServerSidebarNav({
+  name,
+  kind,
+  managed,
+  hasNvr,
+  status,
+  activeTab,
+  onSelectTab,
+  onBack,
+}: {
+  readonly name: string;
+  readonly kind: ServerSummaryRecord['kind'];
+  readonly managed: boolean;
+  readonly hasNvr: boolean;
+  readonly status?: 'online' | 'offline' | 'paused' | 'unknown';
+  readonly activeTab: ServerDetailTabId;
+  readonly onSelectTab: (tab: ServerDetailTabId) => void;
+  readonly onBack: () => void;
+}): SidebarContextualNav {
+  const isHubServer = kind === 'hub' || kind === 'nvr' || managed;
+  const items: readonly SidebarContextualItem[] = [
+    { id: 'overview', testId: 'server-tab-overview', label: 'Overview', icon: 'gauge' },
+    { id: 'storage', testId: 'server-tab-storage', label: 'Disks', icon: 'hard-drive' },
+    { id: 'services', testId: 'server-tab-services', label: 'Services', icon: 'boxes' },
+    { id: 'terminal', testId: 'server-tab-terminal', label: 'Terminal', icon: 'terminal-square' },
+    ...(isHubServer
+      ? ([{ id: 'logs', testId: 'server-tab-logs', label: 'Logs', icon: 'scroll-text' }] as const)
+      : []),
+    ...(hasNvr
+      ? ([{ id: 'nvr', testId: 'server-tab-nvr', label: 'NVR', icon: 'video' }] as const)
+      : []),
+  ];
+  return {
+    backId: 'server-detail-back',
+    backLabel: 'Servers',
+    eyebrow: 'HOME SERVER',
+    title: name,
+    iconName: resolveServerGlyphName({ kind, nvr: hasNvr ? { hasNvr: true } : undefined }),
+    status,
+    activeId: activeTab,
+    items,
+    onSelect: (id) => onSelectTab(id as ServerDetailTabId),
+    onBack,
+  };
 }
