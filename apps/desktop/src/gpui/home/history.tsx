@@ -8,6 +8,7 @@ import {
   HausSegmentedControl,
   Heading,
   Row,
+  ScrollView,
   Stack,
   Text,
   TextInput,
@@ -143,9 +144,11 @@ export function Statistics({ request }: { request?: StatisticsRequest }) {
         {latest && <Text size={12}>{`${latest.value} ${selected?.unit ?? ''}`}</Text>}
       </Row>
       <Row align="start" gapPx={15} wrap>
-        <Stack
-          gapPx={8}
-          style={{ layout: { width: px(186), maxHeight: px(420), overflowY: 'scroll' } }}
+        <ScrollView
+          orientation="vertical"
+          style={{
+            layout: { width: px(186), maxHeight: px(420), direction: 'column', gap: px(8) },
+          }}
         >
           <Text size={13} weight={600}>
             Recorded sensors
@@ -171,7 +174,7 @@ export function Statistics({ request }: { request?: StatisticsRequest }) {
               <Text size={12}>{item.label}</Text>
             </HausButton>
           ))}
-        </Stack>
+        </ScrollView>
         <Stack
           gapPx={14}
           style={{

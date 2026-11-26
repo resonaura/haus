@@ -162,8 +162,6 @@ describe('shared CameraPreviewTile and Servers UI parity', () => {
             ],
             selected: 'servers',
             onSelect: () => undefined,
-            collapsed: false,
-            onToggle: () => undefined,
             contextual: {
               backId: 'server-detail-back',
               backLabel: 'Servers',

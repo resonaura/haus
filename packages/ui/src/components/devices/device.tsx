@@ -10,6 +10,7 @@ import { Box, Pressable, Text, type PressableProps } from '../../primitives/elem
 import { resolveColorToCss } from '../../renderers/contract.js';
 import { DEVICE_ICONS, type UiIconName } from '../icons.js';
 import { UiIcon } from '../icon.js';
+import { DeviceBrandIcon } from '../brand/device-icon.js';
 import { DesktopDeviceTile, type DesktopTileRenderProps } from './tile-desktop.js';
 
 export interface DeviceTileBatteryData {
@@ -47,7 +48,14 @@ const compactStyles = {
   },
   top: { layout: { direction: 'column', position: 'relative' } },
   icon: {
-    layout: { width: px(44), height: px(44), alignItems: 'center', justifyContent: 'center' },
+    layout: {
+      width: px(44),
+      height: px(44),
+      flexShrink: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    corners: corners(999, 'round'),
   },
   indicators: { layout: { position: 'absolute', inset: { top: px(0), right: px(0) } } },
   body: {
@@ -74,6 +82,7 @@ export function DeviceTile(props: DeviceTileProps) {
     stateKey,
     icon,
     iconName = DEVICE_ICONS[category ?? 'other'],
+    deviceIcon,
     indicators,
     actions,
     details,
@@ -107,7 +116,17 @@ export function DeviceTile(props: DeviceTileProps) {
           onActivate={onQuick}
           style={styles?.icon}
         >
-          {icon ?? tileIcon(iconName, 21)}
+          {icon ??
+            (deviceIcon ? (
+              <DeviceBrandIcon
+                device={deviceIcon}
+                size={21}
+                color={iconColor}
+                fallbackIconName={iconName}
+              />
+            ) : (
+              tileIcon(iconName, 21)
+            ))}
         </TileAction>
         {styles ? (
           indicatorsContent && (

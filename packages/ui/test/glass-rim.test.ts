@@ -13,6 +13,7 @@ import {
   GLASS_RIM_PRESETS,
   GlassRim,
   HausUiProvider,
+  LiquidGlassMaterial,
   createDefaultShaderRegistry,
   createHausUiTheme,
   evaluateGlassRimIntensity,
@@ -24,6 +25,7 @@ import {
   transparentColor,
 } from '../src/index.js';
 import { GpuiGlassRim } from '../src/gpui/glass-rim.js';
+import { styleFor } from '../src/gpui/style.js';
 import type { RenderContext } from '../src/renderers/contract.js';
 
 function testRenderContext(overrides: Partial<RenderContext['viewport']> = {}): RenderContext {
@@ -166,6 +168,33 @@ describe('shared analytical Glass Rim lighting engine', () => {
     ).style.shader;
     expect(reducedShader.animated).toBe(false);
     expect(reducedShader.params[9]).toBe(1);
+  });
+
+  it('disables shader-embedded Liquid Glass rim when rimPreset is none so explicit GlassRim never doubles', () => {
+    const ctx = testRenderContext();
+    const managedGlass = new LiquidGlassMaterial({
+      blurRadius: 16,
+      refractionStrength: 16,
+      chromaticDispersion: 0.55,
+      rimPreset: 'none',
+    });
+    expect(managedGlass.toIR().rimLighting).toBeUndefined();
+    const managedStyle = styleFor({ material: managedGlass }, ctx);
+    expect(managedStyle.liquidGlass?.nativeRim).toBe(false);
+    expect(managedStyle.liquidGlass?.specularDial).toBe(0);
+    expect(managedStyle.liquidGlass?.edgeHighlight).toBe(0);
+    expect(managedStyle.liquidGlass?.darkenedEdge).toBe(0);
+
+    const standaloneGlass = new LiquidGlassMaterial({
+      blurRadius: 16,
+      refractionStrength: 16,
+      rimPreset: 'card',
+    });
+    expect(standaloneGlass.toIR().rimLighting?.preset).toBe('card');
+    const standaloneStyle = styleFor({ material: standaloneGlass }, ctx);
+    expect(standaloneStyle.liquidGlass?.nativeRim).toBe(true);
+    expect(standaloneStyle.liquidGlass?.specularDial).toBeGreaterThan(0);
+    expect(standaloneStyle.liquidGlass?.edgeHighlight).toBeGreaterThan(0);
   });
 
   it('mixes colors with transparent using CSS Color 5 premultiplied alpha', () => {

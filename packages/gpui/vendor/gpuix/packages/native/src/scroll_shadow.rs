@@ -57,28 +57,31 @@ pub(crate) fn compute_edge_opacities(
     let peak = max_opacity.clamp(0.0, 1.0);
 
     ScrollEdgeOpacities {
-        top: if edges.top && max_y > 0.5 {
+        top: if edges.top && max_y > 1.0 {
             (scrolled_y / ramp).clamp(0.0, 1.0) * peak
         } else {
             0.0
         },
-        bottom: if edges.bottom && max_y > 0.5 {
+        bottom: if edges.bottom && max_y > 1.0 {
             ((max_y - scrolled_y) / ramp).clamp(0.0, 1.0) * peak
         } else {
             0.0
         },
-        left: if edges.left && max_x > 0.5 {
+        left: if edges.left && max_x > 1.0 {
             (scrolled_x / ramp).clamp(0.0, 1.0) * peak
         } else {
             0.0
         },
-        right: if edges.right && max_x > 0.5 {
+        right: if edges.right && max_x > 1.0 {
             ((max_x - scrolled_x) / ramp).clamp(0.0, 1.0) * peak
         } else {
             0.0
         },
     }
 }
+
+pub(crate) const DEFAULT_SCROLL_SHADOW_SIZE: f32 = 24.0;
+pub(crate) const DEFAULT_SCROLL_SHADOW_TRANSITION_MS: u32 = 180;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ResolvedScrollShadow {
@@ -88,13 +91,17 @@ pub(crate) struct ResolvedScrollShadow {
     pub opacity: f32,
     pub color: gpui::Rgba,
     pub edges: ScrollShadowEdges,
+    pub transition_ms: u32,
 }
 
 impl ResolvedScrollShadow {
     pub(crate) fn from_desc(desc: Option<&ScrollShadowDesc>, has_x: bool, has_y: bool) -> Self {
         let enabled = desc.and_then(|d| d.enabled).unwrap_or(desc.is_some());
-        let is_fade = desc.and_then(|d| d.mode.as_deref()) == Some("fade");
-        let size = desc.and_then(|d| d.size).unwrap_or(20.0).max(1.0) as f32;
+        let is_fade = desc.and_then(|d| d.mode.as_deref()) != Some("overlay");
+        let size = desc
+            .and_then(|d| d.size)
+            .unwrap_or(f64::from(DEFAULT_SCROLL_SHADOW_SIZE))
+            .max(1.0) as f32;
         let opacity = desc
             .and_then(|d| d.opacity)
             .unwrap_or(0.32)
@@ -113,6 +120,9 @@ impl ResolvedScrollShadow {
             has_x,
             has_y,
         );
+        let transition_ms = desc
+            .and_then(|d| d.transition_ms)
+            .unwrap_or(DEFAULT_SCROLL_SHADOW_TRANSITION_MS);
         Self {
             enabled,
             is_fade,
@@ -120,36 +130,30 @@ impl ResolvedScrollShadow {
             opacity,
             color,
             edges,
+            transition_ms,
         }
+    }
+
+    pub(crate) fn ramp_px(&self) -> f32 {
+        (self.size * 0.5).clamp(8.0, 20.0)
     }
 }
 
 pub(crate) fn apply_scroll_fade_mask<E: gpui::Styled>(
-    mut el: E,
-    handle: &gpui::ScrollHandle,
+    el: E,
     spec: ResolvedScrollShadow,
 ) -> E {
     if !spec.enabled || !spec.is_fade {
         return el;
     }
-    let opacities = compute_edge_opacities(
-        handle.offset(),
-        handle.max_offset(),
-        spec.size,
-        1.0,
-        spec.edges,
-    );
-    let top = spec.size * opacities.top;
-    let bottom = spec.size * opacities.bottom;
-    let left = spec.size * opacities.left;
-    let right = spec.size * opacities.right;
-    if top > 0.5 || bottom > 0.5 {
-        el = el.fade_edges(gpui::px(top), gpui::px(bottom));
-    }
-    if left > 0.5 || right > 0.5 {
-        el = el.fade_sides(gpui::px(left), gpui::px(right));
-    }
-    el
+    el.scroll_fade(gpui::ScrollFadeStyle {
+        size: gpui::px(spec.size),
+        top: spec.edges.top,
+        right: spec.edges.right,
+        bottom: spec.edges.bottom,
+        left: spec.edges.left,
+        transition_ms: spec.transition_ms,
+    })
 }
 
 pub(crate) fn paint_scroll_shadows(

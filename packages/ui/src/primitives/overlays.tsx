@@ -8,6 +8,10 @@
 import * as React from 'react';
 import { pct, px } from '../ir/geometry.js';
 import type { UiStyleSpec } from '../ir/node.js';
+import {
+  DEFAULT_SCROLL_SHADOW_SIZE_PX,
+  type ScrollShadowEdge,
+} from '../renderers/scroll-shadow.js';
 import { dialogStyles, fieldStyles } from '../styles/overlays.js';
 import { composeStyles } from '../styles/sheet.js';
 import { useHausStyles, useHausUi } from './context.js';
@@ -30,6 +34,8 @@ export interface HausScrollAreaProps {
   readonly className?: string;
   readonly orientation?: 'vertical' | 'horizontal';
   readonly size?: number;
+  readonly edges?: readonly ScrollShadowEdge[];
+  readonly transitionMs?: number;
   readonly hideScrollBar?: boolean;
   readonly hidden?: boolean;
   readonly isEnabled?: boolean;
@@ -46,7 +52,9 @@ export function HausScrollArea({
   id,
   className,
   orientation = 'vertical',
-  size = 24,
+  size = DEFAULT_SCROLL_SHADOW_SIZE_PX,
+  edges,
+  transitionMs,
   hideScrollBar = false,
   hidden,
   isEnabled,
@@ -64,6 +72,8 @@ export function HausScrollArea({
       className={className}
       orientation={orientation}
       shadowSizePx={size}
+      edges={edges}
+      transitionMs={transitionMs}
       hideScrollBar={hideScrollBar}
       hidden={hidden}
       isEnabled={isEnabled}

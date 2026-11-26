@@ -87,7 +87,7 @@ fn is_inflow_collapsible_item(child: &RetainedElement, check_flex_grow: bool) ->
     let Some(s) = child.style.as_deref() else {
         return true;
     };
-    if matches!(s.position.as_deref(), Some("absolute" | "fixed")) {
+    if matches!(s.position.as_deref(), Some("absolute" | "fixed" | "sticky")) {
         return false;
     }
     if check_flex_grow && s.flex_grow.is_some_and(|g| g > 0.0) {

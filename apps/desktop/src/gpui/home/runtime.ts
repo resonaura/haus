@@ -13,10 +13,9 @@ import { HubConnection } from '../../main/hub/connection.js';
 import type { HubSessionManagerDependencies } from '../../main/hub-session.js';
 import { connectHome } from './connect.js';
 import {
-  createGpuiAlertsTransport,
   createGpuiCameraHelper,
-  createGpuiManagementPort,
   createGpuiPreferenceSync,
+  createGpuiRuntimePorts,
   createInitialHomeState,
   handleHaRuntimeEvent,
   hasHaCredentialStore,
@@ -46,6 +45,8 @@ export class GpuiHomeRuntime {
   readonly registry: RegistryController;
   readonly alertsTransport: AlertsTransport;
   readonly managementPort: ManagementPort;
+  readonly brandIcons: ReturnType<typeof createGpuiRuntimePorts>['brandIcons'];
+  private readonly brandInvalidationListeners = new Set<(revision?: string) => void>();
   private readonly systemAccess: ReturnType<typeof createGpuiRuntimeSystem>;
   private discovery?: DiscoveryTask;
   private boot?: Promise<void>;
@@ -116,18 +117,20 @@ export class GpuiHomeRuntime {
       getRequestRpc: () => this.requestRpc,
       getSessionKind: () => this.state.sessionKind,
     });
-    this.alertsTransport = createGpuiAlertsTransport({
+    const ports = createGpuiRuntimePorts({
       sessionKind: () => this.state.sessionKind,
       isConnected: () => this.activeConnected && !this.state.offline,
       request: (msg) => this.requestActive(msg),
       hubConnection: this.connection,
-    });
-    this.managementPort = createGpuiManagementPort({
-      sessionKind: () => this.state.sessionKind,
-      isConnected: () => this.activeConnected && !this.state.offline,
-      hubConnection: this.connection,
       haConnection: this.ha,
+      subscribeBrandInvalidation: (listener) => (
+        this.brandInvalidationListeners.add(listener),
+        () => this.brandInvalidationListeners.delete(listener)
+      ),
     });
+    this.alertsTransport = ports.alertsTransport;
+    this.managementPort = ports.managementPort;
+    this.brandIcons = ports.brandIcons;
   }
 
   private get activeConnected(): boolean {
@@ -419,6 +422,10 @@ export class GpuiHomeRuntime {
   }
 
   private onHubEvent(event: NativeEvent): void {
+    if (event.type === 'brand-icons-invalidated') {
+      for (const listener of this.brandInvalidationListeners) listener(event.version);
+      return;
+    }
     if (!this.state.session || this.state.sessionKind !== 'haus-hub') return;
     if (event.type === 'connection' && event.status !== 'connected') this.update({ offline: true });
     if (event.type === 'connection' && event.status === 'connected') this.publishHome();

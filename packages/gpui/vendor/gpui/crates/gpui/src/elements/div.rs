@@ -17,18 +17,20 @@
 
 use crate::{
     Action, AnyDrag, AnyElement, AnyTooltip, AnyView, App, Axis, Bounds, ClickEvent, DispatchPhase,
-    Display, Element, ElementId, Entity, EntityId, ExternalDragPayload, ExternalDragPayloadSource,
-    FocusHandle, Global, GlobalElementId, Hitbox, HitboxBehavior, HitboxId, InspectorElementId,
-    IntoElement, IsZero, KeyContext, KeyDownEvent, KeyUpEvent, KeyboardButton, KeyboardClickEvent,
-    LayoutId, ModifiersChangedEvent, MouseButton, MouseClickEvent, MouseDownEvent, MouseExitEvent,
-    MouseMoveEvent, MousePressureEvent, MouseUpEvent, OngoingScroll, Overflow,
-    OverscrollBehavior, ParentElement, PinchEvent, Pixels, Point, Render, ScrollPolicy,
-    ScrollWheelEvent, SharedString, Size, Style, StyleRefinement, Styled, Task, TooltipId,
-    Visibility, Window, WindowControlArea, point, px, size,
+    Display, Edges, Element, ElementId, Entity, EntityId, ExternalDragPayload,
+    ExternalDragPayloadSource, FocusHandle, Global, GlobalElementId, Hitbox, HitboxBehavior,
+    HitboxId, InspectorElementId, IntoElement, IsZero, KeyContext, KeyDownEvent, KeyUpEvent,
+    KeyboardButton, KeyboardClickEvent, LayerFilter, LayoutId, ModifiersChangedEvent, MouseButton,
+    MouseClickEvent, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MousePressureEvent,
+    MouseUpEvent, OngoingScroll, Overflow, OverscrollBehavior, ParentElement, PinchEvent, Pixels,
+    Point, Render, ScrollFadeStyle, ScrollPolicy, ScrollWheelEvent, SharedString, Size, Style,
+    StyleRefinement, Styled, Task, TooltipId, Visibility, Window, WindowControlArea, point, px,
+    size,
 };
 use collections::HashMap;
 use gpui_util::ResultExt;
 use refineable::Refineable;
+use scheduler::Instant;
 use smallvec::SmallVec;
 use std::{
     any::{Any, TypeId},
@@ -269,6 +271,7 @@ impl Interactivity {
             .push(Box::new(move |event, phase, hitbox, window, cx| {
                 if phase == DispatchPhase::Capture
                     && !window.has_active_prompt()
+                    && !window.is_hitbox_blocked_by_upper_layer(hitbox.id)
                     && !hitbox.contains(&window.mouse_position())
                 {
                     (listener)(event, window, cx)
@@ -2172,6 +2175,7 @@ impl Interactivity {
                 || !self.aux_click_listeners.is_empty()
                 || self.base_style.overflow.x == Some(Overflow::Scroll)
                 || self.base_style.overflow.y == Some(Overflow::Scroll)
+                || self.base_style.scroll_fade.is_some()
         })
     }
 
@@ -2680,7 +2684,23 @@ impl Interactivity {
                                                 }
                                             }
 
-                                            f(&style, window, cx);
+                                            let content_filter = self.resolve_content_filter(
+                                                bounds,
+                                                &style,
+                                                element_state.as_mut(),
+                                                window,
+                                                cx,
+                                            );
+                                            if let Some((filter_bounds, filter)) = content_filter {
+                                                window.with_filter(
+                                                    filter_bounds,
+                                                    filter,
+                                                    px(0.),
+                                                    |window| f(&style, window, cx),
+                                                );
+                                            } else {
+                                                f(&style, window, cx);
+                                            }
 
                                             if let Some(_hitbox) = hitbox {
                                                 #[cfg(any(
@@ -2708,6 +2728,82 @@ impl Interactivity {
                 ((), element_state)
             },
         );
+    }
+
+    fn resolve_content_filter(
+        &self,
+        bounds: Bounds<Pixels>,
+        style: &Style,
+        element_state: Option<&mut InteractiveElementState>,
+        window: &mut Window,
+        cx: &App,
+    ) -> Option<(Bounds<Pixels>, LayerFilter)> {
+        let rem_size = window.rem_size();
+        let overflow_clip = style.overflow_clip_bounds_and_radii(bounds, rem_size);
+        let scroll_fade = style
+            .scroll_fade
+            .filter(|spec| spec.size > px(0.))
+            .map(|spec| {
+                let (scroll_offset, scroll_max) =
+                    if let Some(handle) = self.tracked_scroll_handle.as_ref() {
+                        let state = handle.0.borrow();
+                        (*state.offset.borrow(), state.max_offset)
+                    } else {
+                        let offset = self
+                            .scroll_offset
+                            .as_ref()
+                            .map(|offset| *offset.borrow())
+                            .unwrap_or_default();
+                        let max_offset = self
+                            .scroll_max
+                            .as_ref()
+                            .and_then(|max_offset| *max_offset.borrow())
+                            .unwrap_or_default();
+                        (offset, max_offset)
+                    };
+                let target = compute_scroll_fade_targets(scroll_offset, scroll_max, spec);
+                let transition_ms = if cx.reduce_motion() {
+                    0
+                } else {
+                    spec.transition_ms
+                };
+                let current = step_scroll_fade_anim(element_state, target, transition_ms, window);
+                Edges {
+                    top: spec.size * current.top,
+                    right: spec.size * current.right,
+                    bottom: spec.size * current.bottom,
+                    left: spec.size * current.left,
+                }
+            });
+
+        if overflow_clip.is_none() && scroll_fade.is_none() {
+            return None;
+        }
+
+        let mut filter = LayerFilter::default();
+        let mut filter_bounds = style
+            .overflow_mask(bounds, rem_size)
+            .map(|mask| mask.bounds)
+            .unwrap_or(bounds);
+
+        if let Some((clip_bounds, clip_radii, clip_smoothing)) = overflow_clip {
+            filter_bounds = clip_bounds;
+            filter.clip_radii = Some(clip_radii);
+            filter.clip_smoothing = clip_smoothing;
+        }
+
+        if let Some(fade_edges) = scroll_fade {
+            filter.fade_top = (fade_edges.top > px(0.)).then_some(fade_edges.top);
+            filter.fade_right = (fade_edges.right > px(0.)).then_some(fade_edges.right);
+            filter.fade_bottom = (fade_edges.bottom > px(0.)).then_some(fade_edges.bottom);
+            filter.fade_left = (fade_edges.left > px(0.)).then_some(fade_edges.left);
+        }
+
+        if filter.is_none() {
+            None
+        } else {
+            Some((filter_bounds, filter))
+        }
     }
 
     #[cfg(debug_assertions)]
@@ -3228,7 +3324,9 @@ impl Interactivity {
                 };
 
                 if has_mouse_down.borrow().is_none() {
-                    let is_hovered = !cx.has_active_drag() && hitbox.is_hovered(window);
+                    let is_hovered = !window.is_scroll_hover_suppressed()
+                        && !cx.has_active_drag()
+                        && hitbox.is_hovered(window);
                     if is_hovered != *was_hovered.borrow() {
                         let update_hover = update_hover.clone();
                         window.defer(cx, move |window, cx| {
@@ -3584,7 +3682,7 @@ impl Interactivity {
             }
         }
 
-        if !cx.has_active_drag() {
+        if !cx.has_active_drag() && !window.is_scroll_hover_suppressed() {
             if let Some(group_hover) = self.group_hover_style.as_ref() {
                 let is_group_hovered =
                     if let Some(group_hitbox_id) = GroupHitboxes::get(&group_hover.group, cx) {
@@ -3771,7 +3869,152 @@ pub struct InteractiveElementState {
     pub(crate) scroll_offset: Option<Rc<RefCell<Point<Pixels>>>>,
     pub(crate) scroll_max: Option<Rc<RefCell<Option<Point<Pixels>>>>>,
     ongoing_scroll: Option<Rc<RefCell<OngoingScroll>>>,
+    scroll_fade_state: Option<Rc<RefCell<ScrollFadeAnimState>>>,
     pub(crate) active_tooltip: Option<Rc<RefCell<Option<ActiveTooltip>>>>,
+}
+
+#[derive(Copy, Clone)]
+struct ScrollFadeAnimState {
+    current: Edges<f32>,
+    last_time: Instant,
+    animating: bool,
+}
+
+fn compute_scroll_fade_targets(
+    offset: Point<Pixels>,
+    max_offset: Point<Pixels>,
+    spec: ScrollFadeStyle,
+) -> Edges<f32> {
+    let size_px = spec.size.0;
+    if size_px <= 0.0 {
+        return Edges::default();
+    }
+    let ramp = (size_px * 0.5).clamp(8.0, 20.0);
+    let max_y = max_offset.y.0.max(0.0);
+    let max_x = max_offset.x.0.max(0.0);
+    let scrolled_y = (-offset.y.0).clamp(0.0, max_y);
+    let scrolled_x = (-offset.x.0).clamp(0.0, max_x);
+
+    let (top, bottom) = if max_y > 1.0 {
+        (
+            if spec.top {
+                (scrolled_y / ramp).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            if spec.bottom {
+                ((max_y - scrolled_y) / ramp).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+        )
+    } else {
+        (0.0, 0.0)
+    };
+
+    let (left, right) = if max_x > 1.0 {
+        (
+            if spec.left {
+                (scrolled_x / ramp).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+            if spec.right {
+                ((max_x - scrolled_x) / ramp).clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
+        )
+    } else {
+        (0.0, 0.0)
+    };
+
+    Edges {
+        top,
+        right,
+        bottom,
+        left,
+    }
+}
+
+fn step_scroll_fade_anim(
+    element_state: Option<&mut InteractiveElementState>,
+    target: Edges<f32>,
+    transition_ms: u32,
+    window: &mut Window,
+) -> Edges<f32> {
+    const EPSILON: f32 = 0.004;
+    let Some(element_state) = element_state else {
+        return target;
+    };
+    let now = Instant::now();
+    let cell = element_state
+        .scroll_fade_state
+        .get_or_insert_with(|| {
+            Rc::new(RefCell::new(ScrollFadeAnimState {
+                current: target,
+                last_time: now,
+                animating: false,
+            }))
+        })
+        .clone();
+
+    let mut state = cell.borrow_mut();
+    if transition_ms == 0 {
+        state.current = target;
+        state.last_time = now;
+        state.animating = false;
+        return target;
+    }
+
+    let delta_max = (target.top - state.current.top)
+        .abs()
+        .max((target.right - state.current.right).abs())
+        .max((target.bottom - state.current.bottom).abs())
+        .max((target.left - state.current.left).abs());
+    if delta_max <= EPSILON {
+        state.current = target;
+        state.last_time = now;
+        state.animating = false;
+        return target;
+    }
+
+    // Use a single small initial tick when waking from idle so scroll fade transitions
+    // smoothly instead of snapping across a multi-second idle gap.
+    let dt = if state.animating {
+        now.saturating_duration_since(state.last_time)
+            .as_secs_f32()
+            .clamp(0.0, 0.05)
+    } else {
+        1.0 / 120.0
+    };
+    let tau = (transition_ms as f32 / 3000.0).max(1e-4);
+    let alpha = 1.0 - (-dt / tau).exp();
+    let step_edge = |cur: f32, tgt: f32| {
+        let next = cur + (tgt - cur) * alpha;
+        if (tgt - next).abs() <= EPSILON {
+            tgt
+        } else {
+            next
+        }
+    };
+    state.current = Edges {
+        top: step_edge(state.current.top, target.top),
+        right: step_edge(state.current.right, target.right),
+        bottom: step_edge(state.current.bottom, target.bottom),
+        left: step_edge(state.current.left, target.left),
+    };
+    state.last_time = now;
+
+    let still_moving = state.current.top != target.top
+        || state.current.right != target.right
+        || state.current.bottom != target.bottom
+        || state.current.left != target.left;
+    state.animating = still_moving;
+    if still_moving {
+        window.request_animation_frame();
+    }
+    state.current
 }
 
 /// Whether or not the element or a group that contains it is clicked by the mouse.

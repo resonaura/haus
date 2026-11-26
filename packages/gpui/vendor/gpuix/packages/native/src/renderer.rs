@@ -4237,7 +4237,36 @@ pub struct GpuixView {
     /// What `onLayout` and `onScrollChange` last reported, for the elements that
     /// have the listener. Shared with the paint closures that compare against it.
     paint_reports: SharedPaintReports,
+    /// Primary mouse-down targets for click gesture matching across frames.
+    click_press: SharedClickPress,
 }
+
+#[derive(Default)]
+pub(crate) struct ClickPressState {
+    pressed: HashSet<u64>,
+    releasing: HashSet<u64>,
+}
+
+impl ClickPressState {
+    pub(crate) fn begin_press(&mut self) {
+        self.pressed.clear();
+        self.releasing.clear();
+    }
+
+    pub(crate) fn record_press(&mut self, id: u64) {
+        self.pressed.insert(id);
+    }
+
+    pub(crate) fn begin_release(&mut self) {
+        self.releasing = std::mem::take(&mut self.pressed);
+    }
+
+    pub(crate) fn was_pressed(&self, id: u64) -> bool {
+        self.releasing.contains(&id)
+    }
+}
+
+pub(crate) type SharedClickPress = Rc<RefCell<ClickPressState>>;
 
 #[derive(Default)]
 pub(crate) struct PaintReports {
@@ -4292,21 +4321,29 @@ fn emit_motion_settled(
     }
 }
 
+struct MotionSyncResult {
+    any_active: bool,
+    settled: Vec<(u64, u64)>,
+    active_ids: rustc_hash::FxHashSet<u64>,
+    any_active_with_listener: bool,
+}
+
 fn sync_motion_states(
     tree: &crate::retained_tree::RetainedTree,
     states: &mut HashMap<u64, crate::motion::MotionState>,
     now: web_time::Instant,
-) -> (bool, Vec<(u64, u64)>) {
+) -> MotionSyncResult {
     states.retain(|id, _| tree.motion_ids.contains(id));
     let mut active = false;
     let mut settled = Vec::new();
+    let mut active_ids = rustc_hash::FxHashSet::default();
+    let mut any_active_with_listener = false;
 
     for &id in &tree.motion_ids {
-        let Some(source) = tree
-            .elements
-            .get(&id)
-            .and_then(|element| element.custom_props().get("motion"))
-        else {
+        let Some(element) = tree.elements.get(&id) else {
+            continue;
+        };
+        let Some(source) = element.custom_props().get("motion") else {
             continue;
         };
         let state = match states.entry(id) {
@@ -4325,13 +4362,24 @@ fn sync_motion_states(
             log::warn!("Invalid motion update for element {id}: {error}");
         }
         let frame = state.frame(now);
-        active |= frame.active;
+        if frame.active {
+            active = true;
+            active_ids.insert(id);
+            if element.events().contains("motionComplete") {
+                any_active_with_listener = true;
+            }
+        }
         if frame.just_settled {
             settled.push((id, frame.generation));
         }
     }
 
-    (active, settled)
+    MotionSyncResult {
+        any_active: active,
+        settled,
+        active_ids,
+        any_active_with_listener,
+    }
 }
 
 fn emit_highlight_events(callback: &Option<EventCallback>, events: &[(u64, usize)]) {
@@ -4546,6 +4594,7 @@ impl GpuixView {
             clock: crate::automation::AutomationClock::new(),
             highlights: HashMap::new(),
             paint_reports: SharedPaintReports::default(),
+            click_press: SharedClickPress::default(),
         }
     }
 
@@ -4742,15 +4791,24 @@ impl GpuixView {
         let now = self.clock.now();
         let time_secs = (self.clock.now_ms() / 1000.0) as f32;
         let mv_active = crate::motion_values::tick_motion_values(now);
-        let (motion_active, motion_settled) =
+        let motion_sync =
             if !self.motion_active && self.motion_revision == Some(tree.motion_revision) {
-                (false, Vec::new())
+                MotionSyncResult {
+                    any_active: false,
+                    settled: Vec::new(),
+                    active_ids: Default::default(),
+                    any_active_with_listener: false,
+                }
             } else {
                 let result = sync_motion_states(&tree, &mut self.motion_states, now);
                 self.motion_revision = Some(tree.motion_revision);
-                self.motion_active = result.0;
+                self.motion_active = result.any_active;
                 result
             };
+        let motion_active = motion_sync.any_active;
+        let motion_settled = motion_sync.settled;
+        let active_motion_ids = motion_sync.active_ids;
+        let offscreen_listener_motion = motion_sync.any_active_with_listener;
         let mut highlight_events = Vec::new();
 
         // Re-resolve against the tree as it is NOW. gpui calls this during
@@ -4799,15 +4857,24 @@ impl GpuixView {
             inherited,
             highlights: &mut self.highlights,
             paint_reports: &self.paint_reports,
+            click_press: &self.click_press,
             highlight_events: &mut highlight_events,
             keyboard_focus,
             has_animated_shader: false,
+            active_motion_ids: &active_motion_ids,
+            has_built_active_motion: false,
         };
         let child = build_element(expected_child_id, &mut build_ctx, window, cx);
         let has_animated_shader = build_ctx.has_animated_shader;
+        let has_built_active_motion = build_ctx.has_built_active_motion;
         emit_highlight_events(&callback, &highlight_events);
         emit_motion_settled(&callback, &tree, &motion_settled);
-        if motion_active || mv_active || has_animated_shader {
+        if has_built_active_motion
+            || offscreen_listener_motion
+            || (motion_active && active_motion_ids.is_empty())
+            || mv_active
+            || has_animated_shader
+        {
             window.request_animation_frame();
         }
         let Some(focus_handle) = row_focus_handle else {
@@ -4934,6 +5001,7 @@ pub(crate) struct BuildCtx<'a> {
     /// Persistent `highlight` caches, keyed by the declaring element.
     highlights: &'a mut HashMap<u64, HighlightCacheEntry>,
     paint_reports: &'a SharedPaintReports,
+    pub click_press: &'a SharedClickPress,
     /// `onHighlight` payloads queued during the build.
     ///
     /// Never emitted inline: a handler that calls `setState` repaints, which
@@ -4944,6 +5012,10 @@ pub(crate) struct BuildCtx<'a> {
     pub keyboard_focus: Option<Arc<[u64]>>,
     /// Any element painted this frame declared an animated custom WGSL shader (`shader.animated = true`).
     pub has_animated_shader: bool,
+    /// Element IDs whose motion track is currently active on this frame.
+    active_motion_ids: &'a rustc_hash::FxHashSet<u64>,
+    /// True if any built (visible/materialized) element on this frame has an active motion.
+    pub has_built_active_motion: bool,
 }
 
 /// Style properties that cascade into descendants.
@@ -5747,15 +5819,24 @@ impl gpui::Render for GpuixView {
         let now = self.clock.now();
         let time_secs = (self.clock.now_ms() / 1000.0) as f32;
         let mv_active = crate::motion_values::tick_motion_values(now);
-        let (motion_active, motion_settled) =
+        let motion_sync =
             if !self.motion_active && self.motion_revision == Some(tree.motion_revision) {
-                (false, Vec::new())
+                MotionSyncResult {
+                    any_active: false,
+                    settled: Vec::new(),
+                    active_ids: Default::default(),
+                    any_active_with_listener: false,
+                }
             } else {
                 let result = sync_motion_states(&tree, &mut self.motion_states, now);
                 self.motion_revision = Some(tree.motion_revision);
-                self.motion_active = result.0;
+                self.motion_active = result.any_active;
                 result
             };
+        let motion_active = motion_sync.any_active;
+        let motion_settled = motion_sync.settled;
+        let active_motion_ids = motion_sync.active_ids;
+        let offscreen_listener_motion = motion_sync.any_active_with_listener;
         // Pruned by DECLARATION, not existence: an element that drops its
         // `highlight` prop keeps living, and its cached group list holds a copy
         // of every string in its subtree.
@@ -5799,6 +5880,8 @@ impl gpui::Render for GpuixView {
             tree.collect_pinned_ancestors(extra_pins)
         };
         let mut has_animated_shader = false;
+        let mut has_built_active_motion = false;
+        let _ = motion_active;
         let result = match tree.root_id {
             Some(root_id) => {
                 let mut ctx = BuildCtx {
@@ -5821,12 +5904,16 @@ impl gpui::Render for GpuixView {
                     inherited: Inherited::root(&theme),
                     highlights: &mut self.highlights,
                     paint_reports: &self.paint_reports,
+                    click_press: &self.click_press,
                     highlight_events: &mut highlight_events,
                     keyboard_focus,
                     has_animated_shader: false,
+                    active_motion_ids: &active_motion_ids,
+                    has_built_active_motion: false,
                 };
                 let built = build_element(root_id, &mut ctx, window, cx);
                 has_animated_shader = ctx.has_animated_shader;
+                has_built_active_motion = ctx.has_built_active_motion;
                 built
             }
             None => gpui::Empty.into_any_element(),
@@ -5853,6 +5940,7 @@ impl gpui::Render for GpuixView {
                     self.window_key_up,
                     self.window_key_event_id,
                 ))
+                .child(click_press_frame_hooks(self.click_press.clone()))
                 .child(selection_frame_reset(
                     self.selection.clone(),
                     move |position, app| {
@@ -5905,7 +5993,7 @@ impl gpui::Render for GpuixView {
         // no longer match what JS meant.
         PENDING_VIRTUAL_LIST_SCROLLS.with(|cell| cell.borrow_mut().clear());
 
-        if motion_active || mv_active || has_animated_shader {
+        if has_built_active_motion || offscreen_listener_motion || mv_active || has_animated_shader {
             window.request_animation_frame();
         }
 
@@ -5934,16 +6022,20 @@ pub(crate) fn build_element(
     let has_motion = element.custom_props().contains_key("motion");
     let has_scroll_bind = base_style.is_some_and(|s| s.scroll_bind.is_some());
     let has_motion_bind = base_style.is_some_and(|s| s.motion_bind.is_some());
-    let animated_style = if has_motion || has_scroll_bind || has_motion_bind {
+    if has_motion && ctx.active_motion_ids.contains(&id) {
+        ctx.has_built_active_motion = true;
+    }
+    let motion_style = if has_motion {
+        ctx.motion_states
+            .get(&id)
+            .and_then(|state| state.visible_style(ctx.now))
+    } else {
+        None
+    };
+    let animated_style = if motion_style.is_some() || has_scroll_bind || has_motion_bind {
         let mut resolved = base_style.cloned().unwrap_or_default();
-        if has_motion {
-            if let Some(motion_style) = ctx
-                .motion_states
-                .get(&id)
-                .and_then(|state| state.visible_style(ctx.now))
-            {
-                motion_style.apply_to(&mut resolved);
-            }
+        if let Some(motion_style) = motion_style {
+            motion_style.apply_to(&mut resolved);
         }
         if let Some(ref bindings) = resolved.scroll_bind.clone() {
             crate::scroll_state::apply_scroll_bindings_to_style(&mut resolved, bindings.as_slice());
@@ -6009,6 +6101,7 @@ pub(crate) fn build_element(
                 id,
                 events: element.events(),
                 event_callback: ctx.event_callback,
+                click_press: ctx.click_press.clone(),
                 focus_handle: ctx.focus_handles.get(&id),
                 keyboard_focus: ctx.keyboard_focus.clone(),
                 style,
@@ -6223,6 +6316,77 @@ fn joined_text_content(
     (!joined.is_empty()).then_some(joined)
 }
 
+fn click_press_frame_hooks(click_press: SharedClickPress) -> impl gpui::IntoElement {
+    use gpui::{canvas, prelude::*, px, DispatchPhase, MouseButton, MouseDownEvent, MouseUpEvent};
+
+    canvas(
+        |_, _, _| (),
+        move |_, _, window, _| {
+            let down_state = click_press.clone();
+            window.on_mouse_event(move |event: &MouseDownEvent, phase, _window, _cx| {
+                if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
+                    down_state.borrow_mut().begin_press();
+                }
+            });
+            let up_state = click_press.clone();
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, _window, _cx| {
+                if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
+                    up_state.borrow_mut().begin_release();
+                }
+            });
+        },
+    )
+    .absolute()
+    .w(px(0.0))
+    .h(px(0.0))
+}
+
+pub(crate) fn apply_layer_occlusion<E: gpui::InteractiveElement>(
+    el: E,
+    style: &StyleDesc,
+) -> E {
+    match crate::style::layer_occlusion(style) {
+        crate::style::LayerOcclusion::None => el,
+        crate::style::LayerOcclusion::BlockMouseExceptScroll => el.block_mouse_except_scroll(),
+        crate::style::LayerOcclusion::BlockMouse => el.occlude(),
+    }
+}
+
+pub(crate) fn wire_primary_click<E: gpui::StatefulInteractiveElement>(
+    el: E,
+    id: u64,
+    callback: Option<EventCallback>,
+    click_press: SharedClickPress,
+) -> E {
+    let press_down = click_press.clone();
+    let press_up = click_press;
+    // GPUI's higher-level on_click gesture is not finalized by the embedded
+    // macOS pump. Bubble listeners run in reverse registration order, so attach
+    // click's mouse-up before any user onMouseUp listener to keep onMouseUp
+    // ahead of onClick. Requiring the same element to have been hovered on
+    // primary mouse-down prevents a modal/backdrop that closes on mouse-down
+    // from leaking a phantom click to elements underneath.
+    el.capture_any_mouse_down(move |mouse_event, _window, _cx| {
+        if mouse_event.button == gpui::MouseButton::Left {
+            press_down.borrow_mut().record_press(id);
+        }
+    })
+    .on_mouse_up(gpui::MouseButton::Left, move |mouse_event, _window, _cx| {
+        if !press_up.borrow().was_pressed(id) {
+            return;
+        }
+        emit_event_full(&callback, id, "click", |p| {
+            let (x, y) = point_to_xy(mouse_event.position);
+            p.x = Some(x);
+            p.y = Some(y);
+            p.button = Some(0);
+            p.modifiers = Some(mouse_event.modifiers.into());
+            p.click_count = Some(mouse_event.click_count as u32);
+            p.is_right_click = Some(false);
+        });
+    })
+}
+
 /// The one builder for `<div>` and `<text>`.
 ///
 /// Both get the same stable GPUI id, so gpui keeps their interactive element
@@ -6252,31 +6416,22 @@ pub(crate) fn build_host_container(
             .as_ref()
             .filter(|interned| std::ptr::eq(interned.as_ref(), style))
         {
-            *el.style() = ctx.host_styles.resolve(interned);
+            let cached = ctx.host_styles.resolve_entry(interned);
+            *el.style() = cached.refinement.clone();
+            if let Some(shaders) = cached.shaders.as_deref() {
+                el = crate::compositor::apply_resolved_background_shaders(
+                    el,
+                    shaders,
+                    ctx.time_secs,
+                );
+            }
             el = apply_interactive_states(el, style);
         } else {
             el = apply_interactive_styles(el, style);
+            el = crate::compositor::apply_background_shaders(el, style, ctx.time_secs);
         }
-        el = crate::compositor::apply_background_shaders(el, style, ctx.time_secs);
 
-        if crate::style::should_occlude(style) {
-            // BlockMouse (occlude) stops the hit test, so the parent scroller
-            // never sees the wheel. HTML does not work that way: a wheel over
-            // an absolutely positioned card still scrolls the ancestor. Only
-            // `pointerEvents: "auto"` opts into stealing it. Everything else
-            // uses BlockMouseExceptScroll.
-            //
-            // Absolute used to steal it too. That made a pannable canvas
-            // impossible: every absolutely placed item (a timeline clip, a
-            // graph node) ended the hit test before the pan listener ran.
-            // `<anchored>` still occludes through its own `occlude` prop, so
-            // menus and tooltips are unaffected.
-            el = if style.pointer_events.as_deref() == Some("auto") {
-                el.occlude()
-            } else {
-                el.block_mouse_except_scroll()
-            };
-        }
+        el = apply_layer_occlusion(el, style);
     }
 
     // ── Overflow: scroll ─────────────────────────────────────────────
@@ -6437,20 +6592,7 @@ pub(crate) fn build_host_container(
     if element.events().contains("click") {
         let id = element.id;
         let callback = ctx.event_callback.clone();
-        // GPUI's higher-level on_click gesture is not finalized by the
-        // embedded macOS pump. Bubble listeners run in reverse registration
-        // order, so attach click first to keep onMouseUp ahead of onClick.
-        el = el.on_mouse_up(gpui::MouseButton::Left, move |mouse_event, _window, _cx| {
-            emit_event_full(&callback, id, "click", |p| {
-                let (x, y) = point_to_xy(mouse_event.position);
-                p.x = Some(x);
-                p.y = Some(y);
-                p.button = Some(0);
-                p.modifiers = Some(mouse_event.modifiers.into());
-                p.click_count = Some(mouse_event.click_count as u32);
-                p.is_right_click = Some(false);
-            });
-        });
+        el = wire_primary_click(el, id, callback, ctx.click_press.clone());
         el = apply_a11y_click(el, element.events(), id, ctx.event_callback);
     }
 
@@ -6658,6 +6800,7 @@ pub(crate) fn build_host_container(
     }
 
     // Children — apply automatic viewport virtualization inside active scrollers.
+    let sticky_insets = style.and_then(crate::sticky::StickyInsets::from_style);
     let prev_clip = ctx.viewport_clip.clone();
     let prev_ancestor_hash = ctx.ancestor_own_hash;
     ctx.ancestor_own_hash =
@@ -6673,6 +6816,10 @@ pub(crate) fn build_host_container(
                 allow,
             ));
         }
+    } else if sticky_insets.is_some() {
+        // Sticky elements stay pinned inside the enclosing scrollport even when
+        // their natural slot scrolls out of view; never cull their descendants.
+        ctx.viewport_clip = None;
     }
 
     let child_plan = match ctx.viewport_clip.as_ref() {
@@ -6754,6 +6901,17 @@ pub(crate) fn build_host_container(
     ctx.viewport_clip = prev_clip;
     ctx.ancestor_own_hash = prev_ancestor_hash;
 
+    let sticky_queue = if is_scroll_container {
+        let queue: crate::sticky::StickyQueueHandle = Default::default();
+        // Flush sticky descendants after normal children so they paint above
+        // scrolled siblings, inside this scroll container's clip mask, and
+        // before edge scroll shadows / scrollbar thumbs.
+        el = el.child(crate::sticky::sticky_flush_layer(queue.clone()));
+        Some(queue)
+    } else {
+        None
+    };
+
     // Last, so scroll state updates, edge shadows, and thumbs paint over content.
     if let (Some(style), Some(handle)) = (style, ctx.scroll_handles.get(&element.id)) {
         let has_x = style.overflow_x.as_deref().or(style.overflow.as_deref()) == Some("scroll");
@@ -6764,7 +6922,7 @@ pub(crate) fn build_host_container(
                 has_x,
                 has_y,
             );
-            el = crate::scroll_shadow::apply_scroll_fade_mask(el, handle, shadow_spec);
+            el = crate::scroll_shadow::apply_scroll_fade_mask(el, shadow_spec);
             el = el.child(scroll_state_and_shadow_overlay(
                 element.id,
                 style.scroll_id.clone(),
@@ -6777,7 +6935,22 @@ pub(crate) fn build_host_container(
         }
     }
 
-    el.into_any_element()
+    let mut built = el.into_any_element();
+    if let Some(queue) = sticky_queue {
+        built = crate::sticky::wrap_scroll_container(built, queue);
+    } else if element.children.iter().any(|child_id| {
+        ctx.tree
+            .elements
+            .get(child_id)
+            .and_then(|child| child.style.as_deref())
+            .is_some_and(|s| s.position.as_deref() == Some("sticky"))
+    }) {
+        built = crate::sticky::wrap_containing_block(built);
+    }
+    if let Some(insets) = sticky_insets {
+        built = crate::sticky::wrap_sticky_element(built, insets);
+    }
+    built
 }
 
 fn parse_overscroll_behavior(value: Option<&str>) -> gpui::OverscrollBehavior {
@@ -6816,8 +6989,8 @@ fn scroll_state_and_shadow_overlay(
             let opacities = crate::scroll_shadow::compute_edge_opacities(
                 offset,
                 max,
-                shadow.size,
-                shadow.opacity,
+                shadow.ramp_px(),
+                if shadow.is_fade { 1.0 } else { shadow.opacity },
                 shadow.edges,
             );
             crate::scroll_state::update_scroll_state(
@@ -7375,22 +7548,28 @@ pub(crate) fn apply_styles<E: gpui::Styled>(mut el: E, style: &StyleDesc) -> E {
     // Taffy has no viewport-fixed position, and GPUI has no scrolling document,
     // so "fixed" lays out exactly like "absolute". `should_occlude` already
     // treated the two the same; without this arm a "fixed" box stayed in flow.
+    // "sticky" stays in normal flow (`Position::Relative`); its top/right/
+    // bottom/left values are sticky threshold insets applied in `sticky.rs`,
+    // NOT relative Taffy offsets.
+    let is_sticky = style.position.as_deref() == Some("sticky");
     match style.position.as_deref() {
         Some("absolute") | Some("fixed") => el = el.absolute(),
-        Some("relative") => el = el.relative(),
+        Some("relative") | Some("sticky") => el = el.relative(),
         _ => {}
     }
-    if let Some(top) = style.top {
-        el = el.top(gpui::px(top as f32));
-    }
-    if let Some(right) = style.right {
-        el = el.right(gpui::px(right as f32));
-    }
-    if let Some(bottom) = style.bottom {
-        el = el.bottom(gpui::px(bottom as f32));
-    }
-    if let Some(left) = style.left {
-        el = el.left(gpui::px(left as f32));
+    if !is_sticky {
+        if let Some(top) = style.top {
+            el = el.top(gpui::px(top as f32));
+        }
+        if let Some(right) = style.right {
+            el = el.right(gpui::px(right as f32));
+        }
+        if let Some(bottom) = style.bottom {
+            el = el.bottom(gpui::px(bottom as f32));
+        }
+        if let Some(left) = style.left {
+            el = el.left(gpui::px(left as f32));
+        }
     }
     if let Some(ratio) = style.aspect_ratio {
         if ratio > 0.0 && ratio.is_finite() {
@@ -9223,4 +9402,35 @@ fn check_font(bytes: &[u8]) -> std::result::Result<(), String> {
         return Err("font has no glyph for \"m\"".to_string());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod click_press_tests {
+    use super::ClickPressState;
+
+    #[test]
+    fn requires_matching_primary_mouse_down_before_click_release() {
+        let mut state = ClickPressState::default();
+        // Stray mouse-up without mouse-down cannot synthesize a click.
+        state.begin_release();
+        assert!(!state.was_pressed(42));
+
+        // Pressing backdrop (id 99) and releasing over background card (id 42)
+        // after backdrop unmounts must never trigger a click on id 42.
+        state.begin_press();
+        state.record_press(99);
+        state.begin_release();
+        assert!(state.was_pressed(99));
+        assert!(!state.was_pressed(42));
+
+        // A second release without a new press cannot re-trigger id 99.
+        state.begin_release();
+        assert!(!state.was_pressed(99));
+
+        // Pressing and releasing the same control emits click cleanly.
+        state.begin_press();
+        state.record_press(42);
+        state.begin_release();
+        assert!(state.was_pressed(42));
+    }
 }

@@ -21,12 +21,13 @@ import type { Preferences } from '@haus/ha/view/preferences';
 import { setAccessoryFavorite } from '@haus/ha/view/settings/shared';
 import { getCategoryMetadata } from '@haus/ui/categories';
 import type {
+  DeviceBrandIconInput,
   DeviceTileBatteryData,
   DeviceTileData,
   LightEffectOption,
   UiIconName,
 } from '@haus/ui/components';
-import { resolveAccessoryIconName } from './device-icon.js';
+import { resolveAccessoryIconName, toDeviceBrandIconInput } from './device-icon.js';
 
 export interface HomeDevice extends DeviceTileData {
   readonly id: string;
@@ -39,6 +40,7 @@ export interface HomeDevice extends DeviceTileData {
   readonly battery?: DeviceTileBatteryData;
   readonly sourceBadge?: string;
   readonly iconName: UiIconName;
+  readonly deviceIcon: DeviceBrandIconInput;
   readonly stateKey: string;
 }
 
@@ -184,6 +186,7 @@ export function homeDashboard(snapshot: Snapshot, preferences: Preferences) {
           : undefined,
       sourceBadge: deviceSource(item.name),
       iconName: resolveAccessoryIconName(item),
+      deviceIcon: toDeviceBrandIconInput(item),
     };
   };
   const tiles = (items: HausAccessory[], scope?: string) =>

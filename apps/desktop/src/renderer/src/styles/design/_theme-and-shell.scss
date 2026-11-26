@@ -226,28 +226,28 @@
 :root .connected-hint i.offline {
   background: var(--warning);
 }
-:root .topbar {
+:root .topbar:not([data-haus-topbar='shared']) {
   height: 61px;
   min-height: 61px;
   padding-inline: 32px;
   background: transparent;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
-:root .breadcrumb {
+:root .topbar:not([data-haus-topbar='shared']) .breadcrumb {
   font-size: 11px;
 }
-:root .breadcrumb strong {
+:root .topbar:not([data-haus-topbar='shared']) .breadcrumb strong {
   color: var(--ink);
   font-weight: 550;
 }
-:root .demo-badge {
+:root .topbar:not([data-haus-topbar='shared']) .demo-badge {
   font-size: 8px;
   letter-spacing: 1px;
   border-color: var(--line);
   color: var(--muted-ink);
 }
 :root .theme-toggle,
-:root .profile-button {
+:root .profile-button:not([data-haus-topbar-profile='shared']) {
   background: var(--glass);
   border: 1px solid var(--line);
   color: var(--ink);

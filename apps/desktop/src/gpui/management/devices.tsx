@@ -83,29 +83,42 @@ export function GpuiDevicesInventoryView({
     }));
   }, [scoped]);
 
-  const filtered = useMemo(
-    () => filterInventoryDevices(scoped, filter),
-    [filter, scoped],
-  );
+  const filtered = useMemo(() => filterInventoryDevices(scoped, filter), [filter, scoped]);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const items = useMemo<PortableInventoryRowItem[]>(
     () =>
-      filtered.map((item) => ({
-        id: item.id,
-        hausId: item.hausId,
-        name: item.name,
-        detail: [item.manufacturer, item.model].filter(Boolean).join(' · ') || 'Registered device',
-        roomName: areaNameById.get(item.areaId ?? '') ?? 'Unassigned',
-        category: item.category,
-        status: item.status,
-        statusLabel: INVENTORY_STATUS_LABELS[item.status],
-        activeEntityCount: item.activeEntityCount,
-        entityCount: item.entityCount,
-        selected: selectedSet.has(item.id),
-      })),
-    [areaNameById, filtered, selectedSet],
+      filtered.map((item) => {
+        const primaryEntityId = item.accessory?.primaryEntityId;
+        const matched = home.devices.find(
+          (device) =>
+            device.accessory.deviceId === item.id ||
+            (primaryEntityId !== undefined && device.accessory.primaryEntityId === primaryEntityId),
+        );
+        return {
+          id: item.id,
+          hausId: item.hausId,
+          name: item.name,
+          detail:
+            [item.manufacturer, item.model].filter(Boolean).join(' · ') || 'Registered device',
+          roomName: areaNameById.get(item.areaId ?? '') ?? 'Unassigned',
+          category: item.category,
+          status: item.status,
+          statusLabel: INVENTORY_STATUS_LABELS[item.status],
+          activeEntityCount: item.activeEntityCount,
+          entityCount: item.entityCount,
+          selected: selectedSet.has(item.id),
+          deviceIcon: matched?.deviceIcon ?? {
+            name: item.name,
+            primaryEntityId,
+            category: item.category,
+            manufacturer: item.manufacturer,
+            model: item.model,
+          },
+        };
+      }),
+    [areaNameById, filtered, home.devices, selectedSet],
   );
 
   const liveEntityCount = useMemo(
@@ -159,8 +172,7 @@ export function GpuiDevicesInventoryView({
       const previewItems: PortableDeviceMoveItem[] = plan.map((move) => {
         const device = snapshot.devices.find((item) => item.id === move.deviceId);
         const effectiveAreaId =
-          move.fromEffectiveAreaId ??
-          (device ? deviceArea(device, snapshot.devices) : null);
+          move.fromEffectiveAreaId ?? (device ? deviceArea(device, snapshot.devices) : null);
         return {
           deviceId: move.deviceId,
           name: move.name,

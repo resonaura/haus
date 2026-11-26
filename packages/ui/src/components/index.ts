@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 export * from './badge.js';
+export * from './brand/index.js';
 export * from './cameras/index.js';
 export * from './cards.js';
 export * from './category.js';

@@ -19,7 +19,7 @@ import {
 } from '@haus/ui/components';
 import { Box, Image } from '@haus/ui/primitives';
 import { pct } from '@haus/ui/ir';
-import { resolveAccessoryIconName } from './device-icon.js';
+import { resolveAccessoryIconName, toDeviceBrandIconInput } from './device-icon.js';
 import { demoCameraPreviewSrc } from '../camera/preview-image.js';
 import { DeviceDetailsModal } from './device-modal.js';
 import type { StatisticsRequest } from './history.js';
@@ -66,6 +66,7 @@ function resolveModalDevice(
             : undefined,
         lightEffect: appearance.effect,
         iconName: resolveAccessoryIconName(member),
+        deviceIcon: toDeviceBrandIconInput(member),
         stateKey: `${member.state.state}:${stateText}`,
       };
     }
@@ -157,6 +158,7 @@ export function DeviceCards({
               battery={device.battery}
               sourceBadge={device.sourceBadge}
               iconName={device.iconName}
+              deviceIcon={device.deviceIcon}
               desktop
               onQuick={action}
               quickDisabled={disabled || (!managementUrl && !device.available)}

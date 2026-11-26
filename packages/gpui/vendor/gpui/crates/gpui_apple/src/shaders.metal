@@ -1610,6 +1610,14 @@ fragment float4 mask_fragment(
     float right = params->fade_bounds.origin.x + params->fade_bounds.size.width - source_point.x;
     fade = min(fade, smoothstep(0.0, params->fade_right, right));
   }
+  if (params->clip_radii.top_left > 0.0 ||
+      params->clip_radii.top_right > 0.0 ||
+      params->clip_radii.bottom_right > 0.0 ||
+      params->clip_radii.bottom_left > 0.0) {
+    float corner_sdf = quad_sdf(
+        source_point, params->fade_bounds, params->clip_radii, params->clip_smoothing);
+    fade *= saturate(0.5 - corner_sdf);
+  }
 
   // The sample stays half a texel inside the texels the layer covers and inside the frame, so a
   // stretched edge repeats the layer's last texels rather than blending them with whatever lies

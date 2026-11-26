@@ -12,6 +12,7 @@ import type { ShaderRegistry } from '../ir/materials.js';
 import type { UiMotionSpec } from '../ir/motion.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import type { RenderContext } from './contract.js';
+import type { ScrollShadowEdge } from './scroll-shadow.js';
 import type {
   HostBlurEvent,
   HostBoxSemantic,
@@ -320,6 +321,8 @@ export interface HostScrollViewProps {
   readonly className?: string;
   readonly orientation?: 'vertical' | 'horizontal';
   readonly shadowSizePx?: number;
+  readonly edges?: readonly ScrollShadowEdge[];
+  readonly transitionMs?: number;
   readonly hideScrollBar?: boolean;
   readonly overscrollBehavior?: 'auto' | 'contain' | 'none';
   readonly scrollPolicy?: 'auto' | 'vertical' | 'horizontal' | 'both' | 'directionLocked' | 'free';
@@ -458,6 +461,7 @@ export type UiContentHost = Pick<
   Partial<
     Pick<
       UiHostAdapter,
+      | 'renderCanvas'
       | 'renderDivider'
       | 'renderGlassRim'
       | 'renderHeading'

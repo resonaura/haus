@@ -9,8 +9,114 @@ import * as React from 'react';
 import type { RenderContext } from './contract.js';
 import type { HostScrollViewProps } from './host.js';
 import { compileStyleToReactCss } from './react-dom.js';
+import {
+  computeScrollShadowTargets,
+  DEFAULT_SCROLL_SHADOW_SIZE_PX,
+  DEFAULT_SCROLL_SHADOW_TRANSITION_MS,
+  resolveScrollShadowEdges,
+} from './scroll-shadow.js';
 
-/** Browser / Electron DOM scroll container with dynamic edge fade shadows. */
+const SCROLL_SHADOW_STYLE_ATTR = 'data-haus-scroll-shadow-css';
+
+/**
+ * Smoothstep-matched multi-stop CSS mask with `@property` `<length>` interpolation so
+ * edge fade masks appear and disappear smoothly with zero React re-renders during scroll.
+ */
+export const HAUS_DOM_SCROLL_SHADOW_CSS = `
+@property --haus-ss-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --haus-ss-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+[data-haus-scroll-shadow='true'] {
+  --haus-ss-duration: ${DEFAULT_SCROLL_SHADOW_TRANSITION_MS}ms;
+  transition:
+    --haus-ss-start var(--haus-ss-duration) cubic-bezier(0.22, 1, 0.36, 1),
+    --haus-ss-end var(--haus-ss-duration) cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-haus-scroll-shadow='true'][data-orientation='vertical'] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    rgb(0 0 0 / 0.16) calc(var(--haus-ss-start) * 0.25),
+    rgb(0 0 0 / 0.5) calc(var(--haus-ss-start) * 0.5),
+    rgb(0 0 0 / 0.84) calc(var(--haus-ss-start) * 0.75),
+    #000 var(--haus-ss-start),
+    #000 calc(100% - var(--haus-ss-end)),
+    rgb(0 0 0 / 0.84) calc(100% - var(--haus-ss-end) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--haus-ss-end) * 0.5),
+    rgb(0 0 0 / 0.16) calc(100% - var(--haus-ss-end) * 0.25),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    rgb(0 0 0 / 0.16) calc(var(--haus-ss-start) * 0.25),
+    rgb(0 0 0 / 0.5) calc(var(--haus-ss-start) * 0.5),
+    rgb(0 0 0 / 0.84) calc(var(--haus-ss-start) * 0.75),
+    #000 var(--haus-ss-start),
+    #000 calc(100% - var(--haus-ss-end)),
+    rgb(0 0 0 / 0.84) calc(100% - var(--haus-ss-end) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--haus-ss-end) * 0.5),
+    rgb(0 0 0 / 0.16) calc(100% - var(--haus-ss-end) * 0.25),
+    transparent 100%
+  );
+}
+[data-haus-scroll-shadow='true'][data-orientation='horizontal'] {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    rgb(0 0 0 / 0.16) calc(var(--haus-ss-start) * 0.25),
+    rgb(0 0 0 / 0.5) calc(var(--haus-ss-start) * 0.5),
+    rgb(0 0 0 / 0.84) calc(var(--haus-ss-start) * 0.75),
+    #000 var(--haus-ss-start),
+    #000 calc(100% - var(--haus-ss-end)),
+    rgb(0 0 0 / 0.84) calc(100% - var(--haus-ss-end) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--haus-ss-end) * 0.5),
+    rgb(0 0 0 / 0.16) calc(100% - var(--haus-ss-end) * 0.25),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    rgb(0 0 0 / 0.16) calc(var(--haus-ss-start) * 0.25),
+    rgb(0 0 0 / 0.5) calc(var(--haus-ss-start) * 0.5),
+    rgb(0 0 0 / 0.84) calc(var(--haus-ss-start) * 0.75),
+    #000 var(--haus-ss-start),
+    #000 calc(100% - var(--haus-ss-end)),
+    rgb(0 0 0 / 0.84) calc(100% - var(--haus-ss-end) * 0.75),
+    rgb(0 0 0 / 0.5) calc(100% - var(--haus-ss-end) * 0.5),
+    rgb(0 0 0 / 0.16) calc(100% - var(--haus-ss-end) * 0.25),
+    transparent 100%
+  );
+}
+[data-haus-scroll-shadow='true'][data-haus-ss-static='true'] {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-haus-scroll-shadow='true'] {
+    transition: none;
+  }
+}
+`.trim();
+
+/** Idempotently appends the `@haus/ui` smooth scroll-shadow stylesheet into `<head>`. */
+export function ensureDomScrollShadowStyle(doc?: Document): void {
+  const targetDoc = doc ?? (typeof document !== 'undefined' ? document : undefined);
+  if (!targetDoc?.head) return;
+  if (targetDoc.head.querySelector(`style[${SCROLL_SHADOW_STYLE_ATTR}]`)) return;
+  const style = targetDoc.createElement('style');
+  style.setAttribute(SCROLL_SHADOW_STYLE_ATTR, '1');
+  style.textContent = HAUS_DOM_SCROLL_SHADOW_CSS;
+  targetDoc.head.append(style);
+}
+
+/** Browser / Electron DOM scroll container with smooth alpha-fade edge masks. */
 export function DomScrollView({
   props,
   context,
@@ -19,43 +125,101 @@ export function DomScrollView({
   readonly context: RenderContext;
 }): React.ReactElement {
   const orientation = props.orientation ?? 'vertical';
-  const size = props.shadowSizePx ?? 24;
-  const ref = React.useRef<HTMLDivElement | null>(null);
-  const [edge, setEdge] = React.useState<{ start: boolean; end: boolean }>({
-    start: false,
-    end: false,
-  });
+  const size =
+    props.shadowSizePx === undefined ? DEFAULT_SCROLL_SHADOW_SIZE_PX : props.shadowSizePx;
+  const edges = resolveScrollShadowEdges(orientation, props.edges);
+  const shadowActive = props.isEnabled !== false && size > 0 && (edges.start || edges.end);
+  const transitionMs = context.viewport.reducedMotion
+    ? 0
+    : Math.max(0, Math.round(props.transitionMs ?? DEFAULT_SCROLL_SHADOW_TRANSITION_MS));
 
-  const updateEdges = React.useCallback(() => {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const lastAppliedRef = React.useRef<{ start: string; end: string }>({ start: '', end: '' });
+
+  const syncMask = React.useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    if (orientation === 'horizontal') {
-      const start = el.scrollLeft > 2;
-      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
-      setEdge((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
-    } else {
-      const start = el.scrollTop > 2;
-      const end = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
-      setEdge((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+    if (!shadowActive) {
+      if (lastAppliedRef.current.start !== '0px' || lastAppliedRef.current.end !== '0px') {
+        lastAppliedRef.current = { start: '0px', end: '0px' };
+        el.style.setProperty('--haus-ss-start', '0px');
+        el.style.setProperty('--haus-ss-end', '0px');
+      }
+      return;
     }
-  }, [orientation]);
+    const offsetPx = orientation === 'horizontal' ? el.scrollLeft : el.scrollTop;
+    const maxOffsetPx =
+      orientation === 'horizontal'
+        ? Math.max(0, el.scrollWidth - el.clientWidth)
+        : Math.max(0, el.scrollHeight - el.clientHeight);
+    const targets = computeScrollShadowTargets({
+      offsetPx,
+      maxOffsetPx,
+      sizePx: size,
+      startEnabled: edges.start,
+      endEnabled: edges.end,
+    });
+    const nextStart = `${targets.startPx.toFixed(2)}px`;
+    const nextEnd = `${targets.endPx.toFixed(2)}px`;
+    if (lastAppliedRef.current.start !== nextStart) {
+      lastAppliedRef.current.start = nextStart;
+      el.style.setProperty('--haus-ss-start', nextStart);
+    }
+    if (lastAppliedRef.current.end !== nextEnd) {
+      lastAppliedRef.current.end = nextEnd;
+      el.style.setProperty('--haus-ss-end', nextEnd);
+    }
+  }, [orientation, size, shadowActive, edges.start, edges.end]);
+
+  React.useLayoutEffect(() => {
+    ensureDomScrollShadowStyle(ref.current?.ownerDocument);
+    const el = ref.current;
+    if (!el) return undefined;
+    el.dataset.hausSsStatic = 'true';
+    syncMask();
+    if (transitionMs === 0 || typeof requestAnimationFrame !== 'function') {
+      if (transitionMs > 0) delete el.dataset.hausSsStatic;
+      return undefined;
+    }
+    const raf = requestAnimationFrame(() => {
+      if (ref.current === el) delete el.dataset.hausSsStatic;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [syncMask, transitionMs]);
 
   React.useEffect(() => {
-    updateEdges();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(updateEdges);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [updateEdges, props.children]);
+    if (!el) return undefined;
+    let frame = 0;
+    const schedule = () => {
+      if (frame !== 0) return;
+      if (typeof requestAnimationFrame === 'function') {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          syncMask();
+        });
+      } else {
+        syncMask();
+      }
+    };
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : undefined;
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+
+    const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(schedule) : undefined;
+    mo?.observe(el, { childList: true, subtree: true });
+
+    syncMask();
+    return () => {
+      if (frame !== 0 && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(frame);
+      }
+      ro?.disconnect();
+      mo?.disconnect();
+    };
+  }, [syncMask, props.children]);
 
   const { style: baseCss } = compileStyleToReactCss(props.style ?? {}, context);
-  const axis = orientation === 'horizontal' ? 'to right' : 'to bottom';
-  const maskImage =
-    props.isEnabled !== false && (edge.start || edge.end)
-      ? `linear-gradient(${axis}, ${edge.start ? `transparent 0px, black ${size}px` : 'black 0px'}, ${edge.end ? `black calc(100% - ${size}px), transparent 100%` : 'black 100%'})`
-      : undefined;
-
   const classes = ['scroll-shadow', props.className].filter(Boolean).join(' ');
 
   const setRef = React.useCallback(
@@ -70,6 +234,10 @@ export function DomScrollView({
     [props.scrollRef],
   );
 
+  const shadowVars = shadowActive
+    ? ({ '--haus-ss-duration': `${transitionMs}ms` } as React.CSSProperties)
+    : undefined;
+
   return (
     <div
       ref={setRef}
@@ -79,16 +247,17 @@ export function DomScrollView({
       role={props.role}
       aria-label={props.ariaLabel}
       onScroll={() => {
-        updateEdges();
+        syncMask();
         props.onScroll?.();
       }}
       data-haus-kind="scroll"
       data-orientation={orientation}
+      data-haus-scroll-shadow={shadowActive ? 'true' : undefined}
       style={{
         overflowX: orientation === 'horizontal' ? 'auto' : 'hidden',
         overflowY: orientation === 'vertical' ? 'auto' : 'hidden',
         ...(props.hideScrollBar ? { scrollbarWidth: 'none' } : {}),
-        ...(maskImage ? { maskImage, WebkitMaskImage: maskImage } : {}),
+        ...shadowVars,
         ...baseCss,
       }}
     >

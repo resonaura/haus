@@ -712,14 +712,30 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 #[derive(Debug, Clone, Default)]
 pub struct SvgElement {
     src: String,
-    bytes: Option<Arc<[u8]>>,
+    bytes: Option<(Arc<[u8]>, gpui::SharedString)>,
     source: String,
+    source_cached: Option<(Arc<[u8]>, gpui::SharedString)>,
+    element_id: Option<gpui::SharedString>,
+}
+
+fn cache_svg_bytes(bytes: Vec<u8>) -> (Arc<[u8]>, gpui::SharedString) {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.as_slice().hash(&mut hasher);
+    let path = gpui::SharedString::from(format!("__binary_svg__{}", hasher.finish()));
+    (Arc::from(bytes), path)
 }
 
 impl SvgElement {
     fn load_src(&mut self, src: String) {
-        self.bytes = svg_bytes(&src).map(Arc::from);
+        self.bytes = svg_bytes(&src).map(cache_svg_bytes);
         self.src = src;
+    }
+
+    fn set_source(&mut self, source: String) {
+        self.source_cached = (!source.trim().is_empty())
+            .then(|| cache_svg_bytes(source.as_bytes().to_vec()));
+        self.source = source;
     }
 }
 
@@ -775,18 +791,17 @@ impl CustomElement for SvgElement {
     fn render(
         &mut self,
         ctx: CustomRenderContext,
-        _window: &mut gpui::Window,
+        window: &mut gpui::Window,
         _cx: &mut gpui::Context<crate::renderer::GpuixView>,
     ) -> gpui::AnyElement {
         use gpui::prelude::*;
 
-        let bytes = if self.source.trim().is_empty() {
-            self.bytes.as_deref()
-        } else {
-            Some(self.source.as_bytes())
-        };
-        let element_id = gpui::SharedString::from(format!("__gpuix_svg_{}", ctx.id));
-        let Some(bytes) = bytes else {
+        let cached = self.source_cached.as_ref().or(self.bytes.as_ref());
+        let element_id = self
+            .element_id
+            .get_or_insert_with(|| gpui::SharedString::from(format!("__gpuix_svg_{}", ctx.id)))
+            .clone();
+        let Some((data, data_path)) = cached else {
             let empty = super::custom_surface(gpui::div().id(element_id), &ctx);
             return empty.into_any_element();
         };
@@ -797,14 +812,16 @@ impl CustomElement for SvgElement {
             .and_then(crate::color::parse_color_rgba)
             .unwrap_or_else(|| gpui::rgb(0xe2e2e2).into());
         let mut icon = gpui::svg()
-            .data(bytes)
+            .data_with_path(data.clone(), data_path.clone())
             .flex_none()
             .text_color(tint)
             .id(element_id);
         if let Some(style) = ctx.style {
             icon = crate::renderer::apply_interactive_styles(icon, style);
         }
-        icon = crate::accessibility::apply_accessibility(icon, ctx.props, None);
+        if window.is_a11y_active() {
+            icon = crate::accessibility::apply_accessibility(icon, ctx.props, None);
+        }
         let icon = super::wire_standard_events(icon, &ctx);
         crate::automation::track_own_bounds(icon, ctx.id).into_any_element()
     }
@@ -812,7 +829,7 @@ impl CustomElement for SvgElement {
     fn set_prop(&mut self, key: &str, value: serde_json::Value) {
         match key {
             "src" => self.load_src(value.as_str().unwrap_or_default().to_string()),
-            "source" => self.source = value.as_str().unwrap_or_default().to_string(),
+            "source" => self.set_source(value.as_str().unwrap_or_default().to_string()),
             _ => {}
         }
     }

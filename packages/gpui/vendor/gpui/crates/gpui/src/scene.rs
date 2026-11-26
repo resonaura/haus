@@ -47,6 +47,20 @@ impl From<bool> for PaddedBool32 {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct PrimitiveSnapshot {
+    shadows: usize,
+    backdrops: usize,
+    quads: usize,
+    shaders: usize,
+    paths: usize,
+    underlines: usize,
+    monochrome_sprites: usize,
+    subpixel_sprites: usize,
+    polychrome_sprites: usize,
+    surfaces: usize,
+}
+
 #[derive(Default)]
 #[expect(missing_docs)]
 pub struct Scene {
@@ -59,6 +73,8 @@ pub struct Scene {
     pub backdrops: Vec<Backdrop>,
     pub effects: Vec<LayerEffect>,
     effect_stack: Vec<usize>,
+    effect_corner_hits: Vec<bool>,
+    effect_snapshots: Vec<PrimitiveSnapshot>,
     pub quads: Vec<Quad>,
     pub shaders: Vec<ShaderQuad>,
     pub paths: Vec<Path<ScaledPixels>>,
@@ -82,6 +98,8 @@ impl Scene {
         self.backdrops.clear();
         self.effects.clear();
         self.effect_stack.clear();
+        self.effect_corner_hits.clear();
+        self.effect_snapshots.clear();
         self.quads.clear();
         self.shaders.clear();
         self.underlines.clear();
@@ -89,6 +107,140 @@ impl Scene {
         self.subpixel_sprites.clear();
         self.polychrome_sprites.clear();
         self.surfaces.clear();
+    }
+
+    fn capture_primitive_snapshot(&self) -> PrimitiveSnapshot {
+        PrimitiveSnapshot {
+            shadows: self.shadows.len(),
+            backdrops: self.backdrops.len(),
+            quads: self.quads.len(),
+            shaders: self.shaders.len(),
+            paths: self.paths.len(),
+            underlines: self.underlines.len(),
+            monochrome_sprites: self.monochrome_sprites.len(),
+            subpixel_sprites: self.subpixel_sprites.len(),
+            polychrome_sprites: self.polychrome_sprites.len(),
+            surfaces: self.surfaces.len(),
+        }
+    }
+
+    fn activate_corner_effect(&mut self, effect_idx: usize) {
+        if self.effect_corner_hits[effect_idx] {
+            return;
+        }
+        self.effect_corner_hits[effect_idx] = true;
+        let snapshot = self.effect_snapshots[effect_idx];
+        let start = self.primitive_bounds.barrier();
+        self.effects[effect_idx].start = start;
+
+        let mut min_order = DrawOrder::MAX;
+        for p in &self.shadows[snapshot.shadows..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.backdrops[snapshot.backdrops..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.quads[snapshot.quads..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.shaders[snapshot.shaders..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.paths[snapshot.paths..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.underlines[snapshot.underlines..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.monochrome_sprites[snapshot.monochrome_sprites..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.subpixel_sprites[snapshot.subpixel_sprites..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.polychrome_sprites[snapshot.polychrome_sprites..] {
+            min_order = min_order.min(p.order);
+        }
+        for p in &self.surfaces[snapshot.surfaces..] {
+            min_order = min_order.min(p.order);
+        }
+        for k in (effect_idx + 1)..self.effects.len() {
+            if self.effect_corner_hits[k] {
+                min_order = min_order.min(self.effects[k].start);
+            }
+        }
+
+        if min_order == DrawOrder::MAX {
+            for k in (effect_idx + 1)..self.effects.len() {
+                self.effects[k].start = self.effects[k].start.max(start);
+                if self.effects[k].end != DrawOrder::MAX {
+                    self.effects[k].end = self.effects[k].start;
+                }
+            }
+            return;
+        }
+
+        let shift = (start + 1).saturating_sub(min_order);
+        let mut max_order = start;
+        if shift > 0 {
+            for p in &mut self.shadows[snapshot.shadows..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.backdrops[snapshot.backdrops..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.quads[snapshot.quads..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.shaders[snapshot.shaders..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.paths[snapshot.paths..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.underlines[snapshot.underlines..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.monochrome_sprites[snapshot.monochrome_sprites..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.subpixel_sprites[snapshot.subpixel_sprites..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.polychrome_sprites[snapshot.polychrome_sprites..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+            for p in &mut self.surfaces[snapshot.surfaces..] {
+                p.order += shift;
+                max_order = max_order.max(p.order);
+            }
+        }
+        for k in (effect_idx + 1)..self.effects.len() {
+            if self.effect_corner_hits[k] {
+                self.effects[k].start += shift;
+                if self.effects[k].end != DrawOrder::MAX {
+                    self.effects[k].end += shift;
+                    max_order = max_order.max(self.effects[k].end);
+                } else {
+                    max_order = max_order.max(self.effects[k].start);
+                }
+            } else {
+                self.effects[k].start = self.effects[k].start.max(start);
+                if self.effects[k].end != DrawOrder::MAX {
+                    self.effects[k].end = self.effects[k].start;
+                }
+            }
+        }
+        self.primitive_bounds.raise_floor(max_order);
     }
 
     pub fn len(&self) -> usize {
@@ -120,25 +272,52 @@ impl Scene {
     pub fn push_filter(
         &mut self,
         source_bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
         transform_origin: Point<ScaledPixels>,
         content_mask: Bounds<ScaledPixels>,
         filter: Filter,
     ) {
-        let start = self.primitive_bounds.barrier();
         let destination_bounds = filter.transform_bounds(source_bounds, transform_origin);
+        let lazy_corner_clip = filter.is_corner_clip_only() && self.layer_stack.is_empty();
+        if !filter.is_corner_clip_only() {
+            let stack_len = self.effect_stack.len();
+            for stack_pos in 0..stack_len {
+                let parent_idx = self.effect_stack[stack_pos];
+                if !self.effect_corner_hits[parent_idx] {
+                    let parent = self.effects[parent_idx];
+                    if bounds_hits_corner_zones(
+                        destination_bounds.intersect(&content_mask),
+                        parent.clip_bounds,
+                        parent.filter.clip_radii,
+                    ) {
+                        self.activate_corner_effect(parent_idx);
+                    }
+                }
+            }
+        }
+        let start = if lazy_corner_clip {
+            self.primitive_bounds.highest()
+        } else {
+            self.primitive_bounds.barrier()
+        };
+        let snapshot = self.capture_primitive_snapshot();
         self.effects.push(LayerEffect {
             start,
             end: DrawOrder::MAX,
             source_bounds,
+            clip_bounds,
             transform_origin,
             destination_bounds,
             content_mask,
             filter,
             parent: self.effect_stack.last().copied(),
         });
+        self.effect_corner_hits.push(!lazy_corner_clip);
+        self.effect_snapshots.push(snapshot);
         self.effect_stack.push(self.effects.len() - 1);
         self.paint_operations.push(PaintOperation::StartFilter(
             source_bounds,
+            clip_bounds,
             transform_origin,
             content_mask,
             filter,
@@ -147,7 +326,19 @@ impl Scene {
 
     pub fn pop_filter(&mut self) {
         if let Some(index) = self.effect_stack.pop() {
-            self.effects[index].end = self.primitive_bounds.barrier();
+            let prune = self.effects[index].filter.is_corner_clip_only()
+                && !self.effect_corner_hits[index];
+            if prune {
+                if index + 1 == self.effects.len() {
+                    self.effects.pop();
+                    self.effect_corner_hits.pop();
+                    self.effect_snapshots.pop();
+                } else {
+                    self.effects[index].end = self.effects[index].start;
+                }
+            } else {
+                self.effects[index].end = self.primitive_bounds.barrier();
+            }
         }
         self.paint_operations.push(PaintOperation::EndFilter);
     }
@@ -196,9 +387,21 @@ impl Scene {
                     layers -= 1;
                     self.pop_layer();
                 }
-                PaintOperation::StartFilter(bounds, transform_origin, content_mask, filter) => {
+                PaintOperation::StartFilter(
+                    bounds,
+                    clip_bounds,
+                    transform_origin,
+                    content_mask,
+                    filter,
+                ) => {
                     filters += 1;
-                    self.push_filter(*bounds, *transform_origin, *content_mask, *filter);
+                    self.push_filter(
+                        *bounds,
+                        *clip_bounds,
+                        *transform_origin,
+                        *content_mask,
+                        *filter,
+                    );
                 }
                 PaintOperation::EndFilter if filters > 0 => {
                     filters -= 1;
@@ -255,7 +458,9 @@ impl Scene {
         let mut chain = vec![index];
         let mut walk = self.effects[index].parent;
         while let Some(parent) = walk {
-            chain.push(parent);
+            if self.effects[parent].end > self.effects[parent].start {
+                chain.push(parent);
+            }
             walk = self.effects[parent].parent;
         }
         chain.reverse();
@@ -270,6 +475,25 @@ impl Scene {
 
         if clipped_bounds.is_empty() {
             return;
+        }
+
+        if !self.effect_stack.is_empty() {
+            let stack_len = self.effect_stack.len();
+            for stack_pos in 0..stack_len {
+                let effect_idx = self.effect_stack[stack_pos];
+                if !self.effect_corner_hits[effect_idx] {
+                    let layer = self.effects[effect_idx];
+                    if primitive_needs_corner_clip(
+                        &primitive,
+                        clipped_bounds,
+                        layer.clip_bounds,
+                        layer.filter.clip_radii,
+                        layer.filter.clip_smoothing,
+                    ) {
+                        self.activate_corner_effect(effect_idx);
+                    }
+                }
+            }
         }
 
         let order = self
@@ -330,9 +554,19 @@ impl Scene {
                 PaintOperation::Primitive(primitive) => self.insert_primitive(primitive.clone()),
                 PaintOperation::StartLayer(bounds) => self.push_layer(*bounds),
                 PaintOperation::EndLayer => self.pop_layer(),
-                PaintOperation::StartFilter(bounds, transform_origin, content_mask, filter) => {
-                    self.push_filter(*bounds, *transform_origin, *content_mask, *filter)
-                }
+                PaintOperation::StartFilter(
+                    bounds,
+                    clip_bounds,
+                    transform_origin,
+                    content_mask,
+                    filter,
+                ) => self.push_filter(
+                    *bounds,
+                    *clip_bounds,
+                    *transform_origin,
+                    *content_mask,
+                    *filter,
+                ),
                 PaintOperation::EndFilter => self.pop_filter(),
                 PaintOperation::StartSpan(id, bounds) => self.push_span(*id, *bounds),
                 PaintOperation::EndSpan => self.pop_span(),
@@ -433,6 +667,7 @@ pub(crate) enum PaintOperation {
     EndLayer,
     StartFilter(
         Bounds<ScaledPixels>,
+        Bounds<ScaledPixels>,
         Point<ScaledPixels>,
         Bounds<ScaledPixels>,
         Filter,
@@ -452,6 +687,8 @@ pub struct LayerEffect {
     pub end: DrawOrder,
     /// The area of the untransformed offscreen source, including blur reach.
     pub source_bounds: Bounds<ScaledPixels>,
+    /// The element's own clip/fade box in untransformed source coordinates (before blur reach or parent clip).
+    pub clip_bounds: Bounds<ScaledPixels>,
     /// The center of the element's original bounds, before adding blur reach.
     pub transform_origin: Point<ScaledPixels>,
     /// The source bounds after applying the layer 2D affine transform and translation.
@@ -503,7 +740,10 @@ impl LayerEffect {
     pub fn can_merge_with(&self, next: &Self) -> bool {
         self.filter == next.filter
             && self.parent == next.parent
+            && !self.filter.fades()
             && !next.filter.fades()
+            && !self.filter.clips_corners()
+            && !next.filter.clips_corners()
             && !self.filter.transforms()
     }
 }
@@ -533,6 +773,10 @@ pub struct Filter {
     pub skew_y_rad: f32,
     /// Compositor translation in scaled pixels.
     pub translate: Point<ScaledPixels>,
+    /// Rounded corner radii for inner-content clipping (e.g. `overflow: hidden` + `border-radius`), in scaled pixels.
+    pub clip_radii: Corners<ScaledPixels>,
+    /// Corner smoothing (superellipse factor in `[0, 1]`) for `clip_radii`.
+    pub clip_smoothing: f32,
 }
 
 /// The widest blur, as a standard deviation in scaled pixels, that runs as a gaussian at full
@@ -653,6 +897,8 @@ impl Default for Filter {
             skew_x_rad: 0.0,
             skew_y_rad: 0.0,
             translate: Point::default(),
+            clip_radii: Corners::default(),
+            clip_smoothing: 0.0,
         }
     }
 }
@@ -660,7 +906,7 @@ impl Default for Filter {
 impl Filter {
     /// Whether the layer changes its contents at all.
     pub fn is_noop(&self) -> bool {
-        self.blur <= 0. && !self.fades() && !self.transforms()
+        self.blur <= 0. && !self.fades() && !self.transforms() && !self.clips_corners()
     }
 
     /// Whether the layer has to go through the blur passes.
@@ -671,6 +917,19 @@ impl Filter {
     /// Whether the layer is masked on its way back.
     pub fn fades(&self) -> bool {
         self.fade_top > 0. || self.fade_bottom > 0. || self.fade_left > 0. || self.fade_right > 0.
+    }
+
+    /// Whether the layer masks its contents to rounded corners.
+    pub fn clips_corners(&self) -> bool {
+        self.clip_radii.top_left.0 > 0.
+            || self.clip_radii.top_right.0 > 0.
+            || self.clip_radii.bottom_right.0 > 0.
+            || self.clip_radii.bottom_left.0 > 0.
+    }
+
+    /// Whether this layer exists solely for rounded-corner clipping (safe to prune if no child hits a corner).
+    pub fn is_corner_clip_only(&self) -> bool {
+        self.clips_corners() && !self.blurs() && !self.fades() && !self.transforms()
     }
 
     /// Whether the layer applies a non-identity 2D scale.
@@ -784,6 +1043,152 @@ impl Filter {
     }
 }
 
+fn bounds_hits_corner_zones(
+    prim: Bounds<ScaledPixels>,
+    clip: Bounds<ScaledPixels>,
+    radii: Corners<ScaledPixels>,
+) -> bool {
+    if prim.is_empty() || clip.is_empty() {
+        return false;
+    }
+    let c_left = clip.origin.x.0;
+    let c_top = clip.origin.y.0;
+    let c_right = c_left + clip.size.width.0;
+    let c_bottom = c_top + clip.size.height.0;
+    let p_left = prim.origin.x.0;
+    let p_top = prim.origin.y.0;
+    let p_right = p_left + prim.size.width.0;
+    let p_bottom = p_top + prim.size.height.0;
+
+    let hit_tl = radii.top_left.0 > 0.0
+        && p_left < c_left + radii.top_left.0
+        && p_top < c_top + radii.top_left.0;
+    let hit_tr = radii.top_right.0 > 0.0
+        && p_right > c_right - radii.top_right.0
+        && p_top < c_top + radii.top_right.0;
+    let hit_br = radii.bottom_right.0 > 0.0
+        && p_right > c_right - radii.bottom_right.0
+        && p_bottom > c_bottom - radii.bottom_right.0;
+    let hit_bl = radii.bottom_left.0 > 0.0
+        && p_left < c_left + radii.bottom_left.0
+        && p_bottom > c_bottom - radii.bottom_left.0;
+
+    hit_tl || hit_tr || hit_br || hit_bl
+}
+
+fn self_rounded_inside_clip(
+    prim: Bounds<ScaledPixels>,
+    prim_radii: Corners<ScaledPixels>,
+    prim_smoothing: f32,
+    clip: Bounds<ScaledPixels>,
+    clip_radii: Corners<ScaledPixels>,
+    clip_smoothing: f32,
+) -> bool {
+    if prim_smoothing + 0.01 < clip_smoothing {
+        return false;
+    }
+    let c_left = clip.origin.x.0;
+    let c_top = clip.origin.y.0;
+    let c_right = c_left + clip.size.width.0;
+    let c_bottom = c_top + clip.size.height.0;
+    let p_left = prim.origin.x.0;
+    let p_top = prim.origin.y.0;
+    let p_right = p_left + prim.size.width.0;
+    let p_bottom = p_top + prim.size.height.0;
+
+    if p_left < c_left - 0.5
+        || p_top < c_top - 0.5
+        || p_right > c_right + 0.5
+        || p_bottom > c_bottom + 0.5
+    {
+        return false;
+    }
+
+    let check = |hit: bool, pr: f32, cr: f32, inset_a: f32, inset_b: f32| {
+        if !hit {
+            return true;
+        }
+        pr + inset_a.max(0.0).min(inset_b.max(0.0)) + 0.5 >= cr
+    };
+    let hit_tl = clip_radii.top_left.0 > 0.0
+        && p_left < c_left + clip_radii.top_left.0
+        && p_top < c_top + clip_radii.top_left.0;
+    let hit_tr = clip_radii.top_right.0 > 0.0
+        && p_right > c_right - clip_radii.top_right.0
+        && p_top < c_top + clip_radii.top_right.0;
+    let hit_br = clip_radii.bottom_right.0 > 0.0
+        && p_right > c_right - clip_radii.bottom_right.0
+        && p_bottom > c_bottom - clip_radii.bottom_right.0;
+    let hit_bl = clip_radii.bottom_left.0 > 0.0
+        && p_left < c_left + clip_radii.bottom_left.0
+        && p_bottom > c_bottom - clip_radii.bottom_left.0;
+
+    check(
+        hit_tl,
+        prim_radii.top_left.0,
+        clip_radii.top_left.0,
+        p_left - c_left,
+        p_top - c_top,
+    ) && check(
+        hit_tr,
+        prim_radii.top_right.0,
+        clip_radii.top_right.0,
+        c_right - p_right,
+        p_top - c_top,
+    ) && check(
+        hit_br,
+        prim_radii.bottom_right.0,
+        clip_radii.bottom_right.0,
+        c_right - p_right,
+        c_bottom - p_bottom,
+    ) && check(
+        hit_bl,
+        prim_radii.bottom_left.0,
+        clip_radii.bottom_left.0,
+        p_left - c_left,
+        c_bottom - p_bottom,
+    )
+}
+
+fn primitive_needs_corner_clip(
+    primitive: &Primitive,
+    clipped_bounds: Bounds<ScaledPixels>,
+    clip_bounds: Bounds<ScaledPixels>,
+    clip_radii: Corners<ScaledPixels>,
+    clip_smoothing: f32,
+) -> bool {
+    if !bounds_hits_corner_zones(clipped_bounds, clip_bounds, clip_radii) {
+        return false;
+    }
+    match primitive {
+        Primitive::Quad(q) => !self_rounded_inside_clip(
+            q.bounds,
+            q.corner_radii,
+            q.corner_smoothing,
+            clip_bounds,
+            clip_radii,
+            clip_smoothing,
+        ),
+        Primitive::Shader(s) => !self_rounded_inside_clip(
+            s.bounds,
+            s.corner_radii,
+            s.corner_smoothing,
+            clip_bounds,
+            clip_radii,
+            clip_smoothing,
+        ),
+        Primitive::Backdrop(b) => !self_rounded_inside_clip(
+            b.bounds,
+            b.corner_radii,
+            b.corner_smoothing,
+            clip_bounds,
+            clip_radii,
+            clip_smoothing,
+        ),
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod layer_filter_tests {
     use super::*;
@@ -842,6 +1247,7 @@ mod layer_filter_tests {
         let mut scene = Scene::default();
         scene.push_filter(
             source,
+            source,
             origin(60.0, 40.0),
             rect(0.0, 0.0, 200.0, 100.0),
             Filter {
@@ -898,7 +1304,7 @@ mod layer_filter_tests {
         let source = rect(10.0, 20.0, 100.0, 40.0);
         let content_mask = rect(20.0, 10.0, 80.0, 80.0);
         let mut scene = Scene::default();
-        scene.push_filter(source, origin(60.0, 40.0), content_mask, filter(1.1));
+        scene.push_filter(source, source, origin(60.0, 40.0), content_mask, filter(1.1));
         scene.pop_filter();
 
         let effect = scene.effects[0];
@@ -918,8 +1324,10 @@ mod layer_filter_tests {
     #[test]
     fn scene_replay_restores_scaled_layer_effects() {
         let mut previous = Scene::default();
+        let source = rect(10.0, 20.0, 100.0, 40.0);
         previous.push_filter(
-            rect(10.0, 20.0, 100.0, 40.0),
+            source,
+            source,
             origin(60.0, 40.0),
             rect(0.0, 0.0, 120.0, 80.0),
             Filter {
@@ -943,9 +1351,9 @@ mod layer_filter_tests {
         let bounds = rect(0.0, 0.0, 100.0, 50.0);
         let content_mask = rect(0.0, 0.0, 500.0, 500.0);
         let mut scene = Scene::default();
-        scene.push_filter(bounds, origin(50.0, 25.0), content_mask, filter(0.99));
+        scene.push_filter(bounds, bounds, origin(50.0, 25.0), content_mask, filter(0.99));
         scene.pop_filter();
-        scene.push_filter(bounds, origin(150.0, 25.0), content_mask, filter(0.99));
+        scene.push_filter(bounds, bounds, origin(150.0, 25.0), content_mask, filter(0.99));
         scene.pop_filter();
 
         assert!(!scene.effects[0].can_merge_with(&scene.effects[1]));
@@ -956,6 +1364,68 @@ mod layer_filter_tests {
         unscaled[1].filter.scale_x = 1.0;
         unscaled[1].filter.scale_y = 1.0;
         assert!(unscaled[0].can_merge_with(&unscaled[1]));
+    }
+
+    #[test]
+    fn corner_clip_prunes_when_children_avoid_corners_and_keeps_when_hit() {
+        let clip_a = rect(0.0, 0.0, 100.0, 100.0);
+        let clip_b = rect(120.0, 0.0, 100.0, 100.0);
+        let clip_filter = Filter {
+            clip_radii: Corners::all(ScaledPixels(16.0)),
+            clip_smoothing: 0.6,
+            ..Default::default()
+        };
+        assert!(!clip_filter.is_noop());
+        assert!(clip_filter.is_corner_clip_only());
+
+        // Two non-overlapping cards whose children stay clear of corners:
+        // both layers are completely popped and children keep identical draw order (batching preserved!).
+        let mut safe_scene = Scene::default();
+        safe_scene.push_filter(clip_a, clip_a, origin(50.0, 50.0), clip_a, clip_filter);
+        safe_scene.insert_primitive(Quad {
+            bounds: rect(24.0, 24.0, 50.0, 50.0),
+            content_mask: ContentMask { bounds: clip_a },
+            ..Default::default()
+        });
+        safe_scene.pop_filter();
+        safe_scene.push_filter(clip_b, clip_b, origin(170.0, 50.0), clip_b, clip_filter);
+        safe_scene.insert_primitive(Quad {
+            bounds: rect(144.0, 24.0, 50.0, 50.0),
+            content_mask: ContentMask { bounds: clip_b },
+            ..Default::default()
+        });
+        safe_scene.pop_filter();
+        assert!(safe_scene.effects.is_empty());
+        assert_eq!(safe_scene.quads[0].order, safe_scene.quads[1].order);
+
+        // First child stays centered, second child touches corners ->
+        // lazy activation promotes BOTH children inside (start, end) above prior siblings.
+        let mut hit_scene = Scene::default();
+        hit_scene.insert_primitive(Quad {
+            bounds: rect(250.0, 0.0, 40.0, 40.0),
+            content_mask: ContentMask {
+                bounds: rect(0.0, 0.0, 400.0, 200.0),
+            },
+            ..Default::default()
+        });
+        hit_scene.push_filter(clip_a, clip_a, origin(50.0, 50.0), clip_a, clip_filter);
+        hit_scene.insert_primitive(Quad {
+            bounds: rect(24.0, 24.0, 50.0, 50.0),
+            content_mask: ContentMask { bounds: clip_a },
+            ..Default::default()
+        });
+        hit_scene.insert_primitive(Quad {
+            bounds: clip_a,
+            content_mask: ContentMask { bounds: clip_a },
+            ..Default::default()
+        });
+        hit_scene.pop_filter();
+        assert_eq!(hit_scene.effects.len(), 1);
+        let eff = hit_scene.effects[0];
+        assert!(eff.end > eff.start);
+        assert!(hit_scene.quads[0].order < eff.start);
+        assert!(hit_scene.quads[1].order > eff.start && hit_scene.quads[1].order < eff.end);
+        assert!(hit_scene.quads[2].order > hit_scene.quads[1].order && hit_scene.quads[2].order < eff.end);
     }
 }
 

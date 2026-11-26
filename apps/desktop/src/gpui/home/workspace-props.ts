@@ -2,10 +2,11 @@
 
 import type { ReactNode } from 'react';
 import type { KeyEvent } from '@gpuix/react';
-import type { AlertsTransport, ManagementPort } from '@haus/core/transport';
-import type { Snapshot } from '@haus/ha/types';
+import type { AlertsTransport, EditableKind, ManagementPort } from '@haus/core/transport';
+import type { HassEntity, Snapshot } from '@haus/ha/types';
 import type { RegistryController } from '@haus/ha/ui/registry';
 import type { Preferences } from '@haus/ha/view/preferences';
+import type { BrandIconPort } from '@haus/ui/components';
 import type { SidebarBackdrop } from '../../platform/sidebar.js';
 import type { GpuiCameraStreams } from '../camera/stream.js';
 import type { GpuiCameraApi } from '../camera/transport.js';
@@ -15,6 +16,15 @@ import type { HomeRoute } from '../shell.js';
 import type { DeviceControl } from './cards.js';
 import type { StatisticsRequest } from './history.js';
 import type { HomeSessionStatusInfo } from './settings-view.js';
+
+declare global {
+  var hausGpuiRoute: HomeRoute | undefined;
+}
+
+export interface WorkspaceEditingConfig {
+  readonly kind: EditableKind;
+  readonly entity?: HassEntity;
+}
 
 export const NON_DEVICE_ROUTES = new Set<HomeRoute>([
   'attention',
@@ -40,6 +50,7 @@ export interface HomeWorkspaceProps {
   alertsTransport?: AlertsTransport;
   management?: ManagementPort;
   system?: GpuiSystemPorts;
+  brandIcons?: BrandIconPort;
   subscribeKeyDown?: (listener: (event: KeyEvent) => void) => () => void;
   sidebar?: SidebarBackdrop;
   streaming?: { hub: string; streams: GpuiCameraStreams };

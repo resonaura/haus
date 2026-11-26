@@ -246,9 +246,10 @@ fn load_mask(instance_id: u32) -> Mask {
         0.0,
         0.0,
         0.0,
+        Corners(0.0, 0.0, 0.0, 0.0),
+        0.0,
         1u,
         0.0,
-        0u,
         0u,
     );
 }

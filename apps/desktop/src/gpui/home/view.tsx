@@ -198,6 +198,7 @@ export function LiveHome({
         fetchCameraSnapshot={runtime.readCameraSnapshot}
         management={runtime.managementPort}
         system={runtime.systemPorts}
+        brandIcons={runtime.brandIcons}
         onApplySceneEntities={runtime.applySceneEntities}
         alertsTransport={runtime.alertsTransport}
         platform={platform}

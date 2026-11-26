@@ -22,7 +22,17 @@
   grid-auto-columns: minmax(215px, calc((100% - 36px) / 4));
   grid-template-columns: none;
 }
-.mood-card {
+.mood-card[data-haus-scene-card='shared']:hover {
+  transform: translateY(-1px);
+}
+.mood-card[data-haus-scene-card='shared'] .mood-activate:focus-visible {
+  outline: none;
+}
+.mood-card[data-haus-scene-card='shared']:has(.mood-activate:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--ink) 32%, transparent);
+  outline-offset: 2px;
+}
+.mood-card:not([data-haus-scene-card='shared']) {
   position: relative;
   min-width: 0;
   overflow: hidden;
@@ -34,25 +44,25 @@
     border-color 150ms,
     transform 150ms;
 }
-.mood-card:hover {
+.mood-card:not([data-haus-scene-card='shared']):hover {
   border-color: color-mix(in srgb, var(--signal) 40%, var(--line));
   transform: translateY(-1px);
 }
-.mood-card.is-active-scene {
+.mood-card:not([data-haus-scene-card='shared']).is-active-scene {
   border-color: color-mix(in srgb, var(--ink) 42%, var(--line));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent);
 }
-.mood-card.is-active-scene .mood-preview {
+.mood-card:not([data-haus-scene-card='shared']).is-active-scene .mood-preview {
   background: linear-gradient(
     125deg,
     color-mix(in srgb, var(--ink) 6%, transparent),
     transparent 80%
   );
 }
-.mood-card.is-dark-scene .mood-art {
+.mood-card:not([data-haus-scene-card='shared']).is-dark-scene .mood-art {
   background-color: color-mix(in srgb, var(--card) 70%, #080808);
 }
-.mood-art > .scene-active-badge {
+.mood-card:not([data-haus-scene-card='shared']) .mood-art > .scene-active-badge {
   position: absolute;
   top: 10px;
   right: 46px;
@@ -67,7 +77,7 @@
   background: rgb(0 0 0 / 35%);
   backdrop-filter: blur(12px);
 }
-.mood-art {
+.mood-card:not([data-haus-scene-card='shared']) .mood-art {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -76,18 +86,18 @@
   background-color: var(--soft);
   position: relative;
 }
-.mood-art::before {
+.mood-card:not([data-haus-scene-card='shared']) .mood-art::before {
   content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(0deg, rgb(0 0 0 / 30%), transparent 70%);
   pointer-events: none;
 }
-.mood-art > * {
+.mood-card:not([data-haus-scene-card='shared']) .mood-art > * {
   position: relative;
   z-index: 1;
 }
-.mood-icon {
+.mood-card:not([data-haus-scene-card='shared']) .mood-icon {
   display: grid;
   place-items: center;
   width: 32px;
@@ -97,7 +107,7 @@
   color: rgb(255 255 255 / 94%);
   backdrop-filter: blur(12px);
 }
-.mood-icon svg {
+.mood-card:not([data-haus-scene-card='shared']) .mood-icon svg {
   width: 19px;
   height: 19px;
 }
@@ -116,7 +126,7 @@
   line-height: 1.2;
   backdrop-filter: blur(12px);
 }
-.mood-art > .scene-source-badge {
+.mood-card:not([data-haus-scene-card='shared']) .mood-art > .scene-source-badge {
   position: absolute;
   top: 10px;
   left: 14px;
@@ -131,29 +141,29 @@
   padding: 2px 5px;
   font-size: 8px;
 }
-.scene-swatches {
+.mood-card:not([data-haus-scene-card='shared']) .scene-swatches {
   display: flex;
   gap: 3px;
 }
-.scene-swatches i {
+.mood-card:not([data-haus-scene-card='shared']) .scene-swatches i {
   width: 11px;
   height: 11px;
   border-radius: 50%;
   border: 1px solid var(--line);
 }
-.mood-preview {
+.mood-card:not([data-haus-scene-card='shared']) .mood-preview {
   display: block;
   text-align: left;
   width: 100%;
   padding: 13px 14px 15px;
 }
-.mood-preview small {
+.mood-card:not([data-haus-scene-card='shared']) .mood-preview small {
   display: block;
   font-size: 10px;
   color: var(--muted-ink);
   margin-bottom: 4px;
 }
-.mood-preview strong {
+.mood-card:not([data-haus-scene-card='shared']) .mood-preview strong {
   display: block;
   font-size: 13px;
   line-height: 1.4;
@@ -162,25 +172,48 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mood-preview > span {
+.mood-card:not([data-haus-scene-card='shared']) .mood-preview > span {
   display: block;
   color: var(--muted-ink);
   font-size: 10px;
   margin-top: 4px;
 }
-.mood-activate {
+.mood-card:not([data-haus-scene-card='shared']) .mood-activate {
   display: block;
   width: 100%;
   text-align: left;
   border-radius: inherit;
 }
-.mood-activate:disabled {
+.mood-card:not([data-haus-scene-card='shared']) .mood-activate:disabled {
   opacity: 0.65;
+}
+.mood-details-slot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.mood-card:is(:hover, :focus-within, [data-menu-open='true']) .mood-details-slot {
+  opacity: 1;
+}
+@media (hover: none) {
+  .mood-details-slot {
+    opacity: 1;
+  }
+}
+.mood-details-slot .mood-details.button {
+  position: relative;
+  top: auto;
+  right: auto;
+  opacity: 1;
 }
 .mood-details.button {
   position: absolute;
   top: 10px;
   right: 10px;
+  z-index: 3;
   display: grid;
   place-items: center;
   width: 28px;

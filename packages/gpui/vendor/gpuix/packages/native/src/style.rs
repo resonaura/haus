@@ -13,13 +13,14 @@ pub enum FontWeightValue {
 #[serde(rename_all = "camelCase")]
 pub struct ScrollShadowDesc {
     pub enabled: Option<bool>,
-    /// `"overlay"` or `"fade"`. Both paint GPU edge gradient shadows during
-    /// Phase 1; Phase 4 extends `"fade"` to the universal alpha mask pipeline.
+    /// `"fade"` (default, GPU alpha-fade edge mask) or `"overlay"` (gradient overlay).
     pub mode: Option<String>,
     pub size: Option<f64>,
     pub color: Option<String>,
     pub opacity: Option<f64>,
     pub edges: Option<Vec<String>>,
+    /// Smooth transition duration in milliseconds when edge fade masks appear or disappear.
+    pub transition_ms: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -565,34 +566,64 @@ impl StyleDesc {
     }
 }
 
-/// Whether this style should insert a mouse hitbox.
+/// Layer-level pointer occlusion mode derived from a style.
 ///
-/// GPUI only hit-tests elements that own a hitbox. A painted overlay without
-/// one stays visible while clicks fall through. CSS `pointer-events` maps
-/// here: `none` never blocks, `auto` always does. Unset follows the painted
-/// surface: a fill or an absolute/fixed box blocks.
+/// GPUI only hit-tests elements that own a hitbox. A painted or positioned
+/// overlay without one stays visible while clicks fall through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerOcclusion {
+    /// Element does not intercept pointer events (`pointer-events: none`,
+    /// `visibility: hidden`, or an unpositioned transparent container).
+    None,
+    /// Blocks clicks, hover, and pointer events behind this box while still
+    /// allowing wheel scroll to reach an enclosing scroll container.
+    BlockMouseExceptScroll,
+    /// Full layer barrier (`HitboxBehavior::BlockMouse`): blocks clicks,
+    /// mouse down/up, hover, cursor, and scroll wheel from reaching any layer
+    /// underneath.
+    BlockMouse,
+}
+
+/// Resolve the GPUI hitbox occlusion behavior for this style.
 ///
-/// In-flow fills use BlockMouseExceptScroll so a parent scroller still gets
-/// the wheel. `occlude()` (BlockMouse) is only for overlays that steal it.
-pub fn should_occlude(style: &StyleDesc) -> bool {
+/// CSS `pointer-events` maps here: `none` never blocks, `auto` always blocks
+/// completely (including wheel). `visibility: hidden` never invisibly steals
+/// pointer hits. Viewport-fixed layers (`position: fixed`) default to full
+/// `BlockMouse` occlusion even when semi-transparent or without `backdropBlur`.
+/// Positioned (`absolute`) and painted surfaces (including semi-transparent
+/// fills without blur) block clicks and hover while letting ancestor scrollers
+/// receive the wheel.
+pub fn layer_occlusion(style: &StyleDesc) -> LayerOcclusion {
+    if style.visibility.as_deref() == Some("hidden") {
+        return LayerOcclusion::None;
+    }
     match style.pointer_events.as_deref() {
-        Some("none") => return false,
-        Some("auto") => return true,
+        Some("none") => return LayerOcclusion::None,
+        Some("auto") => return LayerOcclusion::BlockMouse,
         _ => {}
     }
-    if matches!(style.position.as_deref(), Some("absolute") | Some("fixed")) {
-        return true;
+    if style.position.as_deref() == Some("fixed") {
+        return LayerOcclusion::BlockMouse;
+    }
+    if style.position.as_deref() == Some("absolute") {
+        return LayerOcclusion::BlockMouseExceptScroll;
     }
     if !style.has_background() {
-        return false;
+        return LayerOcclusion::None;
     }
     if style.has_shader_background() || style.backdrop_blur.is_some_and(|b| b > 0.0) {
-        return true;
+        return LayerOcclusion::BlockMouseExceptScroll;
     }
     match style.resolved_background() {
-        Some(background) => !background.is_transparent(),
-        None => true,
+        Some(background) if !background.is_transparent() => LayerOcclusion::BlockMouseExceptScroll,
+        Some(_) => LayerOcclusion::None,
+        None => LayerOcclusion::BlockMouseExceptScroll,
     }
+}
+
+/// Whether this style should insert an occluding mouse hitbox.
+pub fn should_occlude(style: &StyleDesc) -> bool {
+    layer_occlusion(style) != LayerOcclusion::None
 }
 
 /// Map a CSS `cursor` keyword onto a GPUI cursor. Unknown keywords return
@@ -650,6 +681,67 @@ mod tests {
     #[test]
     fn invalid_fill_keeps_conservative_occlusion() {
         assert!(should_occlude(&with_fill("not-a-color")));
+    }
+
+    #[test]
+    fn semitransparent_fills_without_blur_still_occlude() {
+        for fill in [
+            "rgba(2, 6, 23, 0.36)",
+            "rgba(0, 0, 0, 0.05)",
+            "#00000040",
+            "oklch(0% 0 0 / 25%)",
+        ] {
+            let style = with_fill(fill);
+            assert_eq!(
+                layer_occlusion(&style),
+                LayerOcclusion::BlockMouseExceptScroll,
+                "{fill}"
+            );
+            assert!(should_occlude(&style), "{fill}");
+        }
+    }
+
+    #[test]
+    fn fixed_layers_block_all_mouse_including_scroll_without_blur() {
+        let semitransparent_fixed = StyleDesc {
+            position: Some("fixed".to_owned()),
+            background_color: Some("rgba(2, 6, 23, 0.45)".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(
+            layer_occlusion(&semitransparent_fixed),
+            LayerOcclusion::BlockMouse
+        );
+
+        let transparent_fixed = StyleDesc {
+            position: Some("fixed".to_owned()),
+            background_color: Some("transparent".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(
+            layer_occlusion(&transparent_fixed),
+            LayerOcclusion::BlockMouse
+        );
+
+        let opt_out_fixed = StyleDesc {
+            position: Some("fixed".to_owned()),
+            pointer_events: Some("none".to_owned()),
+            background_color: Some("rgba(2, 6, 23, 0.45)".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(layer_occlusion(&opt_out_fixed), LayerOcclusion::None);
+    }
+
+    #[test]
+    fn hidden_elements_never_occlude() {
+        let hidden_fixed = StyleDesc {
+            position: Some("fixed".to_owned()),
+            pointer_events: Some("auto".to_owned()),
+            visibility: Some("hidden".to_owned()),
+            background_color: Some("rgba(0, 0, 0, 0.5)".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(layer_occlusion(&hidden_fixed), LayerOcclusion::None);
     }
 
     #[test]

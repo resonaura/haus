@@ -268,6 +268,7 @@ function resolveMaterial(
                 superellipseToContinuousRadiusRatio(style.corners.exponent ?? 1.4),
               )
             : rawCornerRadius;
+        const rim = material.rimLighting;
         return {
           clearBackgroundColor: true,
           cornerSmoothing: 1,
@@ -278,10 +279,10 @@ function resolveMaterial(
             refractionStrength: rawRefr > 2 ? Math.min(1.5, rawRefr / 20) : rawRefr,
             dispersion: rawDisp > 0.35 ? rawDisp * 0.22 : rawDisp,
             saturation: material.backdrop?.saturation ?? (dark ? 1.28 : 1.22),
-            specularDial: material.rimLighting?.specularIntensity ?? 0.75,
-            edgeHighlight: 0.42,
-            darkenedEdge: material.rimLighting?.edgeDarkening ?? 0.06,
-            nativeRim: material.rimLighting !== undefined,
+            specularDial: rim ? rim.specularIntensity : 0,
+            edgeHighlight: rim ? 0.42 : 0,
+            darkenedEdge: rim ? rim.edgeDarkening : 0,
+            nativeRim: rim !== undefined,
             ...(tintColorValue
               ? { tintColor: resolveColorToCss(tintColorValue, context.theme, false) }
               : {}),
@@ -378,6 +379,7 @@ function buildSingleStyle(style: UiStyleSpec | undefined, context: RenderContext
     ...(boxShadow ? { boxShadow } : {}),
     ...(transform ? { transform } : {}),
     ...(transformOrigin ? { transformOrigin } : {}),
+    ...(layout?.position === 'sticky' ? { position: 'sticky' } : {}),
     ...(typeof layout?.gridColumns === 'number' ? { gridTemplateColumns: layout.gridColumns } : {}),
     ...(layout?.overflowX ? { overflowX: layout.overflowX } : {}),
     ...(layout?.overflowY ? { overflowY: layout.overflowY } : {}),

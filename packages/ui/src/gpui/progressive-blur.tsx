@@ -7,7 +7,7 @@ import { COMPILED_PROGRESSIVE_BLUR_WGSL } from '../generated/compiled-shaders.js
 import { styleFor } from './style.js';
 
 export function renderProgressiveBlur(
-  { maxRadius, start, style }: HostProgressiveBlurProps,
+  { maxRadius, start, edge = 'bottom', style }: HostProgressiveBlurProps,
   context: RenderContext,
 ) {
   return (
@@ -20,7 +20,7 @@ export function renderProgressiveBlur(
           wgsl: COMPILED_PROGRESSIVE_BLUR_WGSL,
           samplesBackdrop: true,
           backdropBlurRadius: maxRadius,
-          params: [start],
+          params: [start, edge === 'top' ? 1 : 0],
         },
       }}
     />

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import type { ReactNode } from 'react';
 import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import {
@@ -7,6 +8,7 @@ import {
   HausButton,
   Pressable,
   Row,
+  ScrollView,
   Stack,
   Text,
   TextInput,
@@ -21,6 +23,7 @@ export interface SpotlightResultItem {
   readonly title: string;
   readonly subtitle: string;
   readonly icon: UiIconName;
+  readonly customIcon?: ReactNode;
   readonly onSelect: () => void;
 }
 
@@ -76,7 +79,12 @@ export function SpotlightDialog({
             />
           </Box>
           {query.length > 0 && (
-            <HausButton id="spotlight-clear" size="sm" variant="ghost" onPress={() => onQueryChange('')}>
+            <HausButton
+              id="spotlight-clear"
+              size="sm"
+              variant="ghost"
+              onPress={() => onQueryChange('')}
+            >
               <UiIcon name="x" size={14} />
             </HausButton>
           )}
@@ -91,13 +99,20 @@ export function SpotlightDialog({
             </Text>
           </Box>
         ) : (
-          <Stack
-            gapPx={10}
-            style={{ layout: { maxHeight: px(380), minHeight: px(0), overflowY: 'scroll' } }}
+          <ScrollView
+            orientation="vertical"
+            style={{
+              layout: { maxHeight: px(380), minHeight: px(0), direction: 'column', gap: px(10) },
+            }}
           >
             {sections.map((section) => (
               <Stack key={section.title} gapPx={4}>
-                <Text tone="muted" size={10} weight={600} style={{ typography: { letterSpacing: 1 } }}>
+                <Text
+                  tone="muted"
+                  size={10}
+                  weight={600}
+                  style={{ typography: { letterSpacing: 1 } }}
+                >
                   {section.title.toUpperCase()}
                 </Text>
                 {section.entries.map((entry) => (
@@ -126,8 +141,12 @@ export function SpotlightDialog({
                       },
                     }}
                   >
-                    <Row align="center" gapPx={10} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                      <UiIcon name={entry.icon} size={16} />
+                    <Row
+                      align="center"
+                      gapPx={10}
+                      style={{ layout: { flexGrow: 1, minWidth: px(0) } }}
+                    >
+                      {entry.customIcon ?? <UiIcon name={entry.icon} size={16} />}
                       <Stack gapPx={1} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
                         <Text size={13} weight={600}>
                           {entry.title}
@@ -142,7 +161,7 @@ export function SpotlightDialog({
                 ))}
               </Stack>
             ))}
-          </Stack>
+          </ScrollView>
         )}
       </Stack>
     </Dialog>

@@ -203,13 +203,15 @@ body.native-mac .window-handle span {
   scrollbar-width: thin;
 }
 .topbar {
+  -webkit-app-region: drag;
+}
+.topbar:not([data-haus-topbar='shared']) {
   height: 68px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0 38px;
   border-bottom: 1px solid var(--line);
-  -webkit-app-region: drag;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -283,7 +285,7 @@ body.native-mac .window-handle span {
   width: 1px;
   background: var(--line);
 }
-.profile-button {
+.topbar:not([data-haus-topbar='shared']) .profile-button {
   width: 29px;
   height: 29px;
   border-radius: 50%;

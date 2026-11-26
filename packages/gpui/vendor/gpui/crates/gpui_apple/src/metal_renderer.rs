@@ -8,9 +8,9 @@ use cocoa::{
 };
 use collections::FxHashMap;
 use gpui::{
-    AtlasTextureId, Background, BlurPasses, Bounds, ContentMask, DevicePixels, GAUSSIAN_REACH,
-    KAWASE_LEVELS, Kawase, LayerEffect, PaintSurface, Path, Point, PrimitiveBatch, ScaledPixels,
-    Scene, ShaderId, Size, point, size,
+    AtlasTextureId, Background, BlurPasses, Bounds, ContentMask, Corners, DevicePixels,
+    GAUSSIAN_REACH, KAWASE_LEVELS, Kawase, LayerEffect, PaintSurface, Path, Point, PrimitiveBatch,
+    ScaledPixels, Scene, ShaderId, Size, point, size,
 };
 #[cfg(any(test, feature = "test-support"))]
 use image::RgbaImage;
@@ -58,7 +58,7 @@ const MAX_INSTANCE_BUFFER_SIZE: usize = 256 * 1024 * 1024;
 const FRAME_STALL: Duration = Duration::from_millis(250);
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 const IDLE_RELEASE: Duration = Duration::from_secs(2);
-const LAYER_DEPTH: usize = 4;
+const LAYER_DEPTH: usize = 8;
 
 #[derive(Default)]
 struct FramePacing {
@@ -1681,7 +1681,7 @@ impl MetalRenderer {
         else {
             return;
         };
-        let masked = layer.filter.fades();
+        let masked = layer.filter.fades() || layer.filter.clips_corners();
         encoder.set_render_pipeline_state(match masked {
             true => &self.masked_pipeline_state,
             false => &self.composite_pipeline_state,
@@ -2607,12 +2607,15 @@ pub struct MaskParams {
     pub fade_bottom: f32,
     pub fade_left: f32,
     pub fade_right: f32,
+    pub clip_radii: Corners<ScaledPixels>,
+    pub clip_smoothing: f32,
     pub transform_flags: u32,
-    pub pad: u32,
+    pub pad0: u32,
+    pub pad1: u32,
 }
 
 const _: () = {
-    assert!(mem::size_of::<MaskParams>() == 26 * mem::size_of::<f32>());
+    assert!(mem::size_of::<MaskParams>() == 32 * mem::size_of::<f32>());
     assert!(mem::offset_of!(MaskParams, source_bounds) == 0);
     assert!(mem::offset_of!(MaskParams, fade_bounds) == 16);
     assert!(mem::offset_of!(MaskParams, transform_origin) == 32);
@@ -2623,8 +2626,11 @@ const _: () = {
     assert!(mem::offset_of!(MaskParams, fade_bottom) == 84);
     assert!(mem::offset_of!(MaskParams, fade_left) == 88);
     assert!(mem::offset_of!(MaskParams, fade_right) == 92);
-    assert!(mem::offset_of!(MaskParams, transform_flags) == 96);
-    assert!(mem::offset_of!(MaskParams, pad) == 100);
+    assert!(mem::offset_of!(MaskParams, clip_radii) == 96);
+    assert!(mem::offset_of!(MaskParams, clip_smoothing) == 112);
+    assert!(mem::offset_of!(MaskParams, transform_flags) == 116);
+    assert!(mem::offset_of!(MaskParams, pad0) == 120);
+    assert!(mem::offset_of!(MaskParams, pad1) == 124);
 };
 
 #[repr(C)]
@@ -2651,13 +2657,7 @@ fn mask_params(layer: LayerEffect, destination_clip: Bounds<ScaledPixels>) -> Ma
         } else {
             destination_clip
         },
-        // Preserve the existing Metal fade clip for unscaled layers. A scaled or rotated layer
-        // must apply the fade in source coordinates before the final transform.
-        fade_bounds: if layer.filter.transforms() {
-            layer.source_bounds
-        } else {
-            destination_clip
-        },
+        fade_bounds: layer.clip_bounds,
         transform_origin: [layer.transform_origin.x.0, layer.transform_origin.y.0],
         translation: [layer.filter.translate.x.0, layer.filter.translate.y.0],
         inv_matrix: [inv[0][0], inv[0][1], inv[1][0], inv[1][1]],
@@ -2666,8 +2666,11 @@ fn mask_params(layer: LayerEffect, destination_clip: Bounds<ScaledPixels>) -> Ma
         fade_bottom: layer.filter.fade_bottom,
         fade_left: layer.filter.fade_left,
         fade_right: layer.filter.fade_right,
+        clip_radii: layer.filter.clip_radii,
+        clip_smoothing: layer.filter.clip_smoothing,
         transform_flags,
-        pad: 0,
+        pad0: 0,
+        pad1: 0,
     }
 }
 
@@ -3247,6 +3250,7 @@ mod tests {
         let mut scene = Scene::default();
         scene.push_filter(
             bar_bounds,
+            bar_bounds,
             point(ScaledPixels(32.), ScaledPixels(32.)),
             full_bounds,
             Filter {
@@ -3283,6 +3287,64 @@ mod tests {
         assert!(
             unrotated[0] < 15 && unrotated[1] < 15 && unrotated[2] < 15,
             "expected black background at original horizontal bar (18,32), got {unrotated:?}"
+        );
+    }
+
+    #[test]
+    fn rounded_corner_clip_masks_overflowing_child_on_metal() {
+        let pool = Arc::new(Mutex::new(InstanceBufferPool::default()));
+        let mut renderer = MetalRenderer::new_headless(pool, MTLPixelFormat::BGRA8Unorm);
+        let viewport = size(DevicePixels(64), DevicePixels(64));
+        let clip_bounds = Bounds::new(
+            point(ScaledPixels(8.), ScaledPixels(8.)),
+            size(ScaledPixels(48.), ScaledPixels(48.)),
+        );
+        let mask = ContentMask {
+            bounds: clip_bounds,
+        };
+
+        let mut scene = Scene::default();
+        scene.push_filter(
+            clip_bounds,
+            clip_bounds,
+            clip_bounds.center(),
+            clip_bounds,
+            Filter {
+                clip_radii: Corners::all(ScaledPixels(16.0)),
+                clip_smoothing: 0.6,
+                ..Default::default()
+            },
+        );
+        scene.insert_primitive(Quad {
+            order: 0,
+            border_style: BorderStyle::Solid,
+            bounds: clip_bounds,
+            content_mask: mask,
+            background: red().into(),
+            border_color: transparent_black(),
+            corner_radii: Corners::default(),
+            border_widths: Edges::default(),
+            corner_smoothing: 0.0,
+            pad: 0,
+        });
+        scene.pop_filter();
+        scene.finish();
+
+        let image = renderer
+            .render_scene_to_image(&scene, viewport)
+            .expect("Metal headless rounded corner clip render succeeds");
+
+        let center = image.get_pixel(32, 32);
+        assert!(
+            center[0] > 230 && center[1] < 15 && center[2] < 15,
+            "expected red inside rounded clip at (32,32), got {center:?}"
+        );
+
+        // Top-left corner of clip_bounds (9,9) sits outside the 16px rounded corner!
+        let corner = image.get_pixel(9, 9);
+        assert!(
+            corner[0] < 15 && corner[1] < 15 && corner[2] < 15,
+            "expected corner pixel (9,9) clipped to black background, got {corner:?}"
         );
     }
 }

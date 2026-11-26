@@ -1,15 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowSize } from '@gpuix/react';
-import { mergeRoomIcons, type EditableKind } from '@haus/core/transport';
+import { mergeRoomIcons } from '@haus/core/transport';
 import type { HassEntity } from '@haus/ha/types';
+import { SCROLL_SHADOW_PRESETS, type HausScrollHandle } from '@haus/ui';
 import { DesktopTopbar, type SidebarContextualNav } from '@haus/ui/components';
-import { colorToken, insets, pct, px, SolidMaterial } from '@haus/ui/ir';
-import { Box, HausUiProvider, Stack, Text } from '@haus/ui/primitives';
+import { insets, pct, px } from '@haus/ui/ir';
+import { Box, HausUiProvider, ScrollView, Stack, Text } from '@haus/ui/primitives';
 import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
 import { DesktopShell, type HomeRoute } from '../shell.js';
 import { CameraPreviews, DeviceCards, SceneCards } from './cards.js';
+import { useGpuiBrandIconPort } from './device-icon.js';
 import { WorkspaceCategoryRail, WorkspacePageHeader } from './header.js';
 import { useGpuiAlerts } from './hub-alerts.js';
 import {
@@ -24,11 +26,8 @@ import type { GpuiAddDeviceRequest } from '../management/add-device.js';
 import { WorkspaceOverlays } from './overlays.js';
 import { HomeRouteContent } from './routes.js';
 import { homeDashboard, type HomeDevice } from './model.js';
-import { NON_DEVICE_ROUTES, type HomeWorkspaceProps } from './workspace-props.js';
-
-declare global {
-  var hausGpuiRoute: HomeRoute | undefined;
-}
+import { NON_DEVICE_ROUTES } from './workspace-props.js';
+import type { HomeWorkspaceProps, WorkspaceEditingConfig } from './workspace-props.js';
 
 export function HomeWorkspace({
   snapshot,
@@ -39,6 +38,7 @@ export function HomeWorkspace({
   alertsTransport,
   management,
   system,
+  brandIcons,
   subscribeKeyDown,
   sidebar,
   streaming,
@@ -78,21 +78,20 @@ export function HomeWorkspace({
   const [camera, setCamera] = useState<string>();
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [previewScene, setPreviewScene] = useState<HassEntity | null>(null);
-  const [editingConfig, setEditingConfig] = useState<{
-    kind: EditableKind;
-    entity?: HassEntity;
-  } | null>(null);
+  const [editingConfig, setEditingConfig] = useState<WorkspaceEditingConfig | null>(null);
   const [addDevice, setAddDevice] = useState<GpuiAddDeviceRequest | null>(null);
   const [fallbackMenu, setFallbackMenu] = useState<ActiveFallbackMenu | null>(null);
   const [search, setSearch] = useState(false);
   const [query, setQuery] = useState('');
   const [serverSidebar, setServerSidebar] = useState<SidebarContextualNav>();
   const activeServerSidebar = route === 'servers' ? serverSidebar : undefined;
+  const mainScrollRef = useRef<HausScrollHandle | null>(null);
   const alerts = useGpuiAlerts({ transport: alertsTransport, states: snapshot.states, demo });
-  const { width } = useWindowSize();
+  const { width, height } = useWindowSize();
   const inset = width <= 760 ? 19 : width <= 1180 ? 25 : 32;
   const columns = width <= 760 ? 2 : width <= 1180 ? 3 : 4;
   const dark = (preferences.theme === 'system' ? systemTheme : preferences.theme) === 'dark';
+  const resolvedBrandIcons = useGpuiBrandIconPort(brandIcons, preferences, dark);
   const category = route.startsWith('category:')
     ? home.categories.find((item) => item.id === route.slice(9))
     : undefined;
@@ -101,19 +100,24 @@ export function HomeWorkspace({
     : undefined;
   const roomArea = snapshot.areas.find((area) => area.area_id === room?.id);
   const heading = room?.name ?? category?.name ?? WORKSPACE_ROUTE_LABELS[route] ?? 'Home';
+  const showCategoryDock =
+    (route === 'home' || Boolean(category) || route === 'servers') && !activeServerSidebar;
+  const closeSearch = () => (setSearch(false), setQuery(''));
   const go = (next: HomeRoute) => {
     setCamera(undefined);
     setSelectedDeviceId('');
     setFallbackMenu(null);
-    setSearch(false);
-    setQuery('');
+    closeSearch();
     if (next !== 'servers') setServerSidebar(undefined);
     setRoute(next);
+    mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   };
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [route, activeServerSidebar?.title, activeServerSidebar?.activeId]);
   const openCamera = (id: string) => {
     setFallbackMenu(null);
-    setSearch(false);
-    setQuery('');
+    closeSearch();
     setSelectedDeviceId('');
     setCamera(id);
   };
@@ -132,23 +136,12 @@ export function HomeWorkspace({
   };
   const handleShortcut = (key: string, mod: boolean, preventDefault?: () => void) => {
     const lower = key.toLocaleLowerCase();
-    if (mod && lower === 'k') {
-      preventDefault?.();
-      setSearch((value) => !value);
-      return;
-    }
-    if (mod && (key === ',' || lower === 'comma')) {
-      preventDefault?.();
-      go('settings');
-      return;
-    }
-    if (lower === 'escape') {
-      if (fallbackMenu) setFallbackMenu(null);
-      else if (search) {
-        setSearch(false);
-        setQuery('');
-      } else if (camera) setCamera(undefined);
-    }
+    if (mod && lower === 'k') return (preventDefault?.(), setSearch((value) => !value));
+    if (mod && (key === ',' || lower === 'comma')) return (preventDefault?.(), go('settings'));
+    if (lower !== 'escape') return;
+    if (fallbackMenu) setFallbackMenu(null);
+    else if (search) closeSearch();
+    else if (camera) setCamera(undefined);
   };
   useEffect(() => {
     if (!subscribeKeyDown) return;
@@ -326,6 +319,9 @@ export function HomeWorkspace({
       contentHost={GPUIX_CONTENT_HOST}
       mode={dark ? 'dark' : 'light'}
       reducedTransparency={reducedTransparency}
+      viewportWidth={width}
+      viewportHeight={height}
+      brandIcons={resolvedBrandIcons}
     >
       <Box
         onKeyDown={(event) =>
@@ -345,34 +341,34 @@ export function HomeWorkspace({
           contextual={activeServerSidebar}
           expandedWidth={width > 760 && width <= 1180 ? 215 : undefined}
         >
-          {(toggleSidebar, collapsed) => (
-            <Stack gapPx={0} style={{ layout: { height: pct(100) } }}>
-              <DesktopTopbar
-                homeName={snapshot.config.location_name}
-                heading={activeServerSidebar?.title ?? (route === 'home' ? 'Overview' : heading)}
-                userName={snapshot.user.name}
-                demo={demo}
-                hasAttention={home.attention.length + alerts.notices.length > 0}
-                inset={inset}
-                showMenu={width <= 760 || collapsed}
-                onOpenNavigation={toggleSidebar}
-                onSearch={() => setSearch((value) => !value)}
-                onNotifications={() => go('attention')}
-                onSettings={() => go('settings')}
-              />
-              <Box
-                style={{
-                  layout: { height: px(1), flexShrink: 0 },
-                  material: new SolidMaterial(colorToken('borderSubtle')),
-                }}
-              />
+          <Stack gapPx={0} style={{ layout: { height: pct(100) } }}>
+            <DesktopTopbar
+              homeName={snapshot.config.location_name}
+              heading={activeServerSidebar?.title ?? (route === 'home' ? 'Overview' : heading)}
+              userName={snapshot.user.name}
+              demo={demo}
+              hasAttention={home.attention.length + alerts.notices.length > 0}
+              inset={inset}
+              showMenu={false}
+              onSearch={() => setSearch((value) => !value)}
+              onNotifications={() => go('attention')}
+              onSettings={() => go('settings')}
+            />
+            <ScrollView
+              id="main-scroll"
+              scrollId="main-scroll"
+              scrollRef={mainScrollRef}
+              orientation="vertical"
+              shadowSizePx={SCROLL_SHADOW_PRESETS.main}
+              edges={showCategoryDock ? ['bottom'] : ['top', 'bottom']}
+              style={{ layout: { flexGrow: 1, minHeight: px(0), direction: 'column' } }}
+            >
               <Stack
                 gapPx={0}
                 style={{
                   layout: {
-                    flexGrow: 1,
-                    minHeight: px(0),
-                    overflowY: 'scroll',
+                    width: pct(100),
+                    maxWidth: px(1420),
                     padding: insets(width <= 760 ? 22 : 27, inset, 22, inset),
                   },
                 }}
@@ -396,28 +392,27 @@ export function HomeWorkspace({
                   />
                 )}
                 {notice}
-                {(route === 'home' || category) && (
+                {showCategoryDock && (
                   <WorkspaceCategoryRail
                     categories={home.categories}
+                    route={route}
                     activeCategory={category}
-                    onSelectHome={() => go('home')}
-                    onSelectCategory={(id) => go(`category:${id}`)}
+                    bleedX={inset}
+                    liquidGlass={preferences.liquidGlass}
+                    onGo={go}
                   />
                 )}
                 {content}
               </Stack>
-            </Stack>
-          )}
+            </ScrollView>
+          </Stack>
         </DesktopShell>
         <WorkspaceOverlays
           search={search}
           query={query}
           onQueryChange={setQuery}
           spotlightItems={spotlightItems}
-          onCloseSearch={() => {
-            setSearch(false);
-            setQuery('');
-          }}
+          onCloseSearch={closeSearch}
           fallbackMenu={fallbackMenu}
           onCloseMenu={() => setFallbackMenu(null)}
           activePairing={alerts.activePairing}

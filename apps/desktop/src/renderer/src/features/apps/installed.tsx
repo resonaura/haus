@@ -6,7 +6,21 @@
  */
 
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Box as UiBox, HausButton, Heading, Pressable, Text, TextInput } from '@haus/ui';
+import {
+  Box as UiBox,
+  HausButton,
+  Heading,
+  insets,
+  ManagementGlassCard,
+  ManagementStatusPill,
+  pct,
+  Pressable,
+  px,
+  Row,
+  Stack,
+  Text,
+  TextInput,
+} from '@haus/ui';
 import { Box, ChevronRight, Layers, RefreshCw, Search } from 'lucide-react';
 import { EmptyState, FeatureLoading } from '@haus/ui/components';
 import { BrandIcon } from '../../components/brand/BrandIcon';
@@ -38,38 +52,53 @@ const InstalledAppCard = memo(function InstalledAppCard({
     () => ({ name: app.name, supportedBy: brand.vendorId }),
     [app.name, brand.vendorId],
   );
+  const running = app.available && app.state === 'running';
   return (
-    <UiBox semantic="article" className="addon-card">
-      <Text className="addon-glyph">
-        <BrandIcon kind="app" id={brand.iconId || ext} size={44} hint={hint} />
-      </Text>
-      <UiBox className="addon-copy">
-        <UiBox>
-          <Heading level={3}>{app.name}</Heading>
-          <Text
-            className={`status-pill ${app.available && app.state === 'running' ? 'status-available' : ''}`}
-          >
-            {app.available ? app.state : 'Unavailable'}
-          </Text>
-        </UiBox>
-        <Text semantic="p">
-          {app.accessories?.mqtt
-            ? 'Accessories connect automatically'
-            : app.accessories?.camera
-              ? 'Camera accessories'
-              : 'Home App'}
-        </Text>
-        {app.version && <Text semantic="small">Version {app.version}</Text>}
-      </UiBox>
-      <HausButton
-        variant="ghost"
-        onPress={() => onSelect(app.id)}
-        aria-label={`Manage ${app.name}`}
-      >
-        Manage
-        <ChevronRight size={17} />
-      </HausButton>
-    </UiBox>
+    <ManagementGlassCard
+      radius={22}
+      padding={insets(16, 18)}
+      interactive
+      style={{ layout: { width: pct(100) } }}
+    >
+      <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(200) } }}>
+          <BrandIcon kind="app" id={brand.iconId || ext} size={44} hint={hint} />
+          <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            <Row align="center" gapPx={8} wrap>
+              <Heading level={3} size={14.5} weight={600}>
+                {app.name}
+              </Heading>
+              <ManagementStatusPill
+                label={app.available ? app.state : 'Unavailable'}
+                tone={running ? 'success' : app.available ? 'neutral' : 'warning'}
+                showDot
+              />
+            </Row>
+            <Text size={12} tone="muted">
+              {app.accessories?.mqtt
+                ? 'Accessories connect automatically'
+                : app.accessories?.camera
+                  ? 'Camera accessories'
+                  : 'Home App'}
+            </Text>
+            {app.version && (
+              <Text size={11.5} tone="muted">
+                {`Version ${app.version}`}
+              </Text>
+            )}
+          </Stack>
+        </Row>
+        <HausButton
+          variant="secondary"
+          size="sm"
+          onPress={() => onSelect(app.id)}
+          aria-label={`Manage ${app.name}`}
+        >
+          Manage
+          <ChevronRight size={15} />
+        </HausButton>
+      </Row>
+    </ManagementGlassCard>
   );
 });
 
@@ -82,40 +111,50 @@ const InstalledHausGoveeGroupCard = memo(function InstalledHausGoveeGroupCard({
 }) {
   const runningCount = group.apps.filter((a) => a.available && a.state === 'running').length;
   return (
-    <UiBox semantic="article" className="addon-card vendor-group-addon-card">
-      <Text className="addon-glyph">
-        <BrandIcon
-          kind="integration"
-          id="govee"
-          size={44}
-          hint={{ name: 'Haus Govee', supportedBy: 'govee' }}
-        />
-      </Text>
-      <UiBox className="addon-copy">
-        <UiBox>
-          <Heading level={3}>{group.vendorTitle}</Heading>
-          <UiBox className="native-app-badges">
-            <Text className="vendor-group-count-pill">
-              <Layers size={12} />
-              {group.apps.length} {group.apps.length === 1 ? 'item' : 'items'} in group (Govee2MQTT
-              + Homebridge Govee)
+    <ManagementGlassCard
+      radius={22}
+      padding={insets(16, 18)}
+      interactive
+      style={{ layout: { width: pct(100) } }}
+    >
+      <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
+          <BrandIcon
+            kind="integration"
+            id="govee"
+            size={44}
+            hint={{ name: 'Haus Govee', supportedBy: 'govee' }}
+          />
+          <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            <Row align="center" gapPx={8} wrap>
+              <Heading level={3} size={14.5} weight={600}>
+                {group.vendorTitle}
+              </Heading>
+              <ManagementStatusPill
+                label={`${group.apps.length} ${group.apps.length === 1 ? 'item' : 'items'} in group`}
+                tone="neutral"
+              />
+              <ManagementStatusPill
+                label={runningCount > 0 ? `${runningCount} running` : 'Installed'}
+                tone={runningCount > 0 ? 'success' : 'neutral'}
+                showDot
+              />
+            </Row>
+            <Text size={12} tone="muted">
+              {HAUS_GOVEE_WHY_GROUPED}
             </Text>
-            <Text className="stability-medal-pill is-gold">🥇 Gold Stability · 99% Trust</Text>
-            <Text className={`status-pill ${runningCount > 0 ? 'status-available' : ''}`}>
-              {runningCount > 0 ? `${runningCount} running` : 'Installed'}
+            <Text size={11.5} tone="muted">
+              {`Combined flow active · Engines: ${group.apps.map((a) => a.name).join(' · ')}`}
             </Text>
-          </UiBox>
-        </UiBox>
-        <Text semantic="p">{HAUS_GOVEE_WHY_GROUPED}</Text>
-        <Text semantic="small">
-          Combined flow active · Engines: {group.apps.map((a) => a.name).join(' · ')}
-        </Text>
-      </UiBox>
-      <HausButton variant="secondary" onPress={onOpenGroup}>
-        Open Group
-        <ChevronRight size={17} />
-      </HausButton>
-    </UiBox>
+          </Stack>
+        </Row>
+        <HausButton variant="secondary" size="sm" onPress={onOpenGroup}>
+          <Layers size={14} />
+          Open Group
+          <ChevronRight size={15} />
+        </HausButton>
+      </Row>
+    </ManagementGlassCard>
   );
 });
 

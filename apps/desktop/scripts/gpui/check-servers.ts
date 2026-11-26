@@ -74,6 +74,18 @@ function withRoot(
   return Promise.resolve(fn(renderer)).finally(() => unmount());
 }
 
+function typeTerminal(renderer: TestRenderer, text: string): void {
+  const element = renderer.findByTestId('server-terminal-xterm');
+  assert(element, 'Missing xterm testId="server-terminal-xterm"');
+  const keys = text
+    .split('')
+    .map((ch) => (ch === ' ' ? 'space' : ch))
+    .join(' ');
+  renderer.nativeSimulateKeystrokes(element.id, `${keys} enter`);
+  renderer.dispatchNativeEvents();
+  renderer.flush();
+}
+
 async function checkDemoServersAndServiceConsoles(): Promise<void> {
   const snapshot = createDemoSnapshot();
   const copied: string[] = [];
@@ -91,12 +103,14 @@ async function checkDemoServersAndServiceConsoles(): Promise<void> {
       click(renderer, 'server-tab-terminal');
       await flushMicrotasks(renderer);
 
-      setInputValue(renderer, 'server-terminal-input', 'help');
-      click(renderer, 'server-terminal-send');
+      typeTerminal(renderer, 'help');
+      await flushMicrotasks(renderer, 10);
+
+      click(renderer, 'console-copy');
       await flushMicrotasks(renderer);
       assert(
-        renderer.getAllText().some((text) => text.includes('Available demo commands')),
-        'Demo shell should execute help command',
+        copied.length === 1 && copied[0]?.includes('Available demo commands'),
+        `Demo xterm shell should execute help command (copied: ${JSON.stringify(copied)})`,
       );
 
       click(renderer, 'console-search-toggle');
@@ -105,14 +119,7 @@ async function checkDemoServersAndServiceConsoles(): Promise<void> {
       await flushMicrotasks(renderer);
       assert(
         renderer.getAllText().some((text) => text.includes('1 /')),
-        'Terminal search bar should show match index/count',
-      );
-
-      click(renderer, 'console-copy');
-      await flushMicrotasks(renderer);
-      assert(
-        copied.length === 1 && copied[0]?.includes('Available demo commands'),
-        'Copy button must copy output',
+        'Terminal search bar should show match index/count from real xterm buffer',
       );
 
       click(renderer, 'terminal-search-close');
@@ -122,10 +129,12 @@ async function checkDemoServersAndServiceConsoles(): Promise<void> {
       await flushMicrotasks(renderer);
 
       click(renderer, 'service-logs-zigbee2mqtt');
+      await flushMicrotasks(renderer, 8);
+      click(renderer, 'console-copy');
       await flushMicrotasks(renderer);
       assert(
-        renderer.getAllText().some((text) => text.includes('container zigbee2mqtt logs')),
-        'Docker service logs modal should open',
+        copied.at(-1)?.includes('container zigbee2mqtt logs'),
+        'Docker service logs modal should stream into xterm buffer',
       );
       assert(
         renderer.findByTestId('service-console-mode-terminal'),
@@ -133,13 +142,14 @@ async function checkDemoServersAndServiceConsoles(): Promise<void> {
       );
 
       click(renderer, 'service-console-mode-terminal');
-      await flushMicrotasks(renderer);
-      setInputValue(renderer, 'server-terminal-input', 'uptime');
-      click(renderer, 'server-terminal-send');
+      await flushMicrotasks(renderer, 8);
+      typeTerminal(renderer, 'uptime');
+      await flushMicrotasks(renderer, 10);
+      click(renderer, 'console-copy');
       await flushMicrotasks(renderer);
       assert(
-        renderer.getAllText().some((text) => text.includes('load average')),
-        'Docker service terminal should execute interactive command',
+        copied.at(-1)?.includes('load average'),
+        'Docker service xterm terminal should execute interactive command via keystrokes',
       );
 
       click(renderer, 'service-console-done');
@@ -162,7 +172,10 @@ async function checkLiveServiceConsoleContracts(): Promise<void> {
   const snapshot = createDemoSnapshot();
   const demoServer: ServerSummaryRecord = buildDemoServersState().servers[0]!;
   const opened: HausTerminalOpenRequest[] = [];
+  const written: string[] = [];
+  const ackedBytes: number[] = [];
   const closed: string[] = [];
+  const copied: string[] = [];
   const listeners = new Set<(event: HausTerminalEvent) => void>();
   const encoder = new TextEncoder();
 
@@ -189,8 +202,8 @@ async function checkLiveServiceConsoleContracts(): Promise<void> {
           emit({
             sessionId: request.sessionId,
             type: 'data',
-            data: encoder.encode('[live] docker log line\n'),
-            bytes: 22,
+            data: encoder.encode('\x1b[32m[live]\x1b[0m docker log line\n'),
+            bytes: 31,
           });
         } else if (request.target?.kind === 'docker-exec') {
           if (!request.trustFingerprint) {
@@ -210,8 +223,8 @@ async function checkLiveServiceConsoleContracts(): Promise<void> {
             emit({
               sessionId: request.sessionId,
               type: 'data',
-              data: encoder.encode('root@zigbee2mqtt:/# \n'),
-              bytes: 21,
+              data: encoder.encode('\x1b[1;32mroot@zigbee2mqtt\x1b[0m:/# '),
+              bytes: 31,
             });
           }
         } else if (request.target?.kind === 'service-logs') {
@@ -229,9 +242,13 @@ async function checkLiveServiceConsoleContracts(): Promise<void> {
           });
         }
       },
-      write: async () => undefined,
+      write: async (_sessionId, data) => {
+        written.push(data);
+      },
       resize: () => undefined,
-      ack: () => undefined,
+      ack: (_sessionId, bytes) => {
+        ackedBytes.push(bytes);
+      },
       close: (sessionId) => closed.push(sessionId),
       subscribe: (listener) => {
         listeners.add(listener);
@@ -241,70 +258,91 @@ async function checkLiveServiceConsoleContracts(): Promise<void> {
     },
   };
 
-  await withRoot(createElement(GpuiServersView, { snapshot, system }), async (renderer) => {
-    await flushMicrotasks(renderer);
-    click(renderer, 'server-card-haus-hub-main');
-    await flushMicrotasks(renderer);
-    click(renderer, 'server-tab-services');
-    await flushMicrotasks(renderer);
+  await withRoot(
+    createElement(GpuiServersView, {
+      snapshot,
+      system,
+      onCopyText: (text) => copied.push(text),
+    }),
+    async (renderer) => {
+      await flushMicrotasks(renderer);
+      click(renderer, 'server-card-haus-hub-main');
+      await flushMicrotasks(renderer);
+      click(renderer, 'server-tab-services');
+      await flushMicrotasks(renderer);
 
-    click(renderer, 'service-logs-zigbee2mqtt');
-    await flushMicrotasks(renderer, 8);
-    assert(
-      renderer.getAllText().some((text) => text.includes('[live] docker log line')),
-      'Live docker logs stream must render',
-    );
+      click(renderer, 'service-logs-zigbee2mqtt');
+      await flushMicrotasks(renderer, 10);
+      click(renderer, 'console-copy');
+      await flushMicrotasks(renderer);
+      assert(
+        copied.at(-1)?.includes('[live] docker log line'),
+        'Live docker logs stream must render in xterm',
+      );
 
-    click(renderer, 'service-console-mode-terminal');
-    await flushMicrotasks(renderer, 8);
-    assert(
-      renderer.findByTestId('console-trust-host-key'),
-      'TOFU host-key banner must appear on untrusted session',
-    );
-    click(renderer, 'console-trust-host-key');
-    await flushMicrotasks(renderer, 8);
-    assert(
-      renderer.getAllText().some((text) => text.includes('root@zigbee2mqtt')),
-      'Trusting host key must reconnect docker-exec session',
-    );
-    click(renderer, 'service-console-done');
-    await flushMicrotasks(renderer);
+      click(renderer, 'service-console-mode-terminal');
+      await flushMicrotasks(renderer, 8);
+      assert(
+        renderer.findByTestId('console-trust-host-key'),
+        'TOFU host-key banner must appear on untrusted session',
+      );
+      click(renderer, 'console-trust-host-key');
+      await flushMicrotasks(renderer, 10);
+      click(renderer, 'console-copy');
+      await flushMicrotasks(renderer);
+      assert(
+        copied.at(-1)?.includes('root@zigbee2mqtt'),
+        'Trusting host key must reconnect docker-exec session in xterm',
+      );
+      typeTerminal(renderer, 'ls');
+      await flushMicrotasks(renderer, 6);
+      assert.equal(
+        written.join(''),
+        'ls\r',
+        'Direct xterm keystrokes must stream raw VT100 bytes to terminal.write',
+      );
+      click(renderer, 'service-console-done');
+      await flushMicrotasks(renderer);
 
-    click(renderer, 'service-logs-haus-hub.service');
-    await flushMicrotasks(renderer, 8);
-    assert(
-      renderer.getAllText().some((text) => text.includes('[live] systemd journal')),
-      'Live systemd unit logs must stream cleanly',
-    );
-    click(renderer, 'service-console-done');
-    await flushMicrotasks(renderer);
+      click(renderer, 'service-logs-haus-hub.service');
+      await flushMicrotasks(renderer, 10);
+      click(renderer, 'console-copy');
+      await flushMicrotasks(renderer);
+      assert(
+        copied.at(-1)?.includes('[live] systemd journal'),
+        'Live systemd unit logs must stream cleanly into xterm',
+      );
+      click(renderer, 'service-console-done');
+      await flushMicrotasks(renderer);
 
-    assert(
-      opened.some(
-        (r) => r.target?.kind === 'docker-logs' && r.target.containerId === 'zigbee2mqtt',
-      ),
-      'Must open docker-logs target',
-    );
-    assert(
-      opened.some(
-        (r) =>
-          r.target?.kind === 'docker-exec' &&
-          r.target.containerId === 'zigbee2mqtt' &&
-          r.trustFingerprint === 'aa'.repeat(32),
-      ),
-      'Must reconnect docker-exec with pinned trustFingerprint',
-    );
-    assert(
-      opened.some(
-        (r) =>
-          r.target?.kind === 'service-logs' &&
-          r.target.manager === 'systemd' &&
-          r.target.serviceId === 'haus-hub.service',
-      ),
-      'Must open systemd service-logs target',
-    );
-    assert(closed.length >= 4, 'All closed/replaced terminal sessions must call terminal.close');
-  });
+      assert(ackedBytes.length >= 3, 'xterm write callbacks must ack streamed PTY bytes');
+      assert(
+        opened.some(
+          (r) => r.target?.kind === 'docker-logs' && r.target.containerId === 'zigbee2mqtt',
+        ),
+        'Must open docker-logs target',
+      );
+      assert(
+        opened.some(
+          (r) =>
+            r.target?.kind === 'docker-exec' &&
+            r.target.containerId === 'zigbee2mqtt' &&
+            r.trustFingerprint === 'aa'.repeat(32),
+        ),
+        'Must reconnect docker-exec with pinned trustFingerprint',
+      );
+      assert(
+        opened.some(
+          (r) =>
+            r.target?.kind === 'service-logs' &&
+            r.target.manager === 'systemd' &&
+            r.target.serviceId === 'haus-hub.service',
+        ),
+        'Must open systemd service-logs target',
+      );
+      assert(closed.length >= 4, 'All closed/replaced terminal sessions must call terminal.close');
+    },
+  );
 }
 
 async function checkSshSettingsFormInGpui(): Promise<void> {

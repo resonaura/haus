@@ -269,6 +269,7 @@ export interface ScrollShadowDesc {
   color?: string
   opacity?: number
   edges?: Array<"top" | "bottom" | "left" | "right">
+  transitionMs?: number
 }
 
 export interface ScrollBindDesc {

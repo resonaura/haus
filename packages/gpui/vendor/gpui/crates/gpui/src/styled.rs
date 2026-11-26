@@ -2,8 +2,8 @@ use crate::{
     self as gpui, AbsoluteLength, AlignContent, AlignItems, AlignSelf, BorderStyle, CursorStyle,
     DefiniteLength, Display, Fill, FlexDirection, FlexWrap, Font, FontFeatures, FontStyle,
     FontWeight, GridPlacement, GridTemplate, GridTemplateMinSize, Hsla, JustifyContent, Length,
-    Pixels, SharedString, StrikethroughStyle, StyleRefinement, TextAlign, TextOverflow,
-    TextStyleRefinement, UnderlineStyle, WhiteSpace, px, relative, rems,
+    Pixels, ScrollFadeStyle, SharedString, StrikethroughStyle, StyleRefinement, TextAlign,
+    TextOverflow, TextStyleRefinement, UnderlineStyle, WhiteSpace, px, relative, rems,
 };
 pub use gpui_macros::{
     border_style_methods, box_shadow_style_methods, cursor_style_methods, margin_style_methods,
@@ -556,6 +556,12 @@ pub trait Styled: Sized {
         let filter = self.style().filter.get_or_insert_default();
         filter.fade_left = Some(left);
         filter.fade_right = Some(right);
+        self
+    }
+
+    /// Applies an animated alpha-fade scroll shadow mask to the inner content of a scroll container.
+    fn scroll_fade(mut self, fade: ScrollFadeStyle) -> Self {
+        self.style().scroll_fade = Some(fade);
         self
     }
 

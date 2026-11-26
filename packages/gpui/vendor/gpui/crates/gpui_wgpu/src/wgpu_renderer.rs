@@ -23,7 +23,7 @@ const MAX_INSTANCE_BUFFER_SIZE: u64 = 256 * 1024 * 1024;
 const IDLE_RELEASE: Duration = Duration::from_secs(2);
 
 /// How deeply filtered layers can nest before the innermost ones stop being filtered.
-const LAYER_DEPTH: usize = 4;
+const LAYER_DEPTH: usize = 8;
 
 const INSTANCE_TEXTURE_TEXEL_SIZE: u64 = 16;
 
@@ -205,14 +205,15 @@ struct MaskParams {
     fade_bottom: f32,
     fade_left: f32,
     fade_right: f32,
+    clip_radii: [f32; 4],
+    clip_smoothing: f32,
     transform_flags: u32,
     gaussian_sigma: f32,
     _pad0: u32,
-    _pad1: u32,
 }
 
 const _: () = {
-    assert!(std::mem::size_of::<MaskParams>() == 28 * std::mem::size_of::<f32>());
+    assert!(std::mem::size_of::<MaskParams>() == 32 * std::mem::size_of::<f32>());
     assert!(std::mem::align_of::<MaskParams>() == 16);
     assert!(std::mem::offset_of!(MaskParams, source_bounds) == 0);
     assert!(std::mem::offset_of!(MaskParams, fade_bounds) == 16);
@@ -224,10 +225,11 @@ const _: () = {
     assert!(std::mem::offset_of!(MaskParams, fade_bottom) == 84);
     assert!(std::mem::offset_of!(MaskParams, fade_left) == 88);
     assert!(std::mem::offset_of!(MaskParams, fade_right) == 92);
-    assert!(std::mem::offset_of!(MaskParams, transform_flags) == 96);
-    assert!(std::mem::offset_of!(MaskParams, gaussian_sigma) == 100);
-    assert!(std::mem::offset_of!(MaskParams, _pad0) == 104);
-    assert!(std::mem::offset_of!(MaskParams, _pad1) == 108);
+    assert!(std::mem::offset_of!(MaskParams, clip_radii) == 96);
+    assert!(std::mem::offset_of!(MaskParams, clip_smoothing) == 112);
+    assert!(std::mem::offset_of!(MaskParams, transform_flags) == 116);
+    assert!(std::mem::offset_of!(MaskParams, gaussian_sigma) == 120);
+    assert!(std::mem::offset_of!(MaskParams, _pad0) == 124);
 };
 
 #[repr(C)]
@@ -3634,7 +3636,7 @@ enum Composite {
 
 impl Composite {
     fn of(layer: LayerEffect) -> Self {
-        match layer.filter.fades() {
+        match layer.filter.fades() || layer.filter.clips_corners() {
             true => Self::Masked,
             false => Self::Plain,
         }
@@ -3655,11 +3657,7 @@ fn mask_params(layer: LayerEffect, destination_span: Bounds<ScaledPixels>) -> Ma
     } else {
         destination_span
     };
-    let fade_bounds = if layer.filter.transforms() {
-        layer.source_bounds
-    } else {
-        destination_span
-    };
+    let fade_bounds = layer.clip_bounds;
     MaskParams {
         source_bounds: [
             source_bounds.origin.x.0,
@@ -3681,10 +3679,16 @@ fn mask_params(layer: LayerEffect, destination_span: Bounds<ScaledPixels>) -> Ma
         fade_bottom: layer.filter.fade_bottom,
         fade_left: layer.filter.fade_left,
         fade_right: layer.filter.fade_right,
+        clip_radii: [
+            layer.filter.clip_radii.top_left.0,
+            layer.filter.clip_radii.top_right.0,
+            layer.filter.clip_radii.bottom_right.0,
+            layer.filter.clip_radii.bottom_left.0,
+        ],
+        clip_smoothing: layer.filter.clip_smoothing,
         transform_flags,
         gaussian_sigma: 0.0,
         _pad0: 0,
-        _pad1: 0,
     }
 }
 
@@ -3812,7 +3816,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<MonochromeSprite>(), 28 * 4);
         assert_eq!(std::mem::size_of::<SubpixelSprite>(), 28 * 4);
         assert_eq!(std::mem::size_of::<PolychromeSprite>(), 24 * 4);
-        assert_eq!(std::mem::size_of::<MaskParams>(), 28 * 4);
+        assert_eq!(std::mem::size_of::<MaskParams>(), 32 * 4);
     }
 
     // gpui-ce samples an RGBA wgpu texture, not YCbCr video planes.
@@ -3935,6 +3939,7 @@ mod tests {
         let mut scene = Scene::default();
         scene.push_filter(
             bar_bounds,
+            bar_bounds,
             point(ScaledPixels(32.), ScaledPixels(32.)),
             full_bounds,
             Filter {
@@ -3982,6 +3987,76 @@ mod tests {
         assert!(
             unrotated[0] < 15 && unrotated[1] < 15 && unrotated[2] < 15,
             "expected black/transparent background at original horizontal bar (18,32), got {unrotated:?}"
+        );
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn rounded_corner_clip_masks_overflowing_child_on_wgpu() {
+        let viewport = size(DevicePixels(64), DevicePixels(64));
+        let context = WgpuContext::new_offscreen().expect("offscreen WGPU context");
+        let mut renderer =
+            WgpuRenderer::new_offscreen(&context, viewport).expect("offscreen WGPU renderer");
+        let clip_bounds = Bounds::new(
+            point(ScaledPixels(8.), ScaledPixels(8.)),
+            size(ScaledPixels(48.), ScaledPixels(48.)),
+        );
+        let mask = ContentMask {
+            bounds: clip_bounds,
+        };
+
+        let mut scene = Scene::default();
+        scene.push_filter(
+            clip_bounds,
+            clip_bounds,
+            clip_bounds.center(),
+            clip_bounds,
+            Filter {
+                clip_radii: Corners::all(ScaledPixels(16.0)),
+                clip_smoothing: 0.6,
+                ..Default::default()
+            },
+        );
+        scene.insert_primitive(Quad {
+            order: 0,
+            border_style: BorderStyle::Solid,
+            bounds: clip_bounds,
+            content_mask: mask,
+            background: red().into(),
+            border_color: transparent_black(),
+            corner_radii: Corners::default(),
+            border_widths: Edges::default(),
+            corner_smoothing: 0.0,
+            pad: 0,
+        });
+        scene.pop_filter();
+        scene.finish();
+
+        let mut pixels = vec![0u8; 64 * 64 * 4];
+        renderer
+            .render_to_pixels(&scene, viewport, &mut pixels)
+            .expect("WGPU offscreen rounded corner clip render succeeds");
+
+        let pixel = |x: usize, y: usize| -> [u8; 4] {
+            let offset = (y * 64 + x) * 4;
+            [
+                pixels[offset],
+                pixels[offset + 1],
+                pixels[offset + 2],
+                pixels[offset + 3],
+            ]
+        };
+
+        let center = pixel(32, 32);
+        assert!(
+            center[0] > 230 && center[1] < 15 && center[2] < 15,
+            "expected red inside rounded clip at (32,32), got {center:?}"
+        );
+
+        let corner = pixel(9, 9);
+        assert!(
+            corner[0] < 15 && corner[1] < 15 && corner[2] < 15,
+            "expected corner pixel (9,9) clipped out on WGPU, got {corner:?}"
         );
     }
 }

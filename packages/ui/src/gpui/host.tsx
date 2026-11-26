@@ -8,6 +8,7 @@ import type {
   MotionStyle,
   MotionTargetStyle,
   MotionTargetValue,
+  PublicInstance,
 } from '@gpuix/react';
 import { Button } from '@gpuix/react/button';
 import { Dialog, DialogBackdrop, DialogPopup, DialogPortal } from '@gpuix/react/dialog';
@@ -15,9 +16,12 @@ import { colorToken } from '../ir/geometry.js';
 import type { UiMotionEase, UiMotionSpec, UiMotionTarget, UiMotionValue } from '../ir/motion.js';
 import { resolveColorToCss } from '../renderers/contract.js';
 import type { HostKeyEvent, UiContentHost } from '../renderers/host.js';
+import { assignRef } from '../renderers/scroll-handle.js';
+import { GpuiCanvas } from './canvas/index.js';
 import { GpuiSelect } from './select.js';
 import { GpuiGlassRim } from './glass-rim.js';
 import { GpuiPopover } from './popover.js';
+import { GpuiScrollView } from './scroll-view.js';
 import { styleFor } from './style.js';
 import { buildGpuiSvgSource } from './vector.js';
 import { GpuiVideo } from './video.js';
@@ -119,6 +123,7 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
           }}
         >
           <DialogBackdrop
+            testId="dialog-backdrop"
             style={{
               backgroundColor: backdropStyle.backgroundColor,
               ...(backdropStyle.backdropBlur !== undefined
@@ -133,56 +138,7 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       </Dialog>
     );
   },
-  renderScrollView: (
-    {
-      id,
-      style,
-      orientation,
-      shadowSizePx,
-      overscrollBehavior,
-      scrollPolicy,
-      scrollId,
-      role,
-      ariaLabel,
-      children,
-      hidden,
-      isEnabled = true,
-      onScroll,
-    },
-    context,
-  ) => {
-    const scrollShadow =
-      shadowSizePx !== undefined && shadowSizePx > 0
-        ? {
-            enabled: true,
-            size: shadowSizePx,
-            edges: (orientation === 'horizontal' ? ['left', 'right'] : ['top', 'bottom']) as Array<
-              'top' | 'bottom' | 'left' | 'right'
-            >,
-          }
-        : undefined;
-    return (
-      <div
-        testId={id}
-        role={role}
-        aria-label={ariaLabel}
-        onScrollChange={onScroll}
-        style={{
-          ...styleFor(style, context),
-          display: hidden ? 'none' : 'flex',
-          overflowX: orientation === 'horizontal' && isEnabled ? 'scroll' : undefined,
-          overflowY: orientation !== 'horizontal' && isEnabled ? 'scroll' : undefined,
-          overscrollBehavior: overscrollBehavior ?? 'contain',
-          scrollPolicy: scrollPolicy ?? (orientation === 'horizontal' ? 'horizontal' : 'vertical'),
-          scrollId: scrollId ?? id,
-          ...(scrollShadow ? { scrollShadow } : {}),
-          flexShrink: 1,
-        }}
-      >
-        {children}
-      </div>
-    );
-  },
+  renderScrollView: (props, context) => <GpuiScrollView props={props} context={context} />,
   renderRangeInput: (props) => <GpuiRange {...props} />,
   renderSelect: (props, context) => (
     <GpuiSelect props={props} style={styleFor(props.style, context)} context={context} />
@@ -202,6 +158,9 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
   renderVideo: (props, context) => (
     <GpuiVideo video={props} style={styleFor(props.style, context)} />
   ),
+  renderCanvas: (props, context) => (
+    <GpuiCanvas canvas={props} style={styleFor(props.style, context)} />
+  ),
   renderBox: (
     {
       children,
@@ -211,7 +170,9 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       ariaLabel,
       ariaLevel,
       role,
+      boxRef,
       onPress,
+      onBackdropPress,
       onSecondaryPress,
       onKeyDown,
       onPointerEnter,
@@ -220,12 +181,16 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
     context,
   ) => {
     const resolvedStyle = styleFor(style, context);
+    const forwardBoxRef = boxRef
+      ? (node: PublicInstance | null) => assignRef(boxRef, node)
+      : undefined;
     const props = {
+      ref: forwardBoxRef,
       testId: id,
       'aria-label': ariaLabel,
       'aria-level': ariaLevel,
       role: role ?? (ariaLabel ? 'group' : undefined),
-      onClick: onPress,
+      onClick: onPress ?? onBackdropPress,
       onAuxClick: gpuiSecondaryHandler(onSecondaryPress),
       onKeyDown: gpuiKeyHandler(onKeyDown),
       onMouseEnter: onPointerEnter,
@@ -379,6 +344,7 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       ariaExpanded,
       ariaPressed,
       disabled,
+      pressableRef,
       onActivate,
       onSecondaryPress,
       onKeyDown,
@@ -399,8 +365,12 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       outlineWidth: 2,
       ...resolved.focusVisible,
     };
+    const forwardRef = pressableRef
+      ? (node: PublicInstance | null) => assignRef(pressableRef, node)
+      : undefined;
     return (
       <Button
+        ref={forwardRef}
         testId={id}
         role={role}
         aria-label={ariaLabel}

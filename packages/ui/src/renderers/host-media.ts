@@ -11,6 +11,13 @@ import type { UiStyleSpec } from '../ir/node.js';
 export type HostMediaDataAttrs = Readonly<Record<string, string | boolean | undefined>>;
 export type HostMediaSurfaceTokens = Readonly<Record<string, string | number | undefined>>;
 
+export interface HostImageDropShadow {
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly blurRadius: number;
+  readonly color: string;
+}
+
 export interface HostImageProps {
   readonly id?: string;
   readonly src: string;
@@ -19,6 +26,7 @@ export interface HostImageProps {
   readonly ariaHidden?: boolean;
   readonly objectFit?: 'cover' | 'contain' | 'fill';
   readonly transitionMs?: number;
+  readonly dropShadow?: HostImageDropShadow;
   readonly onLoad?: () => void;
   readonly style?: UiStyleSpec;
 }
@@ -26,6 +34,7 @@ export interface HostImageProps {
 export interface HostProgressiveBlurProps {
   readonly maxRadius: number;
   readonly start: number;
+  readonly edge?: 'bottom' | 'top';
   readonly style: UiStyleSpec;
 }
 

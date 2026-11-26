@@ -9,6 +9,7 @@ import {
   HausSegmentedControl,
   HausSwitch,
   Row,
+  ScrollView,
   SelectInput,
   Stack,
   Text,
@@ -140,7 +141,11 @@ export function DeviceDetailsTab({
   onPressSecondary,
   onSelectSecondary,
 }: {
-  readonly metadata: readonly { readonly label: string; readonly value: string; readonly mono?: boolean }[];
+  readonly metadata: readonly {
+    readonly label: string;
+    readonly value: string;
+    readonly mono?: boolean;
+  }[];
   readonly secondaryEntities: readonly SecondaryEntityControlItem[];
   readonly disabled: boolean;
   readonly onToggleSecondary: (id: string) => void;
@@ -428,9 +433,11 @@ export function DeviceDetailTabs({
         ]}
         onChange={onSelectTab}
       />
-      <Stack
-        gapPx={12}
-        style={{ layout: { maxHeight: px(460), minHeight: px(0), overflowY: 'scroll' } }}
+      <ScrollView
+        orientation="vertical"
+        style={{
+          layout: { maxHeight: px(460), minHeight: px(0), direction: 'column', gap: px(12) },
+        }}
       >
         {activeTab === 'controls'
           ? controls
@@ -439,7 +446,7 @@ export function DeviceDetailTabs({
             : activeTab === 'details'
               ? details
               : settings}
-      </Stack>
+      </ScrollView>
     </Stack>
   );
 }

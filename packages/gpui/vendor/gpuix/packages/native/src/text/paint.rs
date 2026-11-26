@@ -13,6 +13,7 @@
 //! learned this the hard way; do not move registration into `build_element`.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -41,6 +42,25 @@ struct RegEntry {
     layout: TextLayout,
     /// See [`selection::RegisteredText::group`].
     group: Option<u64>,
+    /// Paint-order hitbox used to verify no upper layer occludes this text run.
+    hitbox: Option<gpui::Hitbox>,
+}
+
+#[derive(Default)]
+struct LinkPressState {
+    pressed: HashSet<Arc<str>>,
+    releasing: HashSet<Arc<str>>,
+}
+
+impl LinkPressState {
+    fn begin_press(&mut self) {
+        self.pressed.clear();
+        self.releasing.clear();
+    }
+
+    fn begin_release(&mut self) {
+        self.releasing = std::mem::take(&mut self.pressed);
+    }
 }
 
 /// Full element box that owns whether a press may start a selection.
@@ -74,6 +94,7 @@ pub struct PaintedHighlight {
 thread_local! {
     static REGISTRY: RefCell<Vec<RegEntry>> = const { RefCell::new(Vec::new()) };
     static START_REGIONS: RefCell<Vec<StartRegion>> = const { RefCell::new(Vec::new()) };
+    static LINK_PRESS: RefCell<LinkPressState> = RefCell::new(LinkPressState::default());
     /// Every string painted this frame, selectable or not, in paint order.
     ///
     /// Native elements draw their text inside gpui, so it never appears in the
@@ -102,6 +123,7 @@ pub fn selection_frame_reset(
             PAINTED.with(|p| p.borrow_mut().clear());
             HIGHLIGHTS.with(|h| h.borrow_mut().clear());
             super::search::ordinal_frame_reset();
+            register_link_press_hooks(window);
             register_copy_listener(window, &selection);
             register_down_listener(window, &selection);
             register_drag_listeners(window, &selection, on_drag_move, on_drag_end);
@@ -110,6 +132,21 @@ pub fn selection_frame_reset(
     .absolute()
     .w(px(0.0))
     .h(px(0.0))
+}
+
+fn register_link_press_hooks(window: &mut Window) {
+    use gpui::{DispatchPhase, MouseButton, MouseDownEvent, MouseUpEvent};
+
+    window.on_mouse_event(move |e: &MouseDownEvent, phase, _window, _cx| {
+        if phase == DispatchPhase::Capture && e.button == MouseButton::Left {
+            LINK_PRESS.with(|p| p.borrow_mut().begin_press());
+        }
+    });
+    window.on_mouse_event(move |e: &MouseUpEvent, phase, _window, _cx| {
+        if phase == DispatchPhase::Capture && e.button == MouseButton::Left {
+            LINK_PRESS.with(|p| p.borrow_mut().begin_release());
+        }
+    });
 }
 
 /// Record a selection-start region from an element's painted box.
@@ -273,7 +310,7 @@ impl IntoElement for SelectableRun {
 
 impl gpui::Element for SelectableRun {
     type RequestLayoutState = ();
-    type PrepaintState = ();
+    type PrepaintState = Option<gpui::Hitbox>;
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
@@ -301,8 +338,13 @@ impl gpui::Element for SelectableRun {
         layout: &mut (),
         window: &mut Window,
         cx: &mut gpui::App,
-    ) {
+    ) -> Option<gpui::Hitbox> {
         self.styled.prepaint(id, inspector, bounds, layout, window, cx);
+        if self.opts.selectable || !self.opts.links.is_empty() {
+            Some(window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal))
+        } else {
+            None
+        }
     }
 
     fn paint(
@@ -311,18 +353,19 @@ impl gpui::Element for SelectableRun {
         inspector: Option<&gpui::InspectorElementId>,
         bounds: Bounds<gpui::Pixels>,
         request_layout: &mut (),
-        prepaint: &mut (),
+        prepaint: &mut Option<gpui::Hitbox>,
         window: &mut Window,
         cx: &mut gpui::App,
     ) {
-        self.paint_washes(window);
+        self.paint_washes(prepaint.as_ref(), window);
+        let mut styled_prepaint = ();
         self.styled
-            .paint(id, inspector, bounds, request_layout, prepaint, window, cx);
+            .paint(id, inspector, bounds, request_layout, &mut styled_prepaint, window, cx);
     }
 }
 
 impl SelectableRun {
-    fn paint_washes(&self, window: &mut Window) {
+    fn paint_washes(&self, hitbox: Option<&gpui::Hitbox>, window: &mut Window) {
         let Self { opts, styled, key } = self;
         let layout = styled.layout();
         let SelectableText {
@@ -374,12 +417,13 @@ impl SelectableRun {
                     text: text.clone(),
                     layout: layout.clone(),
                     group: *group,
+                    hitbox: hitbox.cloned(),
                 })
             });
         }
         PAINTED.with(|p| p.borrow_mut().push(text.clone()));
         if let Some(on_link) = on_link {
-            register_link_listener(window, layout, links, on_link, selection);
+            register_link_listener(window, layout, links, on_link, selection, hitbox, key);
         }
     }
 }
@@ -444,20 +488,46 @@ fn register_link_listener(
     links: &[(Range<usize>, String)],
     on_link: &Arc<dyn Fn(&str)>,
     selection: &SharedSelection,
+    hitbox: Option<&gpui::Hitbox>,
+    key: &Arc<str>,
 ) {
-    use gpui::{DispatchPhase, MouseButton, MouseUpEvent};
+    use gpui::{DispatchPhase, MouseButton, MouseDownEvent, MouseUpEvent};
 
     if links.is_empty() {
         return;
     }
-    let (layout, links, on_link, selection) = (
+    let down_layout = layout.clone();
+    let down_hitbox = hitbox.cloned();
+    let down_key = key.clone();
+    window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _cx| {
+        if phase != DispatchPhase::Capture || e.button != MouseButton::Left {
+            return;
+        }
+        if down_hitbox.as_ref().is_some_and(|hb| !hb.is_hovered(window)) {
+            return;
+        }
+        if !down_layout.bounds().contains(&e.position) {
+            return;
+        }
+        LINK_PRESS.with(|p| p.borrow_mut().pressed.insert(down_key.clone()));
+    });
+
+    let (layout, links, on_link, selection, hitbox, key) = (
         layout.clone(),
         links.to_vec(),
         on_link.clone(),
         selection.clone(),
+        hitbox.cloned(),
+        key.clone(),
     );
-    window.on_mouse_event(move |e: &MouseUpEvent, phase, _window, _cx| {
+    window.on_mouse_event(move |e: &MouseUpEvent, phase, window, _cx| {
         if phase != DispatchPhase::Bubble || e.button != MouseButton::Left {
+            return;
+        }
+        if hitbox.as_ref().is_some_and(|hb| !hb.is_hovered(window)) {
+            return;
+        }
+        if !LINK_PRESS.with(|p| p.borrow().releasing.contains(&key)) {
             return;
         }
         if !layout.bounds().contains(&e.position) {
@@ -498,13 +568,19 @@ fn register_link_listener(
 /// texts never share a vertical band. GPUIX lays out arbitrary React trees: a
 /// Y-only match picks the leftmost text in a flex row no matter where the
 /// pointer actually is.
-fn registry_point(position: gpui::Point<gpui::Pixels>) -> Option<(usize, usize)> {
+fn registry_point_filtered(
+    position: gpui::Point<gpui::Pixels>,
+    mut include: impl FnMut(&RegEntry) -> bool,
+) -> Option<(usize, usize)> {
     REGISTRY.with(|r| {
         let reg = r.borrow();
         let mut contained: Option<usize> = None;
         let mut nearest: Option<(usize, (f32, f32))> = None;
 
         for (ei, entry) in reg.iter().enumerate() {
+            if !include(entry) {
+                continue;
+            }
             let b = entry.layout.bounds();
             if b.contains(&position) {
                 contained = Some(ei);
@@ -544,11 +620,25 @@ fn registry_point(position: gpui::Point<gpui::Pixels>) -> Option<(usize, usize)>
     })
 }
 
+fn registry_point(position: gpui::Point<gpui::Pixels>) -> Option<(usize, usize)> {
+    registry_point_filtered(position, |_| true)
+}
+
 /// Like [`registry_point`], but only when the pointer shares a text's vertical
-/// band. That is the empty start or end of the line, a gutter, or parent
-/// padding on that row. A press above or below every line is chrome.
-fn registry_point_on_line(position: gpui::Point<gpui::Pixels>) -> Option<(usize, usize)> {
-    let (ei, ix) = registry_point(position)?;
+/// band and no upper occluding layer covers the pointer above that text run.
+/// That preserves empty line starts, gutters, and parent padding on the active
+/// layer while preventing clicks on a modal or semi-transparent backdrop from
+/// starting a text selection underneath.
+fn registry_point_on_line(
+    position: gpui::Point<gpui::Pixels>,
+    window: &Window,
+) -> Option<(usize, usize)> {
+    let (ei, ix) = registry_point_filtered(position, |entry| {
+        !entry
+            .hitbox
+            .as_ref()
+            .is_some_and(|hb| window.is_hitbox_occluded_by_upper_layer(hb.id))
+    })?;
     REGISTRY.with(|r| {
         let b = r.borrow().get(ei)?.layout.bounds();
         (position.y >= b.top() && position.y <= b.bottom()).then_some((ei, ix))
@@ -605,7 +695,7 @@ fn register_down_listener(window: &mut Window, selection: &SharedSelection) {
             window.refresh();
             return;
         }
-        let hit = registry_point_on_line(e.position).and_then(|(ei, ix)| {
+        let hit = registry_point_on_line(e.position, window).and_then(|(ei, ix)| {
             REGISTRY.with(|r| {
                 r.borrow()
                     .get(ei)

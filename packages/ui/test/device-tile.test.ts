@@ -44,6 +44,12 @@ describe('shared 1:1 DeviceTile', () => {
     expect(activeMarkup).toContain('>Hue<');
     expect(activeMarkup).toContain('Favorite');
     expect(activeMarkup).toContain('tile-more');
+    expect(activeMarkup).toMatch(
+      /class="accessory-icon"[^>]*border-top-left-radius:999px[^>]*corner-shape:round/,
+    );
+    expect(activeMarkup).toMatch(
+      /class="light-color-swatch"[^>]*border-top-left-radius:999px[^>]*corner-shape:round/,
+    );
 
     const unavailableMarkup = renderToStaticMarkup(
       createElement(

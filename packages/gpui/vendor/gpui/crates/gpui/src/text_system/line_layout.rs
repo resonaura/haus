@@ -451,9 +451,18 @@ impl WrappedLineLayout {
     }
 }
 
+const MAX_WARM_LINES: usize = 4096;
+
+#[derive(Default)]
+struct WarmLineCache {
+    lines: FxHashMap<Arc<CacheKey>, Arc<LineLayout>>,
+    wrapped_lines: FxHashMap<Arc<CacheKey>, Arc<WrappedLineLayout>>,
+}
+
 pub(crate) struct LineLayoutCache {
     previous_frame: Mutex<FrameCache>,
     current_frame: RwLock<FrameCache>,
+    warm: Mutex<WarmLineCache>,
     platform_text_system: Arc<dyn PlatformTextSystem>,
 }
 
@@ -489,6 +498,7 @@ impl LineLayoutCache {
         Self {
             previous_frame: Mutex::default(),
             current_frame: RwLock::default(),
+            warm: Mutex::default(),
             platform_text_system,
         }
     }
@@ -560,8 +570,29 @@ impl LineLayoutCache {
         let mut prev_frame = self.previous_frame.lock();
         let mut curr_frame = self.current_frame.write();
         std::mem::swap(&mut *prev_frame, &mut *curr_frame);
-        curr_frame.lines.clear();
-        curr_frame.wrapped_lines.clear();
+
+        if !curr_frame.lines.is_empty() || !curr_frame.wrapped_lines.is_empty() {
+            let mut warm = self.warm.lock();
+            if warm.lines.len() + curr_frame.lines.len() > MAX_WARM_LINES {
+                warm.lines.clear();
+            }
+            for (k, v) in curr_frame.lines.drain() {
+                if warm.lines.len() < MAX_WARM_LINES {
+                    warm.lines.insert(k, v);
+                }
+            }
+            if warm.wrapped_lines.len() + curr_frame.wrapped_lines.len() > MAX_WARM_LINES {
+                warm.wrapped_lines.clear();
+            }
+            for (k, v) in curr_frame.wrapped_lines.drain() {
+                if warm.wrapped_lines.len() < MAX_WARM_LINES {
+                    warm.wrapped_lines.insert(k, v);
+                }
+            }
+        } else {
+            curr_frame.lines.clear();
+            curr_frame.wrapped_lines.clear();
+        }
         curr_frame.used_lines.clear();
         curr_frame.used_wrapped_lines.clear();
 
@@ -596,7 +627,12 @@ impl LineLayoutCache {
             return layout.clone();
         }
 
-        let previous_frame_entry = self.previous_frame.lock().wrapped_lines.remove_entry(key);
+        let previous_frame_entry = self
+            .previous_frame
+            .lock()
+            .wrapped_lines
+            .remove_entry(key)
+            .or_else(|| self.warm.lock().wrapped_lines.remove_entry(key));
         if let Some((key, layout)) = previous_frame_entry {
             let mut current_frame = RwLockUpgradableReadGuard::upgrade(current_frame);
             current_frame
@@ -661,7 +697,13 @@ impl LineLayoutCache {
         }
 
         let mut current_frame = RwLockUpgradableReadGuard::upgrade(current_frame);
-        if let Some((key, layout)) = self.previous_frame.lock().lines.remove_entry(key) {
+        let reused_entry = self
+            .previous_frame
+            .lock()
+            .lines
+            .remove_entry(key)
+            .or_else(|| self.warm.lock().lines.remove_entry(key));
+        if let Some((key, layout)) = reused_entry {
             current_frame.lines.insert(key.clone(), layout.clone());
             current_frame.used_lines.push(key);
             layout

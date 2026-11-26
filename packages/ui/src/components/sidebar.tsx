@@ -13,10 +13,10 @@ import {
 } from '../ir/geometry.js';
 import { SolidMaterial } from '../ir/materials.js';
 import type { UiMotionSpec } from '../ir/motion.js';
-import type { UiStyleSpec } from '../ir/node.js';
 import { useHausUi } from '../primitives/context.js';
-import { Box, Pressable, Row, Stack, Text } from '../primitives/elements.js';
+import { Box, Pressable, Row, ScrollView, Stack, Text } from '../primitives/elements.js';
 import { resolveColorToCss } from '../renderers/contract.js';
+import { SCROLL_SHADOW_PRESETS } from '../renderers/scroll-shadow.js';
 import { SidebarNavButton } from './chrome.js';
 import { UiIcon } from './icon.js';
 import type { UiIconName } from './icons.js';
@@ -57,15 +57,6 @@ export interface SidebarContextualNav {
 
 export const sidebarWidths = { compact: 56, expanded: 232 };
 
-const navigationStyle: UiStyleSpec = {
-  layout: { width: pct(100), minHeight: px(36), padding: insets(7, 10) },
-  corners: corners(8),
-  states: {
-    hover: { material: new SolidMaterial(colorToken('surfaceHover')) },
-    selected: { material: new SolidMaterial(colorToken('surfaceActive')) },
-  },
-};
-
 export function SidebarLayout<Route extends string>({
   items,
   groups,
@@ -74,8 +65,6 @@ export function SidebarLayout<Route extends string>({
   expandedWidth = sidebarWidths.expanded,
   selected,
   onSelect,
-  collapsed,
-  onToggle,
   backedByWindow = false,
   children,
 }: {
@@ -86,8 +75,6 @@ export function SidebarLayout<Route extends string>({
   readonly expandedWidth?: number;
   readonly selected: Route;
   readonly onSelect: (route: Route) => void;
-  readonly collapsed: boolean;
-  readonly onToggle: () => void;
   readonly backedByWindow?: boolean;
   readonly children: ReactNode;
 }) {
@@ -100,7 +87,7 @@ export function SidebarLayout<Route extends string>({
   const [lastContextual, setLastContextual] = useState(contextual);
   const [sliding, setSliding] = useState(false);
   const [slideEpoch, setSlideEpoch] = useState(0);
-  const contextOpen = Boolean(contextual) && !collapsed;
+  const contextOpen = Boolean(contextual);
   const wasOpen = useRef(contextOpen);
 
   useLayoutEffect(() => {
@@ -117,9 +104,8 @@ export function SidebarLayout<Route extends string>({
   }, [contextual]);
 
   const activeContextual = contextual ?? lastContextual;
-  const sidebarWidth = collapsed ? sidebarWidths.compact : expandedWidth;
-  const padX = collapsed ? 6 : 14;
-  const toggleLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  const sidebarWidth = expandedWidth;
+  const padX = 14;
 
   const paneBlurMotion: UiMotionSpec = sliding
     ? {
@@ -145,7 +131,6 @@ export function SidebarLayout<Route extends string>({
         icon={<UiIcon name={item.icon} size={18} color={isActive ? primaryCss : mutedCss} />}
         active={isActive}
         onSelect={() => onSelect(item.id)}
-        collapsed={collapsed}
         badge={item.badge}
         portable
       />
@@ -189,33 +174,7 @@ export function SidebarLayout<Route extends string>({
           material: backedByWindow ? undefined : new SolidMaterial(colorToken('surfaceSecondary')),
         }}
       >
-        <Box style={{ layout: { padding: insets(0, padX), flexShrink: 0 } }}>
-          <Pressable
-            id="sidebar-toggle"
-            title={toggleLabel}
-            ariaLabel={toggleLabel}
-            ariaExpanded={!collapsed}
-            onActivate={onToggle}
-            style={{
-              ...navigationStyle,
-              layout: {
-                ...navigationStyle.layout,
-                height: px(45),
-                flexShrink: 0,
-                alignItems: 'end',
-                justifyContent: 'center',
-              },
-            }}
-          >
-            <Row gapPx={10}>
-              <UiIcon
-                name={collapsed ? 'panel-left-open' : 'panel-left-close'}
-                size={18}
-                color={mutedCss}
-              />
-            </Row>
-          </Pressable>
-        </Box>
+        <Box ariaHidden style={{ layout: { height: px(45), flexShrink: 0 } }} />
 
         <Box
           className={`sidebar-context-viewport ${sliding ? 'is-sliding' : ''}`}
@@ -256,20 +215,23 @@ export function SidebarLayout<Route extends string>({
               motion={paneBlurMotion}
               style={{ layout: paneBaseLayout, pointerEvents: contextOpen ? 'none' : 'auto' }}
             >
-              <Stack
-                gapPx={14}
+              <ScrollView
+                orientation="vertical"
+                shadowSizePx={SCROLL_SHADOW_PRESETS.sidebar}
+                hideScrollBar
                 style={{
                   layout: {
                     flexGrow: 1,
                     minHeight: px(0),
-                    overflowY: 'scroll',
+                    direction: 'column',
+                    gap: px(14),
                     padding: insets(0, 0, 12, 0),
                   },
                 }}
               >
                 {(groups ?? [{ items: items ?? [] }]).map((group) => (
                   <Stack key={group.title ?? group.items[0]?.id} gapPx={3}>
-                    {group.title && !collapsed && (
+                    {group.title && (
                       <Text
                         tone="muted"
                         size={9}
@@ -285,7 +247,7 @@ export function SidebarLayout<Route extends string>({
                     {group.items.map(renderItem)}
                   </Stack>
                 ))}
-              </Stack>
+              </ScrollView>
               {footer && (
                 <>
                   <Box
@@ -309,14 +271,17 @@ export function SidebarLayout<Route extends string>({
               style={{ layout: paneBaseLayout, pointerEvents: contextOpen ? 'auto' : 'none' }}
             >
               {activeContextual && (
-                <Stack
-                  gapPx={0}
+                <ScrollView
+                  orientation="vertical"
+                  shadowSizePx={SCROLL_SHADOW_PRESETS.sidebar}
+                  hideScrollBar
                   ariaLabel={`${activeContextual.title} navigation`}
                   style={{
                     layout: {
                       flexGrow: 1,
                       minHeight: px(0),
-                      overflowY: 'scroll',
+                      direction: 'column',
+                      gap: px(0),
                       padding: insets(0, 0, 12, 0),
                     },
                   }}
@@ -457,7 +422,7 @@ export function SidebarLayout<Route extends string>({
                       );
                     })}
                   </Stack>
-                </Stack>
+                </ScrollView>
               )}
             </Box>
           </Box>

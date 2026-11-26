@@ -738,7 +738,7 @@ impl RetainedTree {
         };
         let mut hits = Vec::new();
         if let Some(root_id) = self.root_id {
-            self.collect_hits(root_id, false, false, &mut walk, &mut hits);
+            self.collect_hits(root_id, false, false, &mut walk, &mut hits, None);
         }
         // Stable, so layers of one priority stay topmost first.
         walk.layers.sort_by(|a, b| b.0.cmp(&a.0));
@@ -757,6 +757,7 @@ impl RetainedTree {
         clipped: bool,
         walk: &mut HitWalk,
         hits: &mut Vec<u64>,
+        mut sticky_sink: Option<&mut Vec<u64>>,
     ) {
         let Some(element) = self.elements.get(&id) else {
             return;
@@ -770,10 +771,14 @@ impl RetainedTree {
         };
 
         let mut clipped = clipped;
+        let mut is_scroll = false;
         if let (Some(style), Some(bounds)) = (style, &own_box) {
             let clips = |axis: Option<&str>| matches!(axis, Some("hidden" | "scroll"));
-            let clip_x = clips(style.overflow_x.as_deref().or(style.overflow.as_deref()));
-            let clip_y = clips(style.overflow_y.as_deref().or(style.overflow.as_deref()));
+            let ax_x = style.overflow_x.as_deref().or(style.overflow.as_deref());
+            let ax_y = style.overflow_y.as_deref().or(style.overflow.as_deref());
+            let clip_x = clips(ax_x);
+            let clip_y = clips(ax_y);
+            is_scroll = ax_x == Some("scroll") || ax_y == Some("scroll");
             if (clip_x || clip_y) && !inside(bounds, clip_x, clip_y) {
                 if self.anchored_count == 0 {
                     return;
@@ -802,15 +807,54 @@ impl RetainedTree {
                     .unwrap_or(1);
                 let mut layer = Vec::new();
                 for &child in element.children.iter().rev() {
-                    self.collect_hits(child, none, false, walk, &mut layer);
+                    self.collect_hits(child, none, false, walk, &mut layer, None);
                 }
                 walk.layers.push((priority, layer));
                 return;
             }
         }
 
-        for &child in element.children.iter().rev() {
-            self.collect_hits(child, none, clipped, walk, hits);
+        let is_sticky = style.and_then(|s| s.position.as_deref()) == Some("sticky");
+        if is_sticky {
+            if let Some(sink) = sticky_sink.as_deref_mut() {
+                let mut local_sticky = Vec::new();
+                for &child in element.children.iter().rev() {
+                    self.collect_hits(child, none, clipped, walk, &mut local_sticky, None);
+                }
+                if !clipped && !none && own_box.is_some_and(|bounds| inside(&bounds, true, true)) {
+                    local_sticky.push(id);
+                }
+                sink.extend(local_sticky);
+                return;
+            }
+        }
+
+        if is_scroll {
+            let mut scroll_sticky = Vec::new();
+            let mut scroll_normal = Vec::new();
+            for &child in element.children.iter().rev() {
+                self.collect_hits(
+                    child,
+                    none,
+                    clipped,
+                    walk,
+                    &mut scroll_normal,
+                    Some(&mut scroll_sticky),
+                );
+            }
+            hits.extend(scroll_sticky);
+            hits.extend(scroll_normal);
+        } else {
+            for &child in element.children.iter().rev() {
+                self.collect_hits(
+                    child,
+                    none,
+                    clipped,
+                    walk,
+                    hits,
+                    sticky_sink.as_deref_mut(),
+                );
+            }
         }
         if !clipped && !none && own_box.is_some_and(|bounds| inside(&bounds, true, true)) {
             hits.push(id);
@@ -1410,6 +1454,44 @@ mod tests {
         // Not deferred: painted in place, in tree order, under the clip.
         tree.set_custom_prop(2, "deferred".to_string(), serde_json::json!(false));
         assert_eq!(tree.elements_at(10.0, 10.0, &boxed(&boxes)), vec![5, 3, 1]);
+    }
+
+    #[test]
+    fn elements_at_puts_sticky_above_scrolled_siblings_inside_scroller() {
+        let mut tree = RetainedTree::new();
+        for id in 1..=5 {
+            tree.create_element(id, "div".to_string());
+        }
+        tree.set_root(1);
+        // 1 = scroller, 2 = wrapper, 3 = sticky dock (with child 4), 5 = later card
+        for (parent, child) in [(1, 2), (2, 3), (3, 4), (2, 5)] {
+            tree.append_child(parent, child);
+        }
+        tree.set_style(
+            1,
+            Arc::new(StyleDesc {
+                overflow_y: Some("scroll".to_string()),
+                ..Default::default()
+            }),
+        );
+        tree.set_style(
+            3,
+            Arc::new(StyleDesc {
+                position: Some("sticky".to_string()),
+                top: Some(0.0),
+                ..Default::default()
+            }),
+        );
+        let boxes = [
+            (1, (0.0, 0.0, 400.0, 300.0)),
+            (2, (0.0, -200.0, 400.0, 900.0)),
+            (3, (0.0, 0.0, 400.0, 60.0)),
+            (4, (10.0, 10.0, 80.0, 40.0)),
+            (5, (0.0, 0.0, 400.0, 120.0)),
+        ];
+        // Even though card 5 comes after sticky 3 in tree order, sticky 3 + child 4
+        // paint on top of card 5 inside scroller 1.
+        assert_eq!(tree.elements_at(20.0, 20.0, &boxed(&boxes)), vec![4, 3, 5, 2, 1]);
     }
 
     #[test]

@@ -23,10 +23,11 @@ import type {
 } from '../renderers/host.js';
 import { useHausUi } from './context.js';
 
-/** Blurs the content underneath, increasing the radius from top to bottom. */
+/** Blurs the content underneath, increasing the radius toward `edge` (`bottom` by default, or `top`). */
 export function ProgressiveBlur({
   maxRadius,
   start = 0,
+  edge = 'bottom',
   style,
 }: Omit<HostProgressiveBlurProps, 'start'> & {
   readonly start?: number;
@@ -37,6 +38,7 @@ export function ProgressiveBlur({
   const props = {
     maxRadius: Math.min(32, maxRadius),
     start: Number.isFinite(start) ? Math.max(0, Math.min(0.99, start)) : 0,
+    edge,
     style,
   };
   return ctx.contentHost.renderProgressiveBlur?.(props, ctx) ?? null;
@@ -107,7 +109,7 @@ export function VideoSurface(props: HostVideoProps): React.ReactElement {
 /** Platform-neutral raster canvas surface delegated strictly to `UiHostAdapter` (DOM canvas / native GPU surface). */
 export function CanvasSurface(props: HostCanvasProps): React.ReactElement {
   const ctx = useHausUi();
-  return ctx.host.renderCanvas(props, ctx);
+  return ctx.contentHost.renderCanvas?.(props, ctx) ?? ctx.host.renderCanvas(props, ctx);
 }
 
 /** Platform-neutral link leaf delegated strictly to `UiHostAdapter`. */

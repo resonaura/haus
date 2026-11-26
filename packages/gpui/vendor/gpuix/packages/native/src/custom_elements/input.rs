@@ -444,6 +444,7 @@ impl CustomElement for TextEditorElement {
         }
         if let Some(style) = ctx.style {
             editor = crate::renderer::apply_interactive_styles(editor, style);
+            editor = crate::renderer::apply_layer_occlusion(editor, style);
             // Clip text to rounded corners, matching HTML input behavior.
             if style.border_radius.is_some() {
                 editor = editor.overflow_hidden();
@@ -484,21 +485,12 @@ impl CustomElement for TextEditorElement {
         // not start a document selection.
         editor = editor.child(crate::automation::bounds_tracker(ctx.id, Some(false)));
         if ctx.events.contains("click") {
-            let callback = ctx.event_callback.clone();
-            let id = ctx.id;
-            // Match retained hosts: GPUI's semantic click is unreliable under
-            // embedded AppKit pumping, so primary mouse-up is the click boundary.
-            editor = editor.on_mouse_up(MouseButton::Left, move |event, _window, _cx| {
-                emit_event_full(&callback, id, "click", |payload| {
-                    let (x, y) = crate::renderer::point_to_xy(event.position);
-                    payload.x = Some(x);
-                    payload.y = Some(y);
-                    payload.button = Some(0);
-                    payload.click_count = Some(event.click_count as u32);
-                    payload.modifiers = Some(event.modifiers.into());
-                    payload.is_right_click = Some(false);
-                });
-            });
+            editor = crate::renderer::wire_primary_click(
+                editor,
+                ctx.id,
+                ctx.event_callback.clone(),
+                ctx.click_press.clone(),
+            );
         }
         if ctx.events.contains("fileDrop") {
             let callback = ctx.event_callback.clone();

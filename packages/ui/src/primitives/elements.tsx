@@ -197,6 +197,7 @@ export function Grid({
         gridMinColumnWidth: px(minColumnWidthPx),
         gap: px(gapPx),
         width: pct(100),
+        flexShrink: 0,
         ...(paddingPx !== undefined ? { padding: insets(paddingPx) } : {}),
       },
     },

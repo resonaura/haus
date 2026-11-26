@@ -11,7 +11,6 @@ import {
 import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import {
-  Box,
   HausButton,
   Heading,
   Pressable,
@@ -23,6 +22,7 @@ import {
   useHausUi,
 } from '../../primitives/index.js';
 import { UiIcon } from '../icon.js';
+import { BrandIcon, ManagementGlassCard, ManagementStatusPill } from '../brand/index.js';
 
 const SCOPE_TABS: readonly { readonly id: HacsScope; readonly label: string }[] = [
   { id: 'installed', label: 'Installed' },
@@ -317,76 +317,77 @@ export function HacsCommunityView({
       ) : (
         <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
           {filtered.map((repo) => (
-            <Row
+            <ManagementGlassCard
               key={String(repo.id)}
-              align="center"
-              justify="between"
-              gapPx={12}
-              style={{
-                layout: { width: pct(100), padding: insets(12, 14) },
-                material: new SolidMaterial(colorToken('surfaceSecondary')),
-                border: { width: 1, color: colorToken('border') },
-                corners: corners(14),
-              }}
+              radius={20}
+              padding={insets(12, 16)}
+              interactive
+              style={{ layout: { width: pct(100) } }}
             >
-              <Pressable
-                id={`hacs-repo-${repo.id}`}
-                onActivate={() => onSelectRepo(repo)}
-                style={{
-                  layout: {
-                    direction: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'between',
-                    flexGrow: 1,
-                    minWidth: px(0),
-                    gap: px(12),
-                  },
-                }}
+              <Row
+                align="center"
+                justify="between"
+                gapPx={12}
+                style={{ layout: { width: pct(100) } }}
               >
-                <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                  <Text size={14} weight={600}>
-                    {repo.name}
-                  </Text>
-                  <Text size={12} tone="muted">
-                    {repo.description || repo.full_name}
-                  </Text>
-                  <Text size={11} tone="secondary">
-                    {repoMetaLine(repo)}
-                  </Text>
-                </Stack>
-                <UiIcon name="chevron-right" size={16} />
-              </Pressable>
-              {repo.pending_upgrade ? (
-                <HausButton
-                  id={`hacs-update-${repo.id}`}
-                  variant="primary"
-                  size="sm"
-                  disabled={busy}
-                  onPress={() => onUpdateRepo(repo)}
-                >
-                  <UiIcon name="arrow-up-circle" size={14} color={primaryFg} />
-                  <Text
-                    size={12}
-                    style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
-                  >
-                    Update
-                  </Text>
-                </HausButton>
-              ) : repo.installed ? (
-                <Box
+                <Pressable
+                  id={`hacs-repo-${repo.id}`}
+                  onActivate={() => onSelectRepo(repo)}
                   style={{
-                    layout: { padding: insets(4, 9) },
-                    material: new SolidMaterial(rgba(34, 197, 94, 0.14)),
-                    border: { width: 1, color: rgba(34, 197, 94, 0.3) },
-                    corners: corners(999),
+                    layout: {
+                      direction: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'between',
+                      flexGrow: 1,
+                      minWidth: px(0),
+                      gap: px(12),
+                    },
                   }}
                 >
-                  <Text size={11} weight={600}>
-                    Installed
-                  </Text>
-                </Box>
-              ) : null}
-            </Row>
+                  <BrandIcon
+                    kind="hacs"
+                    id={repo.domain || repo.full_name}
+                    size={40}
+                    hint={{
+                      name: repo.name,
+                      category: repo.category,
+                      repositoryUrl: `https://github.com/${repo.full_name}`,
+                    }}
+                  />
+                  <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                    <Text size={14} weight={600}>
+                      {repo.name}
+                    </Text>
+                    <Text size={12} tone="muted">
+                      {repo.description || repo.full_name}
+                    </Text>
+                    <Text size={11} tone="secondary">
+                      {repoMetaLine(repo)}
+                    </Text>
+                  </Stack>
+                  <UiIcon name="chevron-right" size={16} />
+                </Pressable>
+                {repo.pending_upgrade ? (
+                  <HausButton
+                    id={`hacs-update-${repo.id}`}
+                    variant="primary"
+                    size="sm"
+                    disabled={busy}
+                    onPress={() => onUpdateRepo(repo)}
+                  >
+                    <UiIcon name="arrow-up-circle" size={14} color={primaryFg} />
+                    <Text
+                      size={12}
+                      style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
+                    >
+                      Update
+                    </Text>
+                  </HausButton>
+                ) : repo.installed ? (
+                  <ManagementStatusPill label="Installed" tone="success" />
+                ) : null}
+              </Row>
+            </ManagementGlassCard>
           ))}
         </Stack>
       )}

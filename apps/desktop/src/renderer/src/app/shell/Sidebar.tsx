@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Box as UiBox, HausScrollArea, Pressable, Text } from '@haus/ui';
+import { Box as UiBox, HausScrollArea, Pressable, SCROLL_SHADOW_PRESETS, Text } from '@haus/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   House,
@@ -108,7 +108,7 @@ export function Sidebar({
             <HausScrollArea
               className="sidebar-scroll"
               orientation="vertical"
-              size={28}
+              size={SCROLL_SHADOW_PRESETS.sidebar}
               hideScrollBar
             >
               <UiBox semantic="nav" ariaLabel="Main navigation">
@@ -264,7 +264,7 @@ export function Sidebar({
             <HausScrollArea
               className="sidebar-scroll sidebar-server-scroll"
               orientation="vertical"
-              size={28}
+              size={SCROLL_SHADOW_PRESETS.sidebar}
               hideScrollBar
             >
               {context && (

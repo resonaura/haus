@@ -156,7 +156,15 @@ export const DialogBackdrop = forwardRef<PublicInstance, DialogBackdropProps>(
       <div
         {...props}
         ref={ref}
-        style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, ...style }}
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          pointerEvents: "auto",
+          ...style,
+        }}
         onMouseDown={(event: EventPayload) => {
           onMouseDown?.(event)
           if (!context.disablePointerDismissal) context.setOpen(false)

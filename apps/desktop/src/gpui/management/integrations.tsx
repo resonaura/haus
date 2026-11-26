@@ -10,8 +10,7 @@ import {
   formatRuntimeLabel,
   groupIntegrationsByDomain,
   humanizeIdentifier,
-  integrationFamilyKey,
-  isIntegrationEntryIssue,
+  type DiscoveredFlowItem,
   type IntegrationDomainMetaRecord,
   type IntegrationEntryRecord,
   type IntegrationFilterId,
@@ -25,7 +24,7 @@ import {
   IntegrationsOverviewView,
   RepairsPanelView,
   UpdatesPanelView,
-  type PortableIntegrationCardItem,
+  type PortableDiscoveredFlow,
   type PortableIntegrationEntryItem,
   type PortableIntegrationFilterTab,
 } from '@haus/ui/components';
@@ -33,6 +32,13 @@ import type { GpuiPlatform } from '../platform.js';
 import type { GpuiAddDeviceRequest } from './add-device.js';
 import { GpuiHaDataImportModal } from './ha-data-import.js';
 import { GpuiHacsView } from './hacs.js';
+import {
+  applyDemoUpdateInstall,
+  buildGpuiDiscoveredItems,
+  buildGpuiIntegrationCards,
+  parseDiscoveredFlows,
+  runtimeIconKind,
+} from './integrations/helpers.js';
 import type { homeDashboard } from '../home/model.js';
 
 export type GpuiRpcRequest = <T = unknown>(message: Record<string, unknown>) => Promise<T>;
@@ -74,7 +80,9 @@ export function GpuiIntegrationsView({
   const [titles, setTitles] = useState<Readonly<Record<string, string>>>(
     () => demoInitial?.titles ?? {},
   );
-  const [discoveredCount, setDiscoveredCount] = useState(0);
+  const [discoveredFlows, setDiscoveredFlows] = useState<readonly DiscoveredFlowItem[]>(
+    () => demoInitial?.progress ?? [],
+  );
   const [issues, setIssues] = useState<readonly RepairIssueRecord[]>(
     () => demoInitial?.issues ?? [],
   );
@@ -95,7 +103,7 @@ export function GpuiIntegrationsView({
       setEntries(next.entries);
       setMetaByDomain(next.metaByDomain);
       setTitles(next.titles);
-      setDiscoveredCount(next.progress.length);
+      setDiscoveredFlows(next.progress);
       setIssues(next.issues);
       setUpdates(next.updates);
       return;
@@ -126,7 +134,7 @@ export function GpuiIntegrationsView({
         })
         .catch(() => undefined);
       void requestRpc<unknown[]>({ type: 'config_entries/flow/progress' })
-        .then((flows) => setDiscoveredCount(Array.isArray(flows) ? flows.length : 0))
+        .then((flows) => setDiscoveredFlows(parseDiscoveredFlows(flows)))
         .catch(() => undefined);
       void requestRpc<{ issues?: RepairIssueRecord[] }>({ type: 'repairs/list_issues' })
         .then((res) => setIssues(Array.isArray(res?.issues) ? res.issues : []))
@@ -161,42 +169,26 @@ export function GpuiIntegrationsView({
     [filter, groups, issues, query],
   );
 
+  const discoveredItems = useMemo(
+    () => buildGpuiDiscoveredItems(discoveredFlows, query, resolveTitle),
+    [discoveredFlows, query, resolveTitle],
+  );
+
   const filterTabs = useMemo<PortableIntegrationFilterTab[]>(() => {
-    const counts = countIntegrationFilters(entries, discoveredCount, issues);
+    const counts = countIntegrationFilters(entries, discoveredItems.length, issues);
     return [
       { id: 'all', label: 'All', count: counts.all },
+      { id: 'discovered', label: 'Discovered', count: counts.discovered },
       { id: 'loaded', label: 'Connected', count: counts.loaded },
       { id: 'issues', label: 'Needs attention', count: counts.issues },
       { id: 'disabled', label: 'Disabled', count: counts.disabled },
     ];
-  }, [discoveredCount, entries, issues]);
+  }, [discoveredItems.length, entries, issues]);
 
-  const cards = useMemo<PortableIntegrationCardItem[]>(() => {
-    return visibleGroups.map((group) => {
-      const meta = metaByDomain.get(group.domain);
-      const hasAttention = group.entries.some((entry) => isIntegrationEntryIssue(entry, issues));
-      const hasUpdate = Boolean(
-        updates?.items.some(
-          (item) => item.updateAvailable && integrationFamilyKey(item.domain) === group.domain,
-        ),
-      );
-      const first = group.entries[0]?.title ?? '';
-      const second = group.entries[1]?.title ?? '';
-      return {
-        domain: group.domain,
-        displayName: group.name,
-        summary: `${group.entries.length} ${group.entries.length === 1 ? 'account' : 'accounts'}`,
-        firstEntryTitle: first,
-        secondEntryTitle: second,
-        extraEntries: Math.max(0, group.entries.length - 2),
-        entityCount: meta?.entityCount ?? 0,
-        hasAttention,
-        attentionLabel: 'Attention',
-        hasUpdate,
-        allDisabled: group.entries.every((entry) => Boolean(entry.disabled_by)),
-      };
-    });
-  }, [issues, metaByDomain, updates?.items, visibleGroups]);
+  const cards = useMemo(
+    () => buildGpuiIntegrationCards(visibleGroups, metaByDomain, issues, updates),
+    [issues, metaByDomain, updates, visibleGroups],
+  );
 
   const activeRepairCount = issues.filter((item) => !item.ignored).length;
   const availableUpdateCount = updates?.availableCount ?? 0;
@@ -332,6 +324,37 @@ export function GpuiIntegrationsView({
     );
   }
 
+  const handleInstallUpdate = (item: UnifiedUpdateRecord) => {
+    if (demo) {
+      setUpdates((prev) => applyDemoUpdateInstall(prev, item));
+      setNotice(`Updated ${item.title} to ${item.latestVersion}.`);
+      return;
+    }
+    if (!requestRpc) return;
+    setInstallingId(item.id);
+    void requestRpc({ type: 'haus/updates/install', update_id: item.id })
+      .then(() => load())
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Install failed.'))
+      .finally(() => setInstallingId(null));
+  };
+
+  const handleIgnoreDiscovered = (item: PortableDiscoveredFlow) => {
+    if (demo) {
+      setDiscoveredFlows((prev) => prev.filter((flow) => flow.flow_id !== item.flowId));
+      setNotice(`Ignored ${item.deviceLabel}.`);
+      return;
+    }
+    if (!requestRpc) return;
+    setBusy(true);
+    void requestRpc({ type: 'config_entries/ignore_flow', flow_id: item.flowId })
+      .then(() => {
+        setNotice('Discovery ignored.');
+        return load();
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not ignore.'))
+      .finally(() => setBusy(false));
+  };
+
   if (subView === 'updates') {
     return (
       <UpdatesPanelView
@@ -352,32 +375,7 @@ export function GpuiIntegrationsView({
             .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Check failed.'))
             .finally(() => setCheckingUpdates(false));
         }}
-        onInstall={(item: UnifiedUpdateRecord) => {
-          if (demo) {
-            setUpdates((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    availableCount: Math.max(0, prev.availableCount - 1),
-                    items: prev.items.map((u) =>
-                      u.id === item.id
-                        ? { ...u, updateAvailable: false, installedVersion: u.latestVersion }
-                        : u,
-                    ),
-                  }
-                : null,
-            );
-            return;
-          }
-          if (!requestRpc) return;
-          setInstallingId(item.id);
-          void requestRpc({ type: 'haus/updates/install', update_id: item.id })
-            .then(() => load())
-            .catch((err: unknown) =>
-              setError(err instanceof Error ? err.message : 'Install failed.'),
-            )
-            .finally(() => setInstallingId(null));
-        }}
+        onInstall={handleInstallUpdate}
         onInstallAll={(items) => {
           const targets = filterUpdates(items, 'available');
           if (!targets.length || demo || !requestRpc) return;
@@ -393,6 +391,7 @@ export function GpuiIntegrationsView({
     );
   }
 
+  const canManage = Boolean(demo || snapshot.user.is_admin);
   const canImportHa = Boolean(demo || (snapshot.user.is_admin && requestRpc));
 
   return (
@@ -403,19 +402,41 @@ export function GpuiIntegrationsView({
         filter={filter}
         filters={filterTabs}
         cards={cards}
-        discoveredCount={discoveredCount}
+        discoveredItems={discoveredItems}
+        discoveredCount={discoveredItems.length}
+        issues={issues}
+        updates={updates}
         repairCount={activeRepairCount}
         updateCount={availableUpdateCount}
+        canManage={canManage}
         loading={loading}
+        busy={busy}
+        installingUpdateId={installingId}
         error={error || undefined}
         notice={notice || undefined}
+        formatDomain={resolveTitle}
         onQueryChange={setQuery}
         onFilterChange={setFilter}
         onRefresh={() => void load()}
         onOpenRepairs={() => setSubView('repairs')}
         onOpenUpdates={() => setSubView('updates')}
+        onInstallUpdate={handleInstallUpdate}
         onOpenHacs={hasHacs ? () => setSubView('hacs') : undefined}
         onImportHa={canImportHa ? () => setHaImportOpen(true) : undefined}
+        onConfigureDiscoveredItem={
+          onAddDevice
+            ? (item) =>
+                onAddDevice({
+                  mode: 'flow',
+                  target: {
+                    flowId: item.flowId,
+                    domain: item.handler,
+                    title: item.integrationTitle,
+                  },
+                })
+            : undefined
+        }
+        onIgnoreDiscoveredItem={handleIgnoreDiscovered}
         onConfigureDiscovered={onAddDevice ? () => onAddDevice({ mode: 'picker' }) : undefined}
         onAddDevice={onAddDevice ? () => onAddDevice({ mode: 'picker' }) : undefined}
         onSelectDomain={(domain) => {
@@ -440,6 +461,8 @@ export function GpuiIntegrationsView({
       )}
       {selectedGroup && (
         <IntegrationDetailsModal
+          domain={selectedGroup.domain}
+          iconKind={runtimeIconKind(selectedMeta?.runtimeType)}
           title={selectedGroup.name}
           runtimeLabel={formatRuntimeLabel(selectedMeta?.runtimeType)}
           iotClassLabel={formatIotClass(selectedMeta?.iotClass)}

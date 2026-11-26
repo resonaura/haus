@@ -16,6 +16,7 @@ import type { RegistryController } from '@haus/ha/ui/registry';
 import type { Preferences } from '@haus/ha/view/preferences';
 import type { HausAccessory } from '@haus/ha/view/types';
 import {
+  DeviceBrandIcon,
   DeviceDetailTabs,
   DeviceDetailsTab,
   DeviceHistoryPanel,
@@ -244,9 +245,12 @@ export function DeviceDetailsModal({
   const controlsContent = (
     <Stack gapPx={12}>
       <Row justify="between" align="center">
-        <Text tone="muted" size={12}>
-          State
-        </Text>
+        <Row gapPx={8} align="center">
+          <DeviceBrandIcon device={device.deviceIcon} size={17} color={device.accent} />
+          <Text tone="muted" size={12}>
+            State
+          </Text>
+        </Row>
         <Text size={12} weight={500}>
           {device.state}
         </Text>

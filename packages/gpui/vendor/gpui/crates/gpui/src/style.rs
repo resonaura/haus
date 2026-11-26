@@ -306,6 +306,9 @@ pub struct Style {
     /// Draw this element and its subtree offscreen, and put the result through these effects
     pub filter: LayerFilter,
 
+    /// Optional smooth alpha-fade scroll shadow applied to the inner content of a scroll container.
+    pub scroll_fade: Option<ScrollFadeStyle>,
+
     /// A line drawn outside the border box, like CSS `outline`. It takes no
     /// layout space, so showing it (for example on focus) moves nothing.
     pub outline: Option<Outline>,
@@ -462,6 +465,23 @@ pub enum TextAlign {
     Right,
 }
 
+/// Configuration for smooth alpha-fade scroll shadow masks on scrollable containers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ScrollFadeStyle {
+    /// Maximum fade extent from each active edge, in logical pixels.
+    pub size: Pixels,
+    /// Whether the top edge fades when scrollable content extends upward.
+    pub top: bool,
+    /// Whether the right edge fades when scrollable content extends rightward.
+    pub right: bool,
+    /// Whether the bottom edge fades when scrollable content extends downward.
+    pub bottom: bool,
+    /// Whether the left edge fades when scrollable content extends leftward.
+    pub left: bool,
+    /// Smooth transition duration in milliseconds (`0` for immediate updates).
+    pub transition_ms: u32,
+}
+
 /// Effects applied to an element and its subtree as a whole, the way CSS filters work.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LayerFilter {
@@ -493,6 +513,11 @@ pub struct LayerFilter {
     /// Where the scale, rotation, and skew are centered as a fraction of the layer's own bounds:
     /// `(0, 0)` is its top left corner, `(1, 1)` its bottom right. Defaults to the centre.
     pub scale_origin: Option<Point<f32>>,
+    /// Optional rounded corner radii for masking the layer's content (e.g. `overflow: hidden`).
+    #[serde(skip)]
+    pub clip_radii: Option<Corners<Pixels>>,
+    /// Continuous superellipse corner smoothing (`0.0..=1.0`) for `clip_radii`.
+    pub clip_smoothing: f32,
 }
 
 impl LayerFilter {
@@ -512,6 +537,12 @@ impl LayerFilter {
             && self
                 .translate
                 .is_none_or(|translate| translate == Point::default())
+            && self.clip_radii.is_none_or(|radii| {
+                radii.top_left.0 <= 0.
+                    && radii.top_right.0 <= 0.
+                    && radii.bottom_right.0 <= 0.
+                    && radii.bottom_left.0 <= 0.
+            })
     }
 
     /// Resolves the effective `(scale_x, scale_y)` factors, combining uniform `scale` with
@@ -777,6 +808,47 @@ impl Style {
         }
     }
 
+    /// Computes the inner padding-box clip bounds, rounded corner radii, and corner smoothing
+    /// when this element clips overflowing children (`overflow: hidden | scroll`) and has rounded
+    /// corners. Returns `None` when overflow is visible or all inner corner radii are zero.
+    pub fn overflow_clip_bounds_and_radii(
+        &self,
+        bounds: Bounds<Pixels>,
+        rem_size: Pixels,
+    ) -> Option<(Bounds<Pixels>, Corners<Pixels>, f32)> {
+        let clip_bounds = self.overflow_mask(bounds, rem_size)?.bounds;
+        if clip_bounds.is_empty() {
+            return None;
+        }
+        let outer = self
+            .corner_radii
+            .to_pixels(rem_size)
+            .clamp_radii_for_quad_size(bounds.size);
+        let has_border = self
+            .border_color
+            .is_some_and(|color| !color.is_transparent());
+        let border = if has_border {
+            self.border_widths.to_pixels(rem_size)
+        } else {
+            Edges::default()
+        };
+        let inner = Corners {
+            top_left: (outer.top_left - border.top.max(border.left)).max(px(0.)),
+            top_right: (outer.top_right - border.top.max(border.right)).max(px(0.)),
+            bottom_right: (outer.bottom_right - border.bottom.max(border.right)).max(px(0.)),
+            bottom_left: (outer.bottom_left - border.bottom.max(border.left)).max(px(0.)),
+        }
+        .clamp_radii_for_quad_size(clip_bounds.size);
+        if inner.top_left.0 <= 0.
+            && inner.top_right.0 <= 0.
+            && inner.bottom_right.0 <= 0.
+            && inner.bottom_left.0 <= 0.
+        {
+            return None;
+        }
+        Some((clip_bounds, inner, self.corner_smoothing.clamp(0., 1.)))
+    }
+
     /// Paints the background of an element styled with this style.
     pub fn paint(
         &self,
@@ -879,11 +951,13 @@ impl Style {
             shadow_margin.max(outline_margin)
         };
 
-        let visuals_visible = debug_outline
-            || !bounds
-                .dilate(visual_margin)
-                .intersect(&window.content_mask().bounds)
-                .is_empty();
+        let visuals_visible = window.element_opacity() > 0.0
+            && (debug_outline
+                || window.has_paint_transform()
+                || !bounds
+                    .dilate(visual_margin)
+                    .intersect(&window.content_mask().bounds)
+                    .is_empty());
 
         if !visuals_visible {
             continuation(window, cx);
@@ -1044,6 +1118,7 @@ impl Default for Style {
             box_shadow: Default::default(),
             backdrop_blur: None,
             filter: LayerFilter::default(),
+            scroll_fade: None,
             outline: None,
             text: TextStyleRefinement::default(),
             mouse_cursor: None,

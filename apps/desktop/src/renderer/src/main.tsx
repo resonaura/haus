@@ -12,9 +12,25 @@ import { HausUiProvider } from '@haus/ui';
 import { App } from './app/App';
 import { WindowControls } from './app/shell/WindowControls';
 import { AppErrorBoundary, RendererReady } from './app/AppErrorBoundary';
+import { useElectronBrandIconPort } from './components/brand/electron-port';
 import { failureReport } from '../../shared/recovery';
 import './styles/vendor.css';
 import './styles/index.scss';
+
+function ElectronUiRoot() {
+  const brandIcons = useElectronBrandIconPort();
+  return (
+    <HausUiProvider
+      mode="auto"
+      brandIcons={brandIcons}
+      portal={(node) => createPortal(node, document.fullscreenElement ?? document.body)}
+    >
+      <App />
+      <WindowControls />
+      <RendererReady />
+    </HausUiProvider>
+  );
+}
 
 const isElectron = Boolean(window.hausNative);
 const platform = navigator.platform.toLowerCase();
@@ -38,14 +54,7 @@ ReactDOM.createRoot(document.getElementById('root')!, {
 }).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <HausUiProvider
-        mode="auto"
-        portal={(node) => createPortal(node, document.fullscreenElement ?? document.body)}
-      >
-        <App />
-        <WindowControls />
-        <RendererReady />
-      </HausUiProvider>
+      <ElectronUiRoot />
     </AppErrorBoundary>
   </React.StrictMode>,
 );

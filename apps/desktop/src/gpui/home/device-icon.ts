@@ -1,70 +1,85 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { useMemo } from 'react';
+import { resolveIconStyle, sanitizeIconStyle } from '@haus/icons';
 import { securityIcon } from '@haus/ha/view/device-state';
+import { isScaleReading } from '@haus/ha/view/device-telemetry';
+import type { Preferences } from '@haus/ha/view/preferences';
 import type { HausAccessory } from '@haus/ha/view/types';
-import { DEVICE_ICONS, type UiIconName } from '@haus/ui/components';
+import { isKettle } from '@haus/ha/view/water-heater';
+import {
+  resolveDeviceFallbackIconName,
+  type BrandIconPort,
+  type DeviceBrandIconInput,
+  type UiIconName,
+} from '@haus/ui/components';
+import { createGpuiStandaloneBrandIconPort } from './brand-service.js';
 
-const SECURITY_ICONS: Readonly<Record<string, UiIconName>> = {
-  'door-open': 'door-open',
-  'door-closed': 'door-closed',
-  locked: 'lock-keyhole',
-  unlocked: 'lock-keyhole-open',
-  motion: 'radar',
-  clear: 'radar',
-  vibration: 'vibrate',
-  'vibration-clear': 'vibrate',
-  wet: 'droplets',
-  dry: 'droplet-off',
-  smoke: 'alarm-smoke',
-  fire: 'flame',
-  alert: 'shield-alert',
-  protected: 'shield-check',
-  disarmed: 'shield-off',
-  unknown: 'circle-help',
-};
-
-function networkIcon(deviceType?: string): UiIconName {
-  switch (deviceType) {
-    case 'network_switch':
-    case 'bridge':
-      return 'network';
-    case 'repeater':
-      return 'wifi';
-    case 'access_point':
-      return 'radio';
-    case 'modem':
-      return 'globe';
-    case 'firewall':
-      return 'shield';
-    case 'nas':
-      return 'hard-drive';
-    default:
-      return 'router';
-  }
+export function toDeviceBrandIconInput(accessory: HausAccessory): DeviceBrandIconInput {
+  return {
+    name: accessory.name,
+    primaryEntityId: accessory.primaryEntityId,
+    category: accessory.category,
+    manufacturer: accessory.manufacturer,
+    model: accessory.model,
+    deviceType: accessory.deviceType,
+    deviceClass:
+      typeof accessory.state.attributes.device_class === 'string'
+        ? accessory.state.attributes.device_class
+        : undefined,
+    powerStrip: Boolean(accessory.powerStrip),
+    buttonController: Boolean(accessory.buttonController),
+    physicalHub: Boolean(accessory.physicalHub),
+    securityIconKey: securityIcon(accessory.state) ?? undefined,
+    isScale: isScaleReading(accessory.state, {
+      id: accessory.deviceId ?? '',
+      name: accessory.name,
+      model: accessory.model,
+    }),
+    isKettle: accessory.primaryEntityId.startsWith('water_heater.') && isKettle(accessory),
+  };
 }
 
 export function resolveAccessoryIconName(accessory: HausAccessory): UiIconName {
-  const domain = accessory.primaryEntityId.split('.')[0];
-  let icon: UiIconName = DEVICE_ICONS[accessory.category] ?? 'circle-help';
-  if (accessory.category === 'network' && accessory.deviceType) {
-    icon = networkIcon(accessory.deviceType);
-  }
-  if (accessory.powerStrip) icon = 'circuit-board';
-  if (accessory.buttonController) icon = 'toggle-left';
-  if (accessory.physicalHub) icon = 'radio';
-  if (domain === 'camera') icon = 'camera';
-  if (domain === 'media_player' && accessory.state.attributes.device_class === 'tv') icon = 'tv';
-  if (domain === 'fan') icon = 'wind';
-  if (
-    (accessory.category === 'lights' || accessory.category === 'outlets') &&
-    accessory.name.toLowerCase().includes('lamp')
-  ) {
-    icon = 'lamp';
-  }
-  if (accessory.state.attributes.device_class === 'battery') icon = 'battery-medium';
-  const sec = securityIcon(accessory.state);
-  if (sec && SECURITY_ICONS[sec]) {
-    return SECURITY_ICONS[sec];
-  }
-  return icon;
+  return resolveDeviceFallbackIconName(toDeviceBrandIconInput(accessory));
+}
+
+const DEFAULT_GPUI_BRAND_PORT: BrandIconPort = createGpuiStandaloneBrandIconPort();
+
+/** Merges optional runtime brand resolvers with user icon-style preferences and local Skia fallback. */
+export function resolveGpuiBrandIconPort(
+  runtimePort: BrandIconPort | undefined,
+  preferences: Preferences,
+  dark: boolean,
+): BrandIconPort {
+  const iconStyle = resolveIconStyle(
+    sanitizeIconStyle({
+      appearance: preferences.iconAppearance,
+      variation: preferences.iconVariation,
+      tintColor: preferences.iconTintColor,
+    }),
+    dark,
+  );
+  return {
+    ...(runtimePort ?? DEFAULT_GPUI_BRAND_PORT),
+    iconStyle,
+  };
+}
+
+/** Memoized GPUIX `BrandIconPort` reacting cleanly to theme & icon-style preferences. */
+export function useGpuiBrandIconPort(
+  runtimePort: BrandIconPort | undefined,
+  preferences: Preferences,
+  dark: boolean,
+): BrandIconPort {
+  return useMemo(
+    () => resolveGpuiBrandIconPort(runtimePort, preferences, dark),
+    [
+      runtimePort,
+      preferences.iconAppearance,
+      preferences.iconVariation,
+      preferences.iconTintColor,
+      dark,
+    ],
+  );
 }

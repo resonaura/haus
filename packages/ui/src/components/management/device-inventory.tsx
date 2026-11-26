@@ -16,6 +16,7 @@ import {
 } from '../../primitives/index.js';
 import { UiIcon } from '../icon.js';
 import { DEVICE_ICONS, type UiIconName } from '../icons.js';
+import { DeviceBrandIcon, ManagementFilterBar, type DeviceBrandIconInput } from '../brand/index.js';
 
 export interface PortableInventoryRowItem {
   readonly id: string;
@@ -29,6 +30,7 @@ export interface PortableInventoryRowItem {
   readonly activeEntityCount: number;
   readonly entityCount: number;
   readonly selected: boolean;
+  readonly deviceIcon?: DeviceBrandIconInput;
 }
 
 export interface PortableInventoryFilterTab {
@@ -46,10 +48,18 @@ function categoryIcon(category: string): UiIconName {
 
 function statusColors(status: InventoryDeviceStatus) {
   if (status === 'available') {
-    return { dot: rgba(52, 211, 153, 1), bg: rgba(52, 211, 153, 0.12), border: rgba(52, 211, 153, 0.28) };
+    return {
+      dot: rgba(52, 211, 153, 1),
+      bg: rgba(52, 211, 153, 0.12),
+      border: rgba(52, 211, 153, 0.28),
+    };
   }
   if (status === 'unavailable' || status === 'unknown') {
-    return { dot: rgba(251, 191, 36, 1), bg: rgba(251, 191, 36, 0.12), border: rgba(251, 191, 36, 0.28) };
+    return {
+      dot: rgba(251, 191, 36, 1),
+      bg: rgba(251, 191, 36, 0.12),
+      border: rgba(251, 191, 36, 0.28),
+    };
   }
   return { dot: colorToken('textMuted'), bg: colorToken('surface'), border: colorToken('border') };
 }
@@ -175,7 +185,12 @@ export function DeviceInventoryView({
 
       {canManage && (
         <Row align="center" gapPx={10} wrap>
-          <HausButton id="inventory-toggle-select" variant="ghost" size="sm" onPress={onToggleSelecting}>
+          <HausButton
+            id="inventory-toggle-select"
+            variant="ghost"
+            size="sm"
+            onPress={onToggleSelecting}
+          >
             <UiIcon name="check-square" size={15} />
             <Text size={12.5}>{selecting ? 'Cancel selection' : 'Select devices'}</Text>
           </HausButton>
@@ -208,39 +223,12 @@ export function DeviceInventoryView({
         </Row>
       )}
 
-      <Row gapPx={8} wrap>
-        {filters.map((tab) => {
-          const active = activeFilter === tab.id;
-          return (
-            <Pressable
-              key={tab.id}
-              id={`inventory-filter-${tab.id}`}
-              ariaPressed={active}
-              onActivate={() => onFilterChange(tab.id)}
-              style={{
-                layout: {
-                  direction: 'row',
-                  alignItems: 'center',
-                  gap: px(7),
-                  padding: insets(6, 12),
-                },
-                material: new SolidMaterial(
-                  active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                ),
-                border: { width: 1, color: active ? colorToken('accent') : colorToken('border') },
-                corners: corners(999),
-              }}
-            >
-              <Text size={12} weight={active ? 600 : 500} tone={active ? 'primary' : 'muted'}>
-                {tab.label}
-              </Text>
-              <Text size={11} tone="muted">
-                {String(tab.count)}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </Row>
+      <ManagementFilterBar
+        idPrefix="inventory-filter"
+        tabs={filters}
+        activeId={activeFilter}
+        onChange={onFilterChange}
+      />
 
       <Stack
         gapPx={0}
@@ -259,16 +247,36 @@ export function DeviceInventoryView({
             material: new SolidMaterial(colorToken('surface')),
           }}
         >
-          <Text size={9.5} weight={600} tone="muted" style={{ layout: { flexGrow: 2.3, flexShrink: 1, width: px(0) } }}>
+          <Text
+            size={9.5}
+            weight={600}
+            tone="muted"
+            style={{ layout: { flexGrow: 2.3, flexShrink: 1, width: px(0) } }}
+          >
             DEVICE
           </Text>
-          <Text size={9.5} weight={600} tone="muted" style={{ layout: { flexGrow: 1, flexShrink: 1, width: px(0) } }}>
+          <Text
+            size={9.5}
+            weight={600}
+            tone="muted"
+            style={{ layout: { flexGrow: 1, flexShrink: 1, width: px(0) } }}
+          >
             ROOM
           </Text>
-          <Text size={9.5} weight={600} tone="muted" style={{ layout: { flexGrow: 1.15, flexShrink: 1, width: px(0) } }}>
+          <Text
+            size={9.5}
+            weight={600}
+            tone="muted"
+            style={{ layout: { flexGrow: 1.15, flexShrink: 1, width: px(0) } }}
+          >
             DATA STATUS
           </Text>
-          <Text size={9.5} weight={600} tone="muted" style={{ layout: { width: px(64), flexShrink: 0 } }}>
+          <Text
+            size={9.5}
+            weight={600}
+            tone="muted"
+            style={{ layout: { width: px(64), flexShrink: 0 } }}
+          >
             ENTITIES
           </Text>
           <Box style={{ layout: { width: px(32), flexShrink: 0 } }} />
@@ -308,9 +316,20 @@ export function DeviceInventoryView({
                 {selecting && (
                   <Box
                     style={{
-                      layout: { width: px(18), height: px(18), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-                      material: new SolidMaterial(item.selected ? colorToken('accent') : colorToken('surface')),
-                      border: { width: 1, color: item.selected ? colorToken('accent') : colorToken('border') },
+                      layout: {
+                        width: px(18),
+                        height: px(18),
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      },
+                      material: new SolidMaterial(
+                        item.selected ? colorToken('accent') : colorToken('surface'),
+                      ),
+                      border: {
+                        width: 1,
+                        color: item.selected ? colorToken('accent') : colorToken('border'),
+                      },
                       corners: corners(5),
                     }}
                   >
@@ -319,12 +338,26 @@ export function DeviceInventoryView({
                 )}
                 <Box
                   style={{
-                    layout: { width: px(36), height: px(36), alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+                    layout: {
+                      width: px(36),
+                      height: px(36),
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    },
                     material: new SolidMaterial(colorToken('surface')),
                     corners: corners(10),
                   }}
                 >
-                  <UiIcon name={categoryIcon(item.category)} size={19} />
+                  {item.deviceIcon ? (
+                    <DeviceBrandIcon
+                      device={item.deviceIcon}
+                      size={19}
+                      fallbackIconName={categoryIcon(item.category)}
+                    />
+                  ) : (
+                    <UiIcon name={categoryIcon(item.category)} size={19} />
+                  )}
                 </Box>
                 <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
                   <Text size={13} weight={600} style={{ typography: { maxLines: 1 } }}>
@@ -339,11 +372,22 @@ export function DeviceInventoryView({
                 </Stack>
               </Pressable>
 
-              <Text size={12} tone="muted" style={{ layout: { flexGrow: 1, flexShrink: 1, width: px(0) }, typography: { maxLines: 1 } }}>
+              <Text
+                size={12}
+                tone="muted"
+                style={{
+                  layout: { flexGrow: 1, flexShrink: 1, width: px(0) },
+                  typography: { maxLines: 1 },
+                }}
+              >
                 {item.roomName}
               </Text>
 
-              <Box style={{ layout: { flexGrow: 1.15, flexShrink: 1, width: px(0), alignItems: 'start' } }}>
+              <Box
+                style={{
+                  layout: { flexGrow: 1.15, flexShrink: 1, width: px(0), alignItems: 'start' },
+                }}
+              >
                 <Row
                   align="center"
                   gapPx={6}
@@ -354,14 +398,25 @@ export function DeviceInventoryView({
                     corners: corners(999),
                   }}
                 >
-                  <Box style={{ layout: { width: px(6), height: px(6) }, material: new SolidMaterial(pill.dot), corners: corners(999) }} />
+                  <Box
+                    style={{
+                      layout: { width: px(6), height: px(6) },
+                      material: new SolidMaterial(pill.dot),
+                      corners: corners(999),
+                    }}
+                  />
                   <Text size={10.5} weight={500}>
                     {item.statusLabel}
                   </Text>
                 </Row>
               </Box>
 
-              <Text size={12} mono tone="muted" style={{ layout: { width: px(64), flexShrink: 0 } }}>
+              <Text
+                size={12}
+                mono
+                tone="muted"
+                style={{ layout: { width: px(64), flexShrink: 0 } }}
+              >
                 {`${item.activeEntityCount} / ${item.entityCount}`}
               </Text>
 
@@ -380,7 +435,11 @@ export function DeviceInventoryView({
         })}
 
         {!items.length && (
-          <Stack align="center" gapPx={8} style={{ layout: { width: pct(100), padding: insets(32, 20) } }}>
+          <Stack
+            align="center"
+            gapPx={8}
+            style={{ layout: { width: pct(100), padding: insets(32, 20) } }}
+          >
             <UiIcon name="search" size={26} />
             <Heading level={3} size={16} weight={600}>
               No devices match
@@ -388,7 +447,12 @@ export function DeviceInventoryView({
             <Text size={12.5} tone="muted">
               Try another name, room or filter.
             </Text>
-            <HausButton id="inventory-clear-filters" variant="secondary" size="sm" onPress={onClearFilters}>
+            <HausButton
+              id="inventory-clear-filters"
+              variant="secondary"
+              size="sm"
+              onPress={onClearFilters}
+            >
               <Text size={12}>Clear filters</Text>
             </HausButton>
           </Stack>

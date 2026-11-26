@@ -330,8 +330,22 @@ impl CustomElement for AnchoredElement {
         if !declares_fill {
             content = content.bg(gpui::rgb(0x1A1A1A));
         }
-        if self.occlude {
-            content = content.occlude();
+        let pointer_events_none = ctx
+            .style
+            .is_some_and(|style| style.pointer_events.as_deref() == Some("none"));
+        let hidden = ctx
+            .style
+            .is_some_and(|style| style.visibility.as_deref() == Some("hidden"));
+        if !pointer_events_none && !hidden {
+            let style_occlusion = ctx
+                .style
+                .map(crate::style::layer_occlusion)
+                .unwrap_or(crate::style::LayerOcclusion::None);
+            if self.occlude || style_occlusion == crate::style::LayerOcclusion::BlockMouse {
+                content = content.occlude();
+            } else if style_occlusion == crate::style::LayerOcclusion::BlockMouseExceptScroll {
+                content = content.block_mouse_except_scroll();
+            }
         }
         for child in ctx.children {
             content = content.child(child);

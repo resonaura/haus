@@ -145,6 +145,7 @@ export function CameraModalView({
                 width: pct(100),
                 height: pct(100),
               },
+              pointerEvents: 'auto',
             }}
           />
         )}

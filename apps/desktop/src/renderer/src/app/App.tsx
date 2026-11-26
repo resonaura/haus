@@ -30,7 +30,15 @@ import { isEntityActive } from '../model/device-appearance';
 import { AutomationsPage } from '../features/automations/AutomationsPage';
 import { useModalMaterial } from '../hooks/useModalMaterial';
 import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box, HausButton, HausScrollArea, Heading, Pressable, Text } from '@haus/ui';
+import {
+  Box,
+  HausButton,
+  HausScrollArea,
+  Heading,
+  Pressable,
+  SCROLL_SHADOW_PRESETS,
+  Text,
+} from '@haus/ui';
 import {
   Archive,
   ArrowLeft,
@@ -571,10 +579,11 @@ export function App() {
         )}
         <HausScrollArea
           hidden={haus.homeState !== 'ready'}
-          isEnabled={(!isHomeOverview || isServerDetail) && !camera}
+          isEnabled={!camera}
           className="main-scroll"
           orientation="vertical"
-          size={isHomeOverview && !isServerDetail ? 0 : 36}
+          size={SCROLL_SHADOW_PRESETS.main}
+          edges={isHomeOverview && !isServerDetail ? ['bottom'] : ['top', 'bottom']}
           ref={scrollRef}
         >
           <Box

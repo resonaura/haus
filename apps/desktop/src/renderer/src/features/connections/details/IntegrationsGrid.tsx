@@ -6,8 +6,20 @@
  */
 
 import { memo, useMemo } from 'react';
-import { Box, HausButton, Heading, Text } from '@haus/ui';
-import { ArrowUpCircle, Cable, ChevronRight, Plus } from 'lucide-react';
+import {
+  Box,
+  HausButton,
+  insets,
+  ManagementEmptyCard,
+  ManagementGlassCard,
+  ManagementStatusPill,
+  pct,
+  px,
+  Row,
+  Stack,
+  Text,
+} from '@haus/ui';
+import { ArrowUpCircle, ChevronRight, Plus } from 'lucide-react';
 import { BrandIcon, type BrandIconProps } from '../../../components/brand/BrandIcon';
 import { type FlowProgress, type IntegrationEntry } from '../../../ha/management';
 import type { Device, Snapshot } from '../../../model';
@@ -78,56 +90,99 @@ const IntegrationCard = memo(function IntegrationCard({
   const hasUpdate = Boolean(card.domainUpdate);
 
   return (
-    <Box
-      semantic="article"
-      className="integration-card"
-      dataAttrs={{ attention: card.hasAttention || undefined }}
+    <ManagementGlassCard
+      radius={22}
+      padding={insets(18)}
+      interactive
+      attention={card.hasAttention}
+      style={{
+        layout: {
+          width: pct(100),
+          minHeight: px(164),
+          justifyContent: 'between',
+          gap: px(14),
+        },
+      }}
     >
-      <Box className="integration-card-head">
-        <Text className="integration-logo">
-          <BrandIcon kind={card.iconKind} id={card.domain} hint={iconHint} />
-        </Text>
-        <Box className="integration-heading">
-          <Heading level={3}>{card.displayName}</Heading>
-          <Text semantic="p">{card.summary}</Text>
-        </Box>
-        {card.hasAttention && <Text className="attention-pill">{card.attentionLabel}</Text>}
-        {!card.hasAttention && hasUpdate && <Text className="update-pill">Update</Text>}
-        {!card.hasAttention && !hasUpdate && card.allDisabled && (
-          <Text className="status-badge">Disabled</Text>
-        )}
-      </Box>
+      <Row align="start" justify="between" gapPx={10} style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+          <BrandIcon kind={card.iconKind} id={card.domain} size={44} hint={iconHint} />
+          <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            <Text
+              size={14.5}
+              weight={600}
+              style={{ typography: { size: 14.5, weight: 600, maxLines: 1, truncate: true } }}
+            >
+              {card.displayName}
+            </Text>
+            <Text
+              size={12}
+              tone="muted"
+              style={{ typography: { size: 12, maxLines: 1, truncate: true } }}
+            >
+              {card.summary}
+            </Text>
+          </Stack>
+        </Row>
+        {card.hasAttention ? (
+          <ManagementStatusPill label={card.attentionLabel} tone="warning" />
+        ) : hasUpdate ? (
+          <ManagementStatusPill label="Update" tone="accent" />
+        ) : card.allDisabled ? (
+          <ManagementStatusPill label="Disabled" tone="neutral" />
+        ) : null}
+      </Row>
 
-      <Box className="integration-entry-summary">
-        {card.firstEntryTitle && <Text>{card.firstEntryTitle}</Text>}
-        {card.secondEntryTitle && <Text>{card.secondEntryTitle}</Text>}
-        {card.extraEntries > 0 && <Text semantic="small">+{card.extraEntries} more</Text>}
-        {card.entityCount > 0 && (
-          <Text semantic="small">
-            {card.entityCount} {card.entityCount === 1 ? 'entity' : 'entities'}
+      <Stack gapPx={3} style={{ layout: { width: pct(100) } }}>
+        {card.firstEntryTitle && (
+          <Text
+            size={12.5}
+            tone="muted"
+            style={{ typography: { size: 12.5, maxLines: 1, truncate: true } }}
+          >
+            {card.firstEntryTitle}
           </Text>
         )}
-      </Box>
-
-      <Box className="integration-manage">
-        {card.domainUpdate && admin && onInstallUpdate && (
-          <HausButton
-            size="sm"
-            className="flow-next-pill"
-            isPending={updatingThis}
-            isDisabled={anyUpdating || card.domainUpdate.compatibility === 'incompatible'}
-            onPress={() => void onInstallUpdate(card.domainUpdate!)}
+        {card.secondEntryTitle && (
+          <Text
+            size={12}
+            tone="muted"
+            style={{ typography: { size: 12, maxLines: 1, truncate: true } }}
           >
-            <ArrowUpCircle size={14} />
-            {updatingThis ? 'Updating…' : `Update (${card.domainUpdate.latestVersion})`}
-          </HausButton>
+            {card.secondEntryTitle}
+          </Text>
         )}
-        <HausButton variant="secondary" onPress={() => onSelect(card.domain)}>
-          Manage
-          <ChevronRight size={16} />
-        </HausButton>
-      </Box>
-    </Box>
+        {card.extraEntries > 0 && (
+          <Text size={11} tone="muted">{`+${card.extraEntries} more`}</Text>
+        )}
+      </Stack>
+
+      <Row align="center" justify="between" gapPx={8} style={{ layout: { width: pct(100) } }}>
+        <Text size={11.5} tone="muted">
+          {card.entityCount > 0
+            ? `${card.entityCount} ${card.entityCount === 1 ? 'entity' : 'entities'}`
+            : card.domain}
+        </Text>
+        <Row align="center" gapPx={8}>
+          {card.domainUpdate && admin && onInstallUpdate && (
+            <HausButton
+              size="sm"
+              className="flow-next-pill"
+              isPending={updatingThis}
+              isDisabled={anyUpdating || card.domainUpdate.compatibility === 'incompatible'}
+              onPress={() => void onInstallUpdate(card.domainUpdate!)}
+            >
+              <ArrowUpCircle size={14} />
+              {updatingThis ? 'Updating…' : `Update (${card.domainUpdate.latestVersion})`}
+            </HausButton>
+          )}
+          <HausButton variant="secondary" size="sm" onPress={() => onSelect(card.domain)}>
+            Manage
+            <ChevronRight size={15} />
+          </HausButton>
+        </Row>
+      </Row>
+    </ManagementGlassCard>
   );
 });
 
@@ -271,27 +326,29 @@ export const IntegrationsGrid = memo(function IntegrationsGrid({
 
   if (groups.length === 0) {
     return (
-      <Box className="management-empty">
-        <Cable size={34} />
-        <Heading level={3}>
-          {error
+      <ManagementEmptyCard
+        icon={search ? 'search' : 'cable'}
+        title={
+          error
             ? 'Could not load integrations'
             : search
               ? 'No matching integrations'
-              : 'No integrations configured'}
-        </Heading>
-        <Text semantic="p">
-          {search
+              : 'No integrations configured'
+        }
+        subtitle={
+          search
             ? 'Clear the filter to see all connected integrations.'
-            : 'Add an integration, bridge plugin, or smart home service to connect devices.'}
-        </Text>
-        {!search && admin && (
-          <HausButton onPress={() => onFlow({})}>
-            <Plus size={15} />
-            Add integration
-          </HausButton>
-        )}
-      </Box>
+            : 'Add an integration, bridge plugin, or smart home service to connect devices.'
+        }
+        action={
+          !search && admin ? (
+            <HausButton onPress={() => onFlow({})}>
+              <Plus size={15} />
+              Add integration
+            </HausButton>
+          ) : undefined
+        }
+      />
     );
   }
 

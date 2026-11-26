@@ -1607,10 +1607,11 @@ struct Mask {
     fade_bottom: f32,
     fade_left: f32,
     fade_right: f32,
+    clip_radii: Corners,
+    clip_smoothing: f32,
     transform_flags: u32,
     gaussian_sigma: f32,
     _pad0: u32,
-    _pad1: u32,
 }
 
 @fragment
@@ -1743,6 +1744,18 @@ fn mask_coverage(mask: Mask, destination_point: vec2<f32>, source_point: vec2<f3
     if (mask.fade_right > 0.0) {
         let right = mask.fade_bounds.origin.x + mask.fade_bounds.size.x - source_point.x;
         fade = min(fade, smoothstep(0.0, mask.fade_right, right));
+    }
+    if (mask.clip_radii.top_left > 0.0 ||
+        mask.clip_radii.top_right > 0.0 ||
+        mask.clip_radii.bottom_right > 0.0 ||
+        mask.clip_radii.bottom_left > 0.0) {
+        let corner_sdf = quad_sdf(
+            source_point,
+            mask.fade_bounds,
+            mask.clip_radii,
+            mask.clip_smoothing,
+        );
+        fade *= saturate(0.5 - corner_sdf);
     }
 
     return coverage * fade;

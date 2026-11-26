@@ -107,7 +107,11 @@
   "dependencies": {
     "@haus/core": "workspace:*",
     "@haus/gpui": "workspace:*",
+    "@haus/icons": "workspace:*",
+    "@napi-rs/canvas": "^1.2.1",
     "@tanstack/react-virtual": "^3.14.21",
+    "@xterm/headless": "^6.0.0",
+    "koffi": "^3.3.3",
     "lucide": "1.57.0"
   },
   "peerDependencies": {

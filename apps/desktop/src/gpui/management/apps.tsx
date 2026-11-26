@@ -375,9 +375,16 @@ export function GpuiAppsView({
         query={query}
         filter={filter}
         filters={filterTabs}
-        installedApps={visibleInstalled}
+        installedApps={visibleInstalled.map((app) => ({
+          ...app,
+          iconKind: isHaSession ? 'addon' : 'app',
+        }))}
         totalInstalledCount={installed.length}
-        catalogApps={visibleCatalog}
+        catalogApps={visibleCatalog.map((entry) => ({
+          ...entry,
+          iconKind: isHaSession ? 'addon' : 'app',
+        }))}
+        catalogTabLabel={isHaSession ? 'Add-on store' : 'Catalog'}
         loading={loading}
         busyAppId={busyAppId}
         error={error || undefined}
@@ -398,7 +405,15 @@ export function GpuiAppsView({
           setConfigSaved(false);
           setActiveAppId(app.id);
         }}
-        onInstallCatalogApp={installCatalogApp}
+        onQuickToggleApp={(app, action) => runAction(app, action)}
+        onInstallCatalogApp={(entry) => {
+          if (entry.installed) {
+            setTab('installed');
+            setActiveAppId(entry.id);
+            return;
+          }
+          installCatalogApp(entry);
+        }}
       />
       {activeApp && (
         <AppDetailsModal

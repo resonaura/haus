@@ -1,26 +1,32 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
 
-import {
-  formatAppCapabilityLabel,
-  type AppsFilterId,
-  type AppsTabId,
-  type CatalogAppRecord,
-  type InstalledAppRecord,
-} from '@haus/core/transport';
-import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
+import type { ReactNode } from 'react';
+import type { AppsFilterId, AppsTabId } from '@haus/core/transport';
+import { colorToken, corners, insets, pct, rgba } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
+import { HausButton, Pressable, Row, Stack, Text, useHausUi } from '../../primitives/index.js';
 import {
-  Box,
-  HausButton,
-  Heading,
-  Pressable,
-  Row,
-  Stack,
-  Text,
-  TextInput,
-} from '../../primitives/index.js';
+  ManagementEmptyCard,
+  ManagementFilterBar,
+  ManagementHeroBanner,
+  ManagementSearchBar,
+  type ManagementFilterTabItem,
+} from '../brand/index.js';
 import { DashboardGrid } from '../home.js';
 import { UiIcon } from '../icon.js';
+import {
+  CatalogAppGlassCard,
+  InstalledAppGlassCard,
+  type PortableCatalogAppItem,
+  type PortableInstalledAppItem,
+} from './apps/cards.js';
+
+export type { PortableCatalogAppItem, PortableInstalledAppItem };
 
 export interface PortableAppFilterTab {
   readonly id: AppsFilterId;
@@ -28,6 +34,10 @@ export interface PortableAppFilterTab {
   readonly count: number;
 }
 
+/**
+ * Shared Electron & GPUIX Apps / Add-ons workspace with refined monochrome glass
+ * cards (`<GlassRim />`), `<BrandIcon />`, and full Installed + Catalog/Store views.
+ */
 export function AppsWorkspaceView({
   columns = 3,
   tab,
@@ -37,6 +47,14 @@ export function AppsWorkspaceView({
   installedApps,
   totalInstalledCount,
   catalogApps,
+  catalogTabLabel = 'Catalog',
+  installedHeroTitle = 'The services behind your home.',
+  catalogHeroTitle = 'More possibilities for your home.',
+  heroSubtitle = 'Install, configure and maintain local home services.',
+  catalogFilters,
+  catalogFilter,
+  onCatalogFilterChange,
+  extraHeroActions,
   loading,
   busyAppId,
   error,
@@ -48,6 +66,7 @@ export function AppsWorkspaceView({
   onRefresh,
   onOpenRepositories,
   onManageApp,
+  onQuickToggleApp,
   onInstallCatalogApp,
 }: {
   readonly columns?: number;
@@ -55,9 +74,17 @@ export function AppsWorkspaceView({
   readonly query: string;
   readonly filter: AppsFilterId;
   readonly filters: readonly PortableAppFilterTab[];
-  readonly installedApps: readonly InstalledAppRecord[];
+  readonly installedApps: readonly PortableInstalledAppItem[];
   readonly totalInstalledCount: number;
-  readonly catalogApps: readonly CatalogAppRecord[];
+  readonly catalogApps: readonly PortableCatalogAppItem[];
+  readonly catalogTabLabel?: string;
+  readonly installedHeroTitle?: string;
+  readonly catalogHeroTitle?: string;
+  readonly heroSubtitle?: string;
+  readonly catalogFilters?: readonly ManagementFilterTabItem[];
+  readonly catalogFilter?: string;
+  readonly onCatalogFilterChange?: (id: string) => void;
+  readonly extraHeroActions?: ReactNode;
   readonly loading?: boolean;
   readonly busyAppId?: string | null;
   readonly error?: string;
@@ -68,171 +95,136 @@ export function AppsWorkspaceView({
   readonly onFilterChange: (filter: AppsFilterId) => void;
   readonly onRefresh: () => void;
   readonly onOpenRepositories?: () => void;
-  readonly onManageApp: (app: InstalledAppRecord) => void;
-  readonly onInstallCatalogApp: (app: CatalogAppRecord) => void;
+  readonly onManageApp: (app: PortableInstalledAppItem) => void;
+  readonly onQuickToggleApp?: (app: PortableInstalledAppItem, action: 'start' | 'stop') => void;
+  readonly onInstallCatalogApp: (app: PortableCatalogAppItem) => void;
 }) {
+  const { theme } = useHausUi();
+  const dark = theme.mode === 'dark';
+  const activeTabBg = dark ? rgba(255, 255, 255, 0.14) : rgba(16, 16, 20, 0.09);
+  const activeTabBorder = dark ? rgba(255, 255, 255, 0.24) : rgba(16, 16, 20, 0.18);
+  const gridColumns = Math.max(1, Math.min(columns, 3));
+
   return (
-    <Stack gapPx={18} style={{ layout: { width: pct(100) } }}>
-      <Row
-        align="center"
-        justify="between"
-        gapPx={16}
-        wrap
-        style={{
-          layout: { width: pct(100), padding: insets(20) },
-          material: new SolidMaterial(colorToken('surfaceSecondary')),
-          border: { width: 1, color: colorToken('border') },
-          corners: corners(16),
-        }}
-      >
-        <Row align="center" gapPx={14} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
-          <Box
-            style={{
-              layout: {
-                width: px(42),
-                height: px(42),
-                alignItems: 'center',
-                justifyContent: 'center',
-              },
-              material: new SolidMaterial(colorToken('surface')),
-              border: { width: 1, color: colorToken('border') },
-              corners: corners(12),
-            }}
-          >
-            <UiIcon name="box" size={20} />
-          </Box>
-          <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-            <Text size={15} weight={600}>
-              {tab === 'catalog'
-                ? 'More possibilities for your home.'
-                : 'The services behind your home.'}
-            </Text>
-            <Text size={12.5} tone="muted">
-              Install, configure and maintain local home services.
-            </Text>
-          </Stack>
-        </Row>
-        <Row align="center" gapPx={8}>
-          <Pressable
-            id="apps-tab-installed"
-            ariaPressed={tab === 'installed'}
-            onActivate={() => onTabChange('installed')}
-            style={{
-              layout: { direction: 'row', alignItems: 'center', padding: insets(7, 13) },
-              material: new SolidMaterial(
-                tab === 'installed' ? colorToken('surfaceActive') : colorToken('surface'),
-              ),
-              border: {
-                width: 1,
-                color: tab === 'installed' ? colorToken('accent') : colorToken('border'),
-              },
-              corners: corners(999),
-            }}
-          >
-            <Text size={12} weight={tab === 'installed' ? 600 : 500}>
-              {`Installed (${totalInstalledCount})`}
-            </Text>
-          </Pressable>
-          <Pressable
-            id="apps-tab-catalog"
-            ariaPressed={tab === 'catalog'}
-            onActivate={() => onTabChange('catalog')}
-            style={{
-              layout: { direction: 'row', alignItems: 'center', padding: insets(7, 13) },
-              material: new SolidMaterial(
-                tab === 'catalog' ? colorToken('surfaceActive') : colorToken('surface'),
-              ),
-              border: {
-                width: 1,
-                color: tab === 'catalog' ? colorToken('accent') : colorToken('border'),
-              },
-              corners: corners(999),
-            }}
-          >
-            <Text size={12} weight={tab === 'catalog' ? 600 : 500}>
-              {`Catalog (${catalogApps.length})`}
-            </Text>
-          </Pressable>
-        </Row>
-      </Row>
-
-      <Row align="center" gapPx={10} wrap style={{ layout: { width: pct(100) } }}>
-        <Row
-          align="center"
-          gapPx={8}
-          style={{
-            layout: { flexGrow: 1, minWidth: px(200), minHeight: px(38), padding: insets(0, 12) },
-            material: new SolidMaterial(colorToken('surfaceSecondary')),
-            border: { width: 1, color: colorToken('border') },
-            corners: corners(12),
-          }}
-        >
-          <UiIcon name="search" size={16} />
-          <TextInput
-            id="apps-search"
-            ariaLabel="Search Apps"
-            placeholder={tab === 'catalog' ? 'Search App catalog…' : 'Search installed Apps…'}
-            value={query}
-            onChange={onQueryChange}
-            style={{
-              layout: { flexGrow: 1, minWidth: px(0), height: px(34) },
-              typography: { size: 13, color: colorToken('textPrimary') },
-            }}
-          />
-        </Row>
-        <HausButton variant="outline" size="sm" disabled={loading} onPress={onRefresh}>
-          <UiIcon name="refresh-cw" size={14} />
-          <Text size={12.5}>Refresh</Text>
-        </HausButton>
-        {canManage && onOpenRepositories && (
-          <HausButton
-            id="apps-open-repositories"
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            onPress={onOpenRepositories}
-          >
-            <UiIcon name="folder-git-2" size={14} />
-            <Text size={12.5}>Repositories</Text>
-          </HausButton>
-        )}
-      </Row>
-
-      {tab === 'installed' && (
-        <Row gapPx={8} wrap>
-          {filters.map((item) => {
-            const active = filter === item.id;
-            return (
+    <Stack gapPx={18} style={{ layout: { width: pct(100), flexShrink: 0 } }}>
+      <ManagementHeroBanner
+        icon="box"
+        title={tab === 'catalog' ? catalogHeroTitle : installedHeroTitle}
+        subtitle={heroSubtitle}
+        actions={
+          <>
+            <Row
+              align="center"
+              gapPx={4}
+              style={{
+                layout: { padding: insets(3) },
+                material: new SolidMaterial(colorToken('surface')),
+                border: { width: 1, color: colorToken('border') },
+                corners: corners(999),
+              }}
+            >
               <Pressable
-                key={item.id}
-                id={`apps-filter-${item.id}`}
-                ariaPressed={active}
-                onActivate={() => onFilterChange(item.id)}
+                id="apps-tab-installed"
+                ariaPressed={tab === 'installed'}
+                onActivate={() => onTabChange('installed')}
                 style={{
-                  layout: {
-                    direction: 'row',
-                    alignItems: 'center',
-                    gap: px(7),
-                    padding: insets(6, 12),
+                  layout: { direction: 'row', alignItems: 'center', padding: insets(6, 13) },
+                  material: new SolidMaterial(tab === 'installed' ? activeTabBg : rgba(0, 0, 0, 0)),
+                  border: {
+                    width: 1,
+                    color: tab === 'installed' ? activeTabBorder : rgba(0, 0, 0, 0),
                   },
-                  material: new SolidMaterial(
-                    active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                  ),
-                  border: { width: 1, color: active ? colorToken('accent') : colorToken('border') },
                   corners: corners(999),
+                  transitionMs: 160,
                 }}
               >
-                <Text size={12} weight={active ? 600 : 500} tone={active ? 'primary' : 'muted'}>
-                  {item.label}
-                </Text>
-                <Text size={11} tone="muted">
-                  {String(item.count)}
+                <Text
+                  size={12}
+                  weight={tab === 'installed' ? 600 : 500}
+                  tone={tab === 'installed' ? 'primary' : 'muted'}
+                >
+                  {`Installed (${totalInstalledCount})`}
                 </Text>
               </Pressable>
-            );
-          })}
-        </Row>
+              <Pressable
+                id="apps-tab-catalog"
+                ariaPressed={tab === 'catalog'}
+                onActivate={() => onTabChange('catalog')}
+                style={{
+                  layout: { direction: 'row', alignItems: 'center', padding: insets(6, 13) },
+                  material: new SolidMaterial(tab === 'catalog' ? activeTabBg : rgba(0, 0, 0, 0)),
+                  border: {
+                    width: 1,
+                    color: tab === 'catalog' ? activeTabBorder : rgba(0, 0, 0, 0),
+                  },
+                  corners: corners(999),
+                  transitionMs: 160,
+                }}
+              >
+                <Text
+                  size={12}
+                  weight={tab === 'catalog' ? 600 : 500}
+                  tone={tab === 'catalog' ? 'primary' : 'muted'}
+                >
+                  {`${catalogTabLabel} (${catalogApps.length})`}
+                </Text>
+              </Pressable>
+            </Row>
+            {extraHeroActions}
+          </>
+        }
+      />
+
+      <ManagementSearchBar
+        id="apps-search"
+        ariaLabel="Search Apps"
+        placeholder={
+          tab === 'catalog' ? `Search ${catalogTabLabel.toLowerCase()}…` : 'Search installed Apps…'
+        }
+        value={query}
+        onChange={onQueryChange}
+        trailing={
+          <Row align="center" gapPx={8}>
+            <HausButton variant="outline" size="sm" disabled={loading} onPress={onRefresh}>
+              <UiIcon name="refresh-cw" size={14} />
+              <Text size={12.5}>Refresh</Text>
+            </HausButton>
+            {canManage && onOpenRepositories && (
+              <HausButton
+                id="apps-open-repositories"
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onPress={onOpenRepositories}
+              >
+                <UiIcon name="folder-git-2" size={14} />
+                <Text size={12.5}>Repositories</Text>
+              </HausButton>
+            )}
+          </Row>
+        }
+      />
+
+      {tab === 'installed' && filters.length > 0 && (
+        <ManagementFilterBar
+          idPrefix="apps-filter"
+          tabs={filters}
+          activeId={filter}
+          onChange={onFilterChange}
+        />
       )}
+
+      {tab === 'catalog' &&
+        catalogFilters &&
+        catalogFilters.length > 0 &&
+        onCatalogFilterChange && (
+          <ManagementFilterBar
+            idPrefix="apps-catalog-filter"
+            tabs={catalogFilters}
+            activeId={catalogFilter ?? catalogFilters[0]!.id}
+            onChange={onCatalogFilterChange}
+          />
+        )}
 
       {notice && (
         <Text size={12} tone="muted">
@@ -247,147 +239,47 @@ export function AppsWorkspaceView({
 
       {tab === 'installed' ? (
         installedApps.length === 0 ? (
-          <Stack
-            align="center"
-            gapPx={8}
-            style={{
-              layout: { width: pct(100), padding: insets(36, 20) },
-              material: new SolidMaterial(colorToken('surfaceSecondary')),
-              border: { width: 1, color: colorToken('border') },
-              corners: corners(16),
-            }}
-          >
-            <UiIcon name="box" size={26} />
-            <Heading level={3} size={16} weight={600}>
-              No matching Apps
-            </Heading>
-            <Text size={12} tone="muted">
-              Try another search term or browse the Catalog.
-            </Text>
-          </Stack>
+          <ManagementEmptyCard
+            icon="box"
+            title="No matching Apps"
+            subtitle="Try another search term, clear filters, or browse the Catalog."
+            action={
+              <HausButton variant="secondary" size="sm" onPress={() => onTabChange('catalog')}>
+                <Text size={12.5}>{`Browse ${catalogTabLabel}`}</Text>
+                <UiIcon name="chevron-right" size={14} />
+              </HausButton>
+            }
+          />
         ) : (
-          <DashboardGrid columns={columns}>
-            {installedApps.map((app) => {
-              const running = app.available && app.state === 'running';
-              return (
-                <Stack
-                  key={app.id}
-                  id={`app-card-${app.id}`}
-                  justify="between"
-                  gapPx={12}
-                  style={{
-                    layout: { width: pct(100), minHeight: px(148), padding: insets(16) },
-                    material: new SolidMaterial(colorToken('surfaceSecondary')),
-                    border: { width: 1, color: colorToken('border') },
-                    corners: corners(16),
-                  }}
-                >
-                  <Row
-                    align="start"
-                    justify="between"
-                    gapPx={10}
-                    style={{ layout: { width: pct(100) } }}
-                  >
-                    <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                      <Text size={14.5} weight={600}>
-                        {app.name}
-                      </Text>
-                      <Text size={12} tone="muted">
-                        {formatAppCapabilityLabel(app)}
-                      </Text>
-                    </Stack>
-                    <Box
-                      style={{
-                        layout: { padding: insets(3, 9), flexShrink: 0 },
-                        material: new SolidMaterial(
-                          running ? rgba(52, 211, 153, 0.14) : colorToken('surface'),
-                        ),
-                        border: {
-                          width: 1,
-                          color: running ? rgba(52, 211, 153, 0.35) : colorToken('border'),
-                        },
-                        corners: corners(999),
-                      }}
-                    >
-                      <Text size={11}>{app.available ? app.state : 'Unavailable'}</Text>
-                    </Box>
-                  </Row>
-
-                  <Row align="center" justify="between" style={{ layout: { width: pct(100) } }}>
-                    <Text size={11.5} tone="muted">
-                      {app.version ? `v${app.version}` : app.externalId}
-                    </Text>
-                    <HausButton
-                      id={`app-manage-${app.id}`}
-                      variant="ghost"
-                      size="sm"
-                      onPress={() => onManageApp(app)}
-                    >
-                      <Text size={12.5}>Manage</Text>
-                      <UiIcon name="chevron-right" size={14} />
-                    </HausButton>
-                  </Row>
-                </Stack>
-              );
-            })}
+          <DashboardGrid columns={gridColumns}>
+            {installedApps.map((app) => (
+              <InstalledAppGlassCard
+                key={app.id}
+                app={app}
+                canManage={canManage}
+                busy={busyAppId === app.id}
+                onManage={onManageApp}
+                onQuickToggle={onQuickToggleApp}
+              />
+            ))}
           </DashboardGrid>
         )
+      ) : catalogApps.length === 0 ? (
+        <ManagementEmptyCard
+          icon="search"
+          title="No matching catalog items"
+          subtitle="Try another keyword or refresh your repositories."
+        />
       ) : (
-        <DashboardGrid columns={columns}>
+        <DashboardGrid columns={gridColumns}>
           {catalogApps.map((entry) => (
-            <Stack
+            <CatalogAppGlassCard
               key={entry.id}
-              id={`catalog-card-${entry.id}`}
-              justify="between"
-              gapPx={12}
-              style={{
-                layout: { width: pct(100), minHeight: px(148), padding: insets(16) },
-                material: new SolidMaterial(colorToken('surfaceSecondary')),
-                border: { width: 1, color: colorToken('border') },
-                corners: corners(16),
-              }}
-            >
-              <Stack gapPx={4}>
-                <Row align="center" justify="between" gapPx={8}>
-                  <Text size={14.5} weight={600}>
-                    {entry.name}
-                  </Text>
-                  <Text size={11} tone="muted">
-                    {`v${entry.latestVersion}`}
-                  </Text>
-                </Row>
-                {entry.description && (
-                  <Text size={12} tone="muted">
-                    {entry.description}
-                  </Text>
-                )}
-              </Stack>
-              <Row align="center" justify="between">
-                <Text size={11} tone="muted">
-                  {entry.verified ? 'Verified' : entry.category}
-                </Text>
-                {entry.installed ? (
-                  <Text size={12} tone="muted">
-                    Installed
-                  </Text>
-                ) : (
-                  <HausButton
-                    id={`catalog-install-${entry.id}`}
-                    variant="primary"
-                    size="sm"
-                    disabled={!canManage || busyAppId === entry.id}
-                    onPress={() => onInstallCatalogApp(entry)}
-                  >
-                    <Text
-                      size={12}
-                      style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
-                    >
-                      {busyAppId === entry.id ? 'Installing…' : 'Install'}
-                    </Text>
-                  </HausButton>
-                )}
-              </Row>
-            </Stack>
+              entry={entry}
+              canManage={canManage}
+              busy={busyAppId === entry.id}
+              onSelect={onInstallCatalogApp}
+            />
           ))}
         </DashboardGrid>
       )}

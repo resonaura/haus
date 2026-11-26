@@ -21,6 +21,7 @@ import {
   type ReactNativeElementDescriptor,
 } from '../renderers/react-native.js';
 import type { HausStyleSheet, StyleSlotMap } from '../styles/sheet.js';
+import type { BrandIconPort } from './brand-port.js';
 
 const DEFAULT_DARK_THEME = createHausUiTheme('dark');
 const DEFAULT_LIGHT_THEME = createHausUiTheme('light');
@@ -57,6 +58,7 @@ export interface HausUiContextValue extends RenderContext {
   readonly host: UiHostAdapter;
   readonly contentHost: UiContentHost;
   readonly portal?: (node: React.ReactNode) => React.ReactNode;
+  readonly brandIcons?: BrandIconPort;
   readonly domRenderer: ReactDomRenderer;
   readonly nativeRenderer: NativeSceneGraphRenderer;
   readonly reactNativeRenderer: ReactNativeRenderer;
@@ -139,9 +141,13 @@ export function HausUiThemeScope({
 export interface HausUiProviderProps {
   readonly mode?: ThemeMode | 'auto';
   readonly reducedTransparency?: boolean;
+  readonly viewport?: Partial<ViewportMetrics>;
+  readonly viewportWidth?: number;
+  readonly viewportHeight?: number;
   readonly host?: UiHostAdapter;
   readonly contentHost?: UiContentHost;
   readonly portal?: (node: React.ReactNode) => React.ReactNode;
+  readonly brandIcons?: BrandIconPort;
   readonly customShaders?: readonly ShaderPassDescriptor[];
   readonly children?: React.ReactNode;
 }
@@ -149,9 +155,13 @@ export interface HausUiProviderProps {
 export function HausUiProvider({
   mode = 'auto',
   reducedTransparency,
+  viewport: viewportOverride,
+  viewportWidth,
+  viewportHeight,
   host = DOM_HOST_ADAPTER,
   contentHost = host,
   portal,
+  brandIcons,
   customShaders,
   children,
 }: HausUiProviderProps): React.ReactElement {
@@ -198,8 +208,14 @@ export function HausUiProvider({
 
   const resolvedMode: ThemeMode = mode === 'auto' ? autoMode : mode;
   const effectiveViewport = React.useMemo<ViewportMetrics>(
-    () => (reducedTransparency === undefined ? viewport : { ...viewport, reducedTransparency }),
-    [reducedTransparency, viewport],
+    () => ({
+      ...viewport,
+      ...viewportOverride,
+      ...(viewportWidth !== undefined && viewportWidth > 0 ? { width: viewportWidth } : {}),
+      ...(viewportHeight !== undefined && viewportHeight > 0 ? { height: viewportHeight } : {}),
+      ...(reducedTransparency !== undefined ? { reducedTransparency } : {}),
+    }),
+    [reducedTransparency, viewport, viewportOverride, viewportWidth, viewportHeight],
   );
 
   const value = React.useMemo<HausUiContextValue>(() => {
@@ -210,13 +226,14 @@ export function HausUiProvider({
       host,
       contentHost,
       portal,
+      brandIcons,
       domRenderer: DOM_RENDERER,
       nativeRenderer: NATIVE_RENDERER,
       reactNativeRenderer: RN_RENDERER,
       compileToNativeIR: (node: UiNode) => NATIVE_RENDERER.render(node, ctx),
       compileToReactNative: (node: UiNode) => RN_RENDERER.render(node, ctx),
     };
-  }, [resolvedMode, effectiveViewport, shaderRegistry, host, contentHost, portal]);
+  }, [resolvedMode, effectiveViewport, shaderRegistry, host, contentHost, portal, brandIcons]);
 
   return (
     <HausUiContext.Provider value={value}>

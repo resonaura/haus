@@ -6,7 +6,18 @@
  */
 
 import { memo, useMemo } from 'react';
-import { Box, HausButton, Heading, Text } from '@haus/ui';
+import {
+  HausButton,
+  Heading,
+  insets,
+  ManagementGlassCard,
+  ManagementStatusPill,
+  pct,
+  px,
+  Row,
+  Stack,
+  Text,
+} from '@haus/ui';
 import { Check, ChevronRight, Download, Layers, Settings2 } from 'lucide-react';
 import { BrandIcon } from '../../components/brand/BrandIcon';
 import type { CatalogAppSummary } from './catalog-api';
@@ -52,56 +63,66 @@ export const CatalogAppCard = memo(function CatalogAppCard({
   const medal = formatStabilityMedal(entry.stabilityTier, entry.trustScore, entry.verified);
 
   return (
-    <Box semantic="article" className="addon-card">
-      {rank !== undefined && (
-        <Text className="vendor-driver-rank">{rank === 1 ? '#1 Top' : `#${rank}`}</Text>
-      )}
-      <Text className="addon-glyph">
-        <BrandIcon
-          kind={catalogIconKind(entry.runtimeType)}
-          id={brand.iconId || entry.packageName || entry.id}
-          size={44}
-          hint={hint}
-        />
-      </Text>
-      <Box className="addon-copy">
-        <Box>
-          <Heading level={3}>{entry.name}</Heading>
-          <Box className="native-app-badges">
-            <Text className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</Text>
-            <Text className="status-pill">{entry.runtimeType}</Text>
-            {entry.installed && (
-              <Text className="status-pill status-available">
-                {entry.updateAvailable ? 'Update available' : 'Installed'}
-              </Text>
-            )}
-          </Box>
-        </Box>
-        <Text semantic="p">{entry.description || entry.category}</Text>
-        <Text semantic="small">
-          {entry.packageName ? `${entry.packageName} · ` : ''}Version {entry.latestVersion}
-          {entry.author ? ` · ${entry.author}` : ''}
-        </Text>
-      </Box>
-      <Box className="addon-actions">
-        {entry.installed ? (
-          <HausButton variant="secondary" onPress={() => onManageApp(entry.id)}>
-            <Check size={16} />
-            Manage
-            <ChevronRight size={15} />
-          </HausButton>
-        ) : (
-          <HausButton
-            variant={admin ? 'primary' : 'secondary'}
-            onPress={() => onSelectEntry(entry)}
-          >
-            {rank !== undefined ? <Settings2 size={15} /> : admin ? <Download size={16} /> : null}
-            {rank !== undefined ? 'Configure separately' : admin ? 'Install' : 'Details'}
-            {!admin && rank === undefined ? <ChevronRight size={15} /> : null}
-          </HausButton>
-        )}
-      </Box>
-    </Box>
+    <ManagementGlassCard
+      radius={22}
+      padding={insets(16, 18)}
+      interactive
+      style={{ layout: { width: pct(100) } }}
+    >
+      <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
+          <BrandIcon
+            kind={catalogIconKind(entry.runtimeType)}
+            id={brand.iconId || entry.packageName || entry.id}
+            size={44}
+            hint={hint}
+          />
+          <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            <Row align="center" gapPx={7} wrap>
+              {rank !== undefined && (
+                <ManagementStatusPill label={rank === 1 ? '#1 Top' : `#${rank}`} tone="accent" />
+              )}
+              <Heading level={3} size={14.5} weight={600}>
+                {entry.name}
+              </Heading>
+              <ManagementStatusPill label={medal.label} tone="neutral" />
+              <ManagementStatusPill label={entry.runtimeType} tone="neutral" />
+              {entry.installed && (
+                <ManagementStatusPill
+                  label={entry.updateAvailable ? 'Update available' : 'Installed'}
+                  tone={entry.updateAvailable ? 'accent' : 'success'}
+                />
+              )}
+            </Row>
+            <Text size={12} tone="muted" style={{ typography: { size: 12, maxLines: 2 } }}>
+              {entry.description || entry.category}
+            </Text>
+            <Text size={11.5} tone="muted">
+              {`${entry.packageName ? `${entry.packageName} · ` : ''}Version ${entry.latestVersion}${entry.author ? ` · ${entry.author}` : ''}`}
+            </Text>
+          </Stack>
+        </Row>
+        <Row align="center" gapPx={8}>
+          {entry.installed ? (
+            <HausButton variant="secondary" size="sm" onPress={() => onManageApp(entry.id)}>
+              <Check size={15} />
+              Manage
+              <ChevronRight size={14} />
+            </HausButton>
+          ) : (
+            <HausButton
+              variant={admin ? 'primary' : 'secondary'}
+              size="sm"
+              onPress={() => onSelectEntry(entry)}
+            >
+              {rank !== undefined ? <Settings2 size={14} /> : admin ? <Download size={15} /> : null}
+              {rank !== undefined ? 'Configure separately' : admin ? 'Install' : 'Details'}
+              {!admin && rank === undefined ? <ChevronRight size={14} /> : null}
+            </HausButton>
+          )}
+        </Row>
+      </Row>
+    </ManagementGlassCard>
   );
 });
 
@@ -124,36 +145,43 @@ export const CatalogVendorGroupCard = memo(function CatalogVendorGroupCard({
   const runtimes = Array.from(new Set(group.items.map((i) => i.runtimeType))).join(' · ');
 
   return (
-    <Box semantic="article" className="addon-card vendor-group-addon-card">
-      <Text className="addon-glyph">
-        <BrandIcon kind="integration" id={group.iconId} size={44} hint={hint} />
-      </Text>
-      <Box className="addon-copy">
-        <Box>
-          <Heading level={3}>{group.vendorTitle}</Heading>
-          <Box className="native-app-badges">
-            <Text className="vendor-group-count-pill">
-              <Layers size={12} />
-              {group.items.length} items in group
+    <ManagementGlassCard
+      radius={22}
+      padding={insets(16, 18)}
+      interactive
+      style={{ layout: { width: pct(100) } }}
+    >
+      <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
+          <BrandIcon kind="integration" id={group.iconId} size={44} hint={hint} />
+          <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            <Row align="center" gapPx={7} wrap>
+              <Heading level={3} size={14.5} weight={600}>
+                {group.vendorTitle}
+              </Heading>
+              <ManagementStatusPill label={`${group.items.length} items in group`} tone="neutral" />
+              <ManagementStatusPill label={medal.label} tone="neutral" />
+              <ManagementStatusPill label={runtimes} tone="neutral" />
+              {group.installedCount > 0 && (
+                <ManagementStatusPill label={`${group.installedCount} installed`} tone="success" />
+              )}
+            </Row>
+            <Text size={12} tone="muted">
+              {group.whyGrouped}
             </Text>
-            <Text className={`stability-medal-pill is-${medal.tier}`}>{medal.label}</Text>
-            <Text className="status-pill">{runtimes}</Text>
-            {group.installedCount > 0 && (
-              <Text className="status-pill status-available">{group.installedCount} installed</Text>
-            )}
-          </Box>
-        </Box>
-        <Text semantic="p">{group.whyGrouped}</Text>
-        <Text semantic="small">Includes: {group.items.map((item) => item.name).join(' · ')}</Text>
-      </Box>
-      <Box className="addon-actions">
-        <HausButton variant="secondary" onPress={() => onOpenGroup(group)}>
+            <Text size={11.5} tone="muted">
+              {`Includes: ${group.items.map((item) => item.name).join(' · ')}`}
+            </Text>
+          </Stack>
+        </Row>
+        <HausButton variant="secondary" size="sm" onPress={() => onOpenGroup(group)}>
+          <Layers size={14} />
           {group.isCombinedHausGovee
             ? 'Combined & Separate Setup'
             : `Open Group (${group.items.length})`}
-          <ChevronRight size={15} />
+          <ChevronRight size={14} />
         </HausButton>
-      </Box>
-    </Box>
+      </Row>
+    </ManagementGlassCard>
   );
 });

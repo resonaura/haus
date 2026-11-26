@@ -89,15 +89,26 @@ export function DomVector({
   const mergedStyle = mergeSurfaceStyle(style, props.surfaceTokens);
 
   if (props.rawSvgMarkup !== undefined) {
+    const dimStyle: React.CSSProperties = {
+      ...(props.width !== undefined && mergedStyle.width === undefined
+        ? { width: typeof props.width === 'number' ? `${props.width}px` : props.width }
+        : {}),
+      ...(props.height !== undefined && mergedStyle.height === undefined
+        ? { height: typeof props.height === 'number' ? `${props.height}px` : props.height }
+        : {}),
+    };
     return (
       <span
         id={props.id}
         className={props.className}
-        style={
-          props.stroke
-            ? { color: props.stroke, display: 'inline-flex', ...mergedStyle }
-            : mergedStyle
-        }
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...(props.stroke ? { color: props.stroke } : {}),
+          ...dimStyle,
+          ...mergedStyle,
+        }}
         role={props.role}
         aria-label={props.ariaLabel}
         aria-hidden={props.ariaHidden}

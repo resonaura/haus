@@ -12,6 +12,13 @@ import type { Snapshot } from '@haus/ha/types';
 import { defaults, sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
 import { sharedPreferences } from '@haus/ha/view/settings/shared';
 import { PreferenceSync, type SharedDocument } from '@haus/ha/view/settings/sync';
+import type { BrandIconPort } from '@haus/ui/components';
+import { applyBrandIconDropShadow, createGpuiBrandIconPort } from '@haus/ui/gpui';
+import {
+  renderGpuiLocalBrandTile,
+  resolveGpuiLocalBrandSource,
+  resolveGpuiLocalBrandTile,
+} from './brand-service.js';
 import type { HomeAssistantConnection } from '../../main/connection.js';
 import { HausHelper } from '../../main/helper.js';
 import type { HubSessionManagerDependencies } from '../../main/hub-session.js';
@@ -259,4 +266,70 @@ export function mergeGpuiPreferencePatch(
   patch: Partial<Preferences> & Partial<ClientVisibilityPreferences>,
 ): Preferences {
   return sanitizePreferences({ ...current, ...patch });
+}
+
+export function createGpuiBrandIconsBridge(options: {
+  readonly sessionKind: () => 'haus-hub' | 'home-assistant';
+  readonly isConnected: () => boolean;
+  readonly hubConnection: HubConnection;
+  readonly haConnection?: HomeAssistantConnection;
+  readonly subscribeInvalidation: (listener: (revision?: string) => void) => () => void;
+}): BrandIconPort {
+  return createGpuiBrandIconPort({
+    resolveTile: async (kind, id, style, hint) => {
+      if (options.isConnected()) {
+        if (options.sessionKind() === 'haus-hub') {
+          const hubTile = await options.hubConnection.brandIconTile(kind, id, style, hint);
+          if (hubTile?.rendered && hubTile.dataUri) return hubTile;
+          if (hubTile?.dataUri) {
+            return resolveGpuiLocalBrandTile(kind, id, style, hint, async () => ({
+              dataUri: hubTile.dataUri ?? null,
+              isFallback: Boolean(hubTile.dataUri?.startsWith('data:image/svg+xml;')),
+            }));
+          }
+        } else if (options.haConnection) {
+          const haConn = options.haConnection;
+          return resolveGpuiLocalBrandTile(kind, id, style, hint, async () => {
+            const raw = await haConn.brandIcon(kind, id, false, hint);
+            return {
+              dataUri: raw,
+              isFallback: Boolean(raw?.startsWith('data:image/svg+xml;')),
+            };
+          });
+        }
+      }
+      return resolveGpuiLocalBrandTile(kind, id, style, hint);
+    },
+    resolveSource: async (kind, id, dark, hint) => {
+      if (options.isConnected()) {
+        const remote =
+          options.sessionKind() === 'home-assistant' && options.haConnection
+            ? await options.haConnection.brandIcon(kind, id, dark, hint)
+            : await options.hubConnection.brandIcon(kind, id, dark, hint);
+        if (remote) return remote;
+      }
+      return resolveGpuiLocalBrandSource(kind, id, dark, hint);
+    },
+    renderLocalTile: renderGpuiLocalBrandTile,
+    applyTileShadow: applyBrandIconDropShadow,
+    subscribeInvalidation: options.subscribeInvalidation,
+  });
+}
+
+export function createGpuiRuntimePorts(options: {
+  readonly sessionKind: () => 'haus-hub' | 'home-assistant';
+  readonly isConnected: () => boolean;
+  readonly request: <T = unknown>(message: Record<string, unknown>) => Promise<T>;
+  readonly hubConnection: HubConnection;
+  readonly haConnection?: HomeAssistantConnection;
+  readonly subscribeBrandInvalidation: (listener: (revision?: string) => void) => () => void;
+}) {
+  return {
+    alertsTransport: createGpuiAlertsTransport(options),
+    managementPort: createGpuiManagementPort(options),
+    brandIcons: createGpuiBrandIconsBridge({
+      ...options,
+      subscribeInvalidation: options.subscribeBrandInvalidation,
+    }),
+  };
 }

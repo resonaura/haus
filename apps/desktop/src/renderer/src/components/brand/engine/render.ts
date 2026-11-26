@@ -7,6 +7,7 @@
 
 import {
   ICON_CACHE_VERSION,
+  premultipliedIconPixels,
   renderEnclosureTileToRgba,
   type IconAppearance,
   type ResolvedIconStyle,
@@ -67,26 +68,6 @@ function createCanvas2d(
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   return { canvas, ctx };
-}
-
-function premultiplyStraightRgba(data: Uint8ClampedArray): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(data.length);
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3] ?? 0;
-    if (a === 255) {
-      out[i] = data[i] ?? 0;
-      out[i + 1] = data[i + 1] ?? 0;
-      out[i + 2] = data[i + 2] ?? 0;
-      out[i + 3] = 255;
-    } else if (a > 0) {
-      const k = a / 255;
-      out[i] = Math.round((data[i] ?? 0) * k);
-      out[i + 1] = Math.round((data[i + 1] ?? 0) * k);
-      out[i + 2] = Math.round((data[i + 2] ?? 0) * k);
-      out[i + 3] = a;
-    }
-  }
-  return out;
 }
 
 function normalizeStyleArg(styleOrDark: ResolvedIconStyle | boolean): {
@@ -160,7 +141,7 @@ export function renderBrandIconTile(
 
       let sourcePixels: Uint8ClampedArray;
       try {
-        sourcePixels = premultiplyStraightRgba(
+        sourcePixels = premultipliedIconPixels(
           sourceCanvas.ctx.getImageData(0, 0, sampleDim, sampleDim).data,
         );
       } catch {

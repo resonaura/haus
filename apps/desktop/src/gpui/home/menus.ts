@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { createElement } from 'react';
 import {
   buildCameraMenuOptions,
   buildDeviceMenuOptions,
@@ -18,6 +19,7 @@ import type { Preferences } from '@haus/ha/view/preferences';
 import type { Category } from '@haus/ha/view/types';
 import {
   DEVICE_ICONS,
+  DeviceBrandIcon,
   type PortableContextMenuItem,
   type SpotlightResultItem,
 } from '@haus/ui/components';
@@ -117,18 +119,19 @@ export function buildWorkspaceSpotlightItems({
 
   return entries.map((entry) => {
     const { target } = entry;
+    const matchedDevice =
+      target.kind === 'device' ? home.devices.find((d) => d.id === target.id) : undefined;
     const icon =
       target.kind === 'category'
-        ? DEVICE_ICONS[target.id as Category] ?? 'layout-grid'
+        ? (DEVICE_ICONS[target.id as Category] ?? 'layout-grid')
         : target.kind === 'room'
           ? roomIcon(target.name)
           : target.kind === 'camera'
             ? 'camera'
             : target.kind === 'scene'
               ? 'sparkles'
-              : DEVICE_ICONS[
-                  (home.devices.find((d) => d.id === target.id)?.category ?? 'other') as Category
-                ];
+              : (matchedDevice?.iconName ??
+                DEVICE_ICONS[(matchedDevice?.category ?? 'other') as Category]);
 
     return {
       id: entry.key,
@@ -136,6 +139,13 @@ export function buildWorkspaceSpotlightItems({
       title: entry.title,
       subtitle: entry.subtitle,
       icon,
+      customIcon: matchedDevice
+        ? createElement(DeviceBrandIcon, {
+            device: matchedDevice.deviceIcon,
+            size: 16,
+            fallbackIconName: matchedDevice.iconName,
+          })
+        : undefined,
       onSelect: () => {
         if (target.kind === 'category') onGo(`category:${target.id}`);
         else if (target.kind === 'room') onGo(`room:${target.id}`);
@@ -181,7 +191,9 @@ export function handleDeviceMenuAction({
     } else if (registry) {
       const targets = accessory.lightGroup?.members ?? [accessory];
       void Promise.all(
-        targets.map((member) => registry.updateEntity(member.primaryEntityId, { area_id: nextAreaId })),
+        targets.map((member) =>
+          registry.updateEntity(member.primaryEntityId, { area_id: nextAreaId }),
+        ),
       ).catch(() => undefined);
     }
     return;

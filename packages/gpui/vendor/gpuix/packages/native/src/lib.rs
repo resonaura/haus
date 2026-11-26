@@ -34,6 +34,7 @@ mod renderer;
 pub mod retained_tree;
 mod scroll_shadow;
 mod scroll_state;
+mod sticky;
 pub mod style;
 mod syntax;
 mod text;

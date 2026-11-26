@@ -144,6 +144,67 @@ assert(hasNativeTestRenderer, 'The native GPUIX test renderer is required');
   }
 }
 
+// Verify wheel scrolling suppresses intermediate mouseEnter storms on cards
+// passing under a stationary pointer, then restores hover on pointer movement.
+{
+  const root = createTestRoot({ width: 400, height: 260 });
+  const entered: number[] = [];
+  const left: number[] = [];
+  try {
+    root.render(
+      createElement(
+        'div',
+        {
+          testId: 'hover-scroller',
+          style: { width: 400, height: 260, overflowY: 'scroll' },
+        },
+        ...Array.from({ length: 12 }, (_, index) =>
+          createElement('div', {
+            key: index,
+            testId: `hover-card-${index}`,
+            style: { height: 100 },
+            onMouseEnter: () => entered.push(index),
+            onMouseLeave: () => left.push(index),
+          }),
+        ),
+      ),
+    );
+    const { renderer } = root;
+    renderer.flush();
+    renderer.nativeSimulateMouseMove(120, 50);
+    renderer.dispatchNativeEvents();
+    renderer.flush();
+    assert.deepEqual(entered, [0], 'Pointer move should hover card 0');
+
+    for (let step = 0; step < 5; step++) {
+      renderer.nativeSimulateScrollWheel(120, 50, 0, -100);
+      renderer.dispatchNativeEvents();
+      renderer.flush();
+    }
+    assert.deepEqual(left, [0], 'Scrolling should cleanly unhover the previously hovered card');
+    assert.deepEqual(
+      entered,
+      [0],
+      'Scrolling past cards under a stationary pointer must not fire intermediate mouseEnter events',
+    );
+
+    renderer.nativeSimulateMouseMove(125, 50);
+    renderer.dispatchNativeEvents();
+    renderer.flush();
+    assert.equal(
+      entered.length,
+      2,
+      'Moving the pointer after scrolling should immediately restore mouseEnter on the card underneath',
+    );
+    assert(
+      entered[1] >= 4,
+      `Expected pointer move to hover a scrolled-in card (got ${entered[1]})`,
+    );
+  } finally {
+    root.unmount();
+  }
+}
+
 const snapshot = createDemoSnapshot();
 const deviceCount = Number(process.argv[2] ?? 1200);
 const sampleCount = Number(process.argv[3] ?? 24);

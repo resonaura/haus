@@ -230,10 +230,14 @@
 }
 
 /* Home floating category dock & active category pill. */
-:root .home-category-dock::after {
+:root .home-category-dock:not([data-haus-category-dock='shared'])::after {
   @include glass-rim-overlay(dock, 0.76, 2);
 }
-:root :is(.home-category-filter[aria-pressed='true'], .search-box)::after {
+:root
+  :is(
+    .home-category-filter:not([data-haus-category-filter='shared'])[aria-pressed='true'],
+    .search-box
+  )::after {
   @include glass-rim-overlay(pill, 0.7, 2);
 }
 
@@ -308,7 +312,7 @@
 :root
   :is(
     .theme-toggle,
-    .profile-button,
+    .profile-button:not([data-haus-topbar-profile='shared']),
     .haus-controller-close,
     .haus-controller-favorite.button,
     .mood-details.button

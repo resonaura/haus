@@ -61,6 +61,14 @@ impl Svg {
         self
     }
 
+    /// Set pre-hashed raw SVG bytes and their deterministic cache path without
+    /// rehashing or copying on every frame.
+    pub fn data_with_path(mut self, data: Arc<[u8]>, path: SharedString) -> Self {
+        self.data = Some(data);
+        self.data_path = Some(path);
+        self
+    }
+
     /// Transform the SVG element with the given transformation.
     /// Note that this won't effect the hitbox or layout of the element, only the rendering.
     pub fn with_transformation(mut self, transformation: Transformation) -> Self {

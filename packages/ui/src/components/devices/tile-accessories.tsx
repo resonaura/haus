@@ -173,7 +173,7 @@ export function DesktopTileIndicators({
               alignItems: 'center',
               justifyContent: 'center',
             },
-            corners: corners(10),
+            corners: corners(999, 'round'),
             material: effectBadge.material,
             border: { width: 1, color: effectBadge.borderColor },
             shadows: effectBadge.shadows,
@@ -193,7 +193,7 @@ export function DesktopTileIndicators({
           title="Current light color"
           style={{
             layout: { width: px(13), height: px(13) },
-            corners: corners(6.5),
+            corners: corners(999, 'round'),
             material: new SolidMaterial(resolvedSwatch),
             border: { width: 2, color: colorToken('card') },
             shadows: [

@@ -264,7 +264,8 @@ export interface LiquidGlassOptions {
   readonly saturation?: number;
   readonly tintColor?: ColorValue;
   readonly tintOpacity?: number;
-  readonly rimPreset?: RimLightingPreset;
+  /** Built-in rim lighting preset, or `'none'` when the surface mounts an explicit `<GlassRim />`. */
+  readonly rimPreset?: RimLightingPreset | 'none';
   readonly cornerExponent?: number;
 }
 
@@ -321,13 +322,17 @@ export class LiquidGlassMaterial implements SurfaceMaterial {
 
     this.inner = new ShaderMaterial([pass], {
       backdrop,
-      rimLighting: {
-        preset: rimPreset,
-        specularIntensity: 0.96,
-        diffuseDepth: 8,
-        edgeDarkening: 0.085,
-        cornerExponent,
-      },
+      ...(rimPreset === 'none'
+        ? {}
+        : {
+            rimLighting: {
+              preset: rimPreset,
+              specularIntensity: 0.96,
+              diffuseDepth: 8,
+              edgeDarkening: 0.085,
+              cornerExponent,
+            },
+          }),
       fallbackColor: colorToken('card'),
     });
   }

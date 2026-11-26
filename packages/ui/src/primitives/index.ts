@@ -6,6 +6,7 @@
  */
 
 export * from './blueprints.js';
+export * from './brand-port.js';
 export * from './control-blueprints.js';
 export * from './overlay-blueprints.js';
 export * from './context.js';

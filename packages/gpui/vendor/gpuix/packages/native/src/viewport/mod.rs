@@ -302,7 +302,7 @@ impl ViewportCache {
         if child
             .style
             .as_deref()
-            .is_some_and(|s| s.position.as_deref() == Some("fixed"))
+            .is_some_and(|s| matches!(s.position.as_deref(), Some("fixed" | "sticky")))
         {
             return None;
         }

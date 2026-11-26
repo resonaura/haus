@@ -127,11 +127,15 @@ where
         self.floor
     }
 
-    fn highest(&self) -> u32 {
+    pub(crate) fn highest(&self) -> u32 {
         self.max_leaf
             .map(|index| self.nodes[index].max_order)
             .unwrap_or_default()
             .max(self.floor)
+    }
+
+    pub(crate) fn raise_floor(&mut self, floor: u32) {
+        self.floor = self.floor.max(floor);
     }
 
     /// Inserts bounds into the tree and returns its assigned ordering.

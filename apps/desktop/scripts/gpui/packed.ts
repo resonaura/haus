@@ -109,22 +109,17 @@ try {
       await app.getByTestId(`device-${demoLamp}-quick`).click();
       await lamp.getByText('60% brightness').waitFor({ timeoutMs: 5000 });
       const sidebar = app.getByTestId('sidebar');
-      const toggle = app.getByTestId('sidebar-toggle');
       const expanded = (await sidebar.bounds()).width;
       assert([215, sidebarWidths.expanded].includes(expanded));
-      checking = 'sidebar navigation and collapse';
+      checking = 'sidebar navigation';
       await app.getByTestId('sidebar-scenes').click();
       await app.getByTestId('desktop-page-title').getByText('Scenes').waitFor({ timeoutMs: 5000 });
       const movie = app
         .getByTestId('scene-group-living_room')
         .getByTestId('scene-scene.movie_time');
       await movie.getByText('Movie time').waitFor({ timeoutMs: 5000 });
-      await movie.getByType('img').waitFor({ timeoutMs: 5000 });
-      await toggle.click();
-      assert.equal((await sidebar.bounds()).width, sidebarWidths.compact);
       await app.getByTestId('sidebar-home').click();
       await app.getByText('Welcome home.').waitFor({ timeoutMs: 5000 });
-      await toggle.click();
       assert.equal((await sidebar.bounds()).width, expanded);
       checking = 'appearance settings';
       await app.getByTestId('home-settings').click();

@@ -19,6 +19,7 @@ import {
   useHausUi,
 } from '../../primitives/index.js';
 import { UiIcon } from '../icon.js';
+import { BrandIcon, ManagementGlassCard, ManagementStatusPill } from '../brand/index.js';
 
 export function AppDetailsModal({
   app,
@@ -79,6 +80,35 @@ export function AppDetailsModal({
       }
     >
       <Stack gapPx={14} style={{ layout: { width: pct(100) } }}>
+        <ManagementGlassCard
+          radius={18}
+          padding={insets(12, 14)}
+          style={{ layout: { width: pct(100) } }}
+        >
+          <Row align="center" justify="between" gapPx={12} style={{ layout: { width: pct(100) } }}>
+            <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+              <BrandIcon
+                kind="app"
+                id={app.externalId || app.id}
+                size={42}
+                hint={{ name: app.name, addonSlug: app.externalId }}
+              />
+              <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                <Text size={14.5} weight={600}>
+                  {app.name}
+                </Text>
+                <Text size={12} tone="muted">
+                  {app.version ? `Version ${app.version}` : app.externalId}
+                </Text>
+              </Stack>
+            </Row>
+            <ManagementStatusPill
+              label={app.available ? app.state : 'Unavailable'}
+              tone={!app.available ? 'warning' : app.state === 'running' ? 'success' : 'neutral'}
+              showDot
+            />
+          </Row>
+        </ManagementGlassCard>
         <Row align="center" gapPx={8} wrap>
           <Pressable
             id="app-detail-tab-overview"

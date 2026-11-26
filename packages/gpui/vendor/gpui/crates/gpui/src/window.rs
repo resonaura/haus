@@ -742,6 +742,8 @@ pub(crate) struct CursorStyleRequest {
 pub(crate) struct HitTest {
     pub(crate) ids: SmallVec<[HitboxId; 8]>,
     pub(crate) hover_hitbox_count: usize,
+    pub(crate) block_mouse_hitbox: Option<HitboxId>,
+    pub(crate) block_hover_hitbox: Option<HitboxId>,
 }
 
 /// A type of window control area that corresponds to the platform window.
@@ -1375,9 +1377,14 @@ impl Frame {
                     && hitbox.behavior == HitboxBehavior::BlockMouseExceptScroll
                 {
                     hit_test.hover_hitbox_count = hit_test.ids.len();
+                    hit_test.block_hover_hitbox = Some(hitbox.id);
                     set_hover_hitbox_count = true;
                 }
                 if hitbox.behavior == HitboxBehavior::BlockMouse {
+                    if !set_hover_hitbox_count {
+                        hit_test.block_hover_hitbox = Some(hitbox.id);
+                    }
+                    hit_test.block_mouse_hitbox = Some(hitbox.id);
                     break;
                 }
             }
@@ -1486,6 +1493,8 @@ pub struct Window {
     ongoing_scroll_gesture: crate::OngoingScroll,
     scroll_dispatch_delta: Option<Point<Pixels>>,
     scroll_dispatch_precise: bool,
+    scroll_hover_suppressed: bool,
+    active_paint_transform_depth: u32,
     last_input_modality: InputModality,
     keyboard_modality_mouse_origin: Point<Pixels>,
     pub(crate) refreshing: bool,
@@ -2204,6 +2213,8 @@ impl Window {
             ongoing_scroll_gesture: crate::OngoingScroll::default(),
             scroll_dispatch_delta: None,
             scroll_dispatch_precise: false,
+            scroll_hover_suppressed: false,
+            active_paint_transform_depth: 0,
             last_input_modality: InputModality::Mouse,
             keyboard_modality_mouse_origin: mouse_position,
             refreshing: false,
@@ -4468,6 +4479,9 @@ impl Window {
         let scale_factor = self.scale_factor();
         let content_mask = self.snapped_content_mask();
         let opacity = self.element_opacity();
+        if opacity <= 0.0 || shadows.is_empty() || content_mask.bounds.is_empty() {
+            return;
+        }
         let element_bounds = self.cover_bounds(bounds);
         let element_corner_radii = corner_radii.scale(scale_factor);
         for shadow in shadows {
@@ -4531,6 +4545,9 @@ impl Window {
         let scale_factor = self.scale_factor();
         let content_mask = self.snapped_content_mask();
         let opacity = self.element_opacity();
+        if opacity <= 0.0 || shadows.is_empty() || content_mask.bounds.is_empty() {
+            return;
+        }
         let element_bounds = self.cover_bounds(bounds);
         let element_corner_radii = corner_radii.scale(scale_factor);
         for shadow in shadows {
@@ -4665,6 +4682,10 @@ impl Window {
             translate: filter.translate.map_or_else(Point::default, |translation| {
                 translation.scale(scale_factor)
             }),
+            clip_radii: filter
+                .clip_radii
+                .map_or_else(Corners::default, |radii| radii.scale(scale_factor)),
+            clip_smoothing: filter.clip_smoothing.clamp(0.0, 1.0),
         };
         if filter.is_noop() {
             return f(self);
@@ -4682,19 +4703,20 @@ impl Window {
             None => element_bounds.center(),
         };
         let fades = filter.fade_top + filter.fade_bottom + filter.fade_left + filter.fade_right;
-        let reach = match fades > 0. {
+        let reach = match fades > 0. || filter.clips_corners() {
             true => 0.,
             false => reach.0.max(0.) * scale_factor,
         };
         let source_bounds = element_bounds.dilate(ScaledPixels(filter.blur * BLUR_REACH + reach));
         let content_mask = self.snapped_content_mask().bounds;
-        if filter
-            .transform_bounds(source_bounds, transform_origin)
-            .intersect(&content_mask)
-            .is_empty()
+        if self.element_opacity() <= 0.0
+            || filter
+                .transform_bounds(source_bounds, transform_origin)
+                .intersect(&content_mask)
+                .is_empty()
         {
             // Keep input, focus and paint observers live. The entire filtered
-            // output is clipped, so its source need not enter the scene.
+            // output is invisible or clipped, so its source need not enter the scene.
             return self.with_content_mask(
                 Some(ContentMask {
                     bounds: Bounds::default(),
@@ -4702,10 +4724,21 @@ impl Window {
                 f,
             );
         }
-        self.next_frame
-            .scene
-            .push_filter(source_bounds, transform_origin, content_mask, filter);
+        self.next_frame.scene.push_filter(
+            source_bounds,
+            element_bounds,
+            transform_origin,
+            content_mask,
+            filter,
+        );
+        let transforms = filter.transforms();
+        if transforms {
+            self.active_paint_transform_depth += 1;
+        }
         let result = f(self);
+        if transforms {
+            self.active_paint_transform_depth -= 1;
+        }
         self.next_frame.scene.pop_filter();
         result
     }
@@ -4765,7 +4798,17 @@ impl Window {
     ) {
         self.invalidator.debug_assert_paint();
 
-        if blur <= Pixels::ZERO {
+        let opacity = self.element_opacity();
+        if blur <= Pixels::ZERO || opacity <= 0.0 {
+            return;
+        }
+
+        let bounds = self.snap_bounds(bounds);
+        let content_mask = self.snapped_content_mask();
+        if content_mask.bounds.is_empty()
+            || (self.active_paint_transform_depth == 0
+                && bounds.intersect(&content_mask.bounds).is_empty())
+        {
             return;
         }
 
@@ -4774,9 +4817,9 @@ impl Window {
             order: 0,
             corner_smoothing,
             blur: blur.0 * scale_factor,
-            opacity: self.element_opacity(),
-            bounds: self.snap_bounds(bounds),
-            content_mask: self.snapped_content_mask(),
+            opacity,
+            bounds,
+            content_mask,
             corner_radii: corner_radii.scale(scale_factor),
         });
     }
@@ -4799,8 +4842,20 @@ impl Window {
     ) {
         self.invalidator.debug_assert_paint();
 
+        let opacity = self.element_opacity();
+        if opacity <= 0.0 {
+            return;
+        }
+
         let scale_factor = self.scale_factor();
         let bounds = self.snap_bounds(bounds);
+        let content_mask = self.snapped_content_mask();
+        if content_mask.bounds.is_empty()
+            || (self.active_paint_transform_depth == 0
+                && bounds.intersect(&content_mask.bounds).is_empty())
+        {
+            return;
+        }
         let corner_radii = corner_radii
             .scale(scale_factor)
             .clamp_radii_for_quad_size(bounds.size);
@@ -4814,10 +4869,10 @@ impl Window {
         self.next_frame.scene.insert_primitive(ShaderQuad {
             order: 0,
             shader: shader.id(),
-            opacity: self.element_opacity(),
+            opacity,
             time: instance.time,
             bounds,
-            content_mask: self.snapped_content_mask(),
+            content_mask,
             corner_radii,
             scale_factor,
             corner_smoothing: instance.corner_smoothing.clamp(0.0, 1.0),
@@ -4846,12 +4901,22 @@ impl Window {
         } = quad.into();
 
         let opacity = self.element_opacity();
+        if opacity <= 0.0 {
+            return;
+        }
         let snapped_bounds = self.snap_bounds(quad.bounds);
+        let content_mask = self.snapped_content_mask();
+        if content_mask.bounds.is_empty()
+            || (self.active_paint_transform_depth == 0
+                && snapped_bounds.intersect(&content_mask.bounds).is_empty())
+        {
+            return;
+        }
         let snapped_border_widths = self.snap_border_widths(quad.border_widths);
         let quad = Quad {
             order: 0,
             bounds: snapped_bounds,
-            content_mask: self.snapped_content_mask(),
+            content_mask,
             background: quad.background.opacity(opacity),
             border_color: quad.border_color.opacity(opacity),
             corner_radii: quad.corner_radii.scale(self.scale_factor()),
@@ -4952,12 +5017,20 @@ impl Window {
             size: size(self.snap_stroke(width), height),
         };
         let element_opacity = self.element_opacity();
+        let content_mask = self.snapped_content_mask();
+        if element_opacity <= 0.0
+            || content_mask.bounds.is_empty()
+            || (self.active_paint_transform_depth == 0
+                && bounds.intersect(&content_mask.bounds).is_empty())
+        {
+            return;
+        }
 
         self.next_frame.scene.insert_primitive(Underline {
             order: 0,
             pad: 0,
             bounds,
-            content_mask: self.snapped_content_mask(),
+            content_mask,
             color: style.color.unwrap_or_default().opacity(element_opacity),
             thickness,
             wavy: style.wavy.into(),
@@ -5013,6 +5086,9 @@ impl Window {
         self.invalidator.debug_assert_paint();
 
         let element_opacity = self.element_opacity();
+        if element_opacity <= 0.0 {
+            return Ok(());
+        }
         let scale_factor = self.scale_factor();
         let glyph_origin = origin.scale(scale_factor);
 
@@ -5048,10 +5124,11 @@ impl Window {
                 size: raster_bounds.size.map(Into::into),
             };
             if content_mask.bounds.is_empty()
-                || estimated_bounds
-                    .dilate(ScaledPixels(2.0))
-                    .intersect(&content_mask.bounds)
-                    .is_empty()
+                || (self.active_paint_transform_depth == 0
+                    && estimated_bounds
+                        .dilate(ScaledPixels(2.0))
+                        .intersect(&content_mask.bounds)
+                        .is_empty())
             {
                 return Ok(());
             }
@@ -5128,6 +5205,10 @@ impl Window {
     ) -> Result<()> {
         self.invalidator.debug_assert_paint();
 
+        let opacity = self.element_opacity();
+        if opacity <= 0.0 {
+            return Ok(());
+        }
         let scale_factor = self.scale_factor();
         let glyph_origin = origin.scale(scale_factor);
         let integer_origin = glyph_origin.map(|c| ScaledPixels(round_half_toward_zero(c.0)));
@@ -5150,10 +5231,11 @@ impl Window {
                 size: raster_bounds.size.map(Into::into),
             };
             if content_mask.bounds.is_empty()
-                || estimated_bounds
-                    .dilate(ScaledPixels(2.0))
-                    .intersect(&content_mask.bounds)
-                    .is_empty()
+                || (self.active_paint_transform_depth == 0
+                    && estimated_bounds
+                        .dilate(ScaledPixels(2.0))
+                        .intersect(&content_mask.bounds)
+                        .is_empty())
             {
                 return Ok(());
             }
@@ -5200,10 +5282,14 @@ impl Window {
         self.invalidator.debug_assert_paint();
 
         let element_opacity = self.element_opacity();
+        if element_opacity <= 0.0 {
+            return Ok(());
+        }
         let bounds = self.snap_bounds(bounds);
         let content_mask = self.snapped_content_mask();
         if content_mask.bounds.is_empty()
-            || (transformation == TransformationMatrix::unit()
+            || (self.active_paint_transform_depth == 0
+                && transformation == TransformationMatrix::unit()
                 && bounds
                     .dilate(ScaledPixels(1.0))
                     .intersect(&content_mask.bounds)
@@ -5717,6 +5803,14 @@ impl Window {
         !self.element_transform_stack.is_empty()
     }
 
+    pub(crate) fn has_paint_transform(&self) -> bool {
+        self.active_paint_transform_depth > 0
+    }
+
+    pub(crate) fn is_scroll_hover_suppressed(&self) -> bool {
+        self.scroll_hover_suppressed
+    }
+
     pub(crate) fn is_element_captured(&self, id: Option<&GlobalElementId>) -> bool {
         self.captured_identity.is_some() && self.captured_identity.as_ref() == id
     }
@@ -5806,6 +5900,46 @@ impl Window {
                 }
             },
         )));
+    }
+
+    fn hitbox_precedes(&self, earlier: HitboxId, later: HitboxId) -> bool {
+        if earlier == later {
+            return false;
+        }
+        let mut earlier_ix = None;
+        let mut later_ix = None;
+        for (ix, hitbox) in self.rendered_frame.hitboxes.iter().enumerate() {
+            if hitbox.id == earlier {
+                earlier_ix = Some(ix);
+            } else if hitbox.id == later {
+                later_ix = Some(ix);
+            }
+            if earlier_ix.is_some() && later_ix.is_some() {
+                break;
+            }
+        }
+        match (earlier_ix, later_ix) {
+            (Some(e), Some(l)) => e < l,
+            (None, Some(_)) => earlier.0 < later.0,
+            _ => false,
+        }
+    }
+
+    /// Returns `true` when a `HitboxBehavior::BlockMouse` layer painted above
+    /// `hitbox_id` covers the current mouse position.
+    pub fn is_hitbox_blocked_by_upper_layer(&self, hitbox_id: HitboxId) -> bool {
+        self.mouse_hit_test
+            .block_mouse_hitbox
+            .is_some_and(|blocking| self.hitbox_precedes(hitbox_id, blocking))
+    }
+
+    /// Returns `true` when any occluding hitbox (`BlockMouse` or
+    /// `BlockMouseExceptScroll`) painted above `hitbox_id` covers the current
+    /// mouse position.
+    pub fn is_hitbox_occluded_by_upper_layer(&self, hitbox_id: HitboxId) -> bool {
+        self.mouse_hit_test
+            .block_hover_hitbox
+            .is_some_and(|blocking| self.hitbox_precedes(hitbox_id, blocking))
     }
 
     /// Register a key event listener on this node for the next frame. The type of event
@@ -6112,6 +6246,7 @@ impl Window {
         match &event {
             PlatformInput::MouseExited(_) => {
                 self.pointer_outside = true;
+                self.scroll_hover_suppressed = false;
                 // Hover styles are read at paint, and nothing else repaints for an exit.
                 if !self.mouse_hit_test.ids.is_empty() {
                     self.refresh();
@@ -6119,9 +6254,20 @@ impl Window {
             }
             PlatformInput::MouseMove(_)
             | PlatformInput::MouseDown(_)
-            | PlatformInput::MouseUp(_)
-            | PlatformInput::ScrollWheel(_)
-            | PlatformInput::Pinch(_) => self.pointer_outside = false,
+            | PlatformInput::MouseUp(_) => {
+                self.pointer_outside = false;
+                self.scroll_hover_suppressed = false;
+            }
+            PlatformInput::ScrollWheel(scroll_wheel) => {
+                self.pointer_outside = false;
+                if !scroll_wheel.delta.pixel_delta(px(20.)).is_zero() {
+                    self.scroll_hover_suppressed = true;
+                }
+            }
+            PlatformInput::Pinch(_) => self.pointer_outside = false,
+            PlatformInput::KeyDown(_) => {
+                self.scroll_hover_suppressed = false;
+            }
             _ => {}
         }
 

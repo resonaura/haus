@@ -1,12 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 export type IntegrationRuntimeType =
-  | 'built_in'
-  | 'custom_integration'
-  | 'homebridge'
-  | 'scrypted'
-  | 'docker_app'
-  | 'addon';
+  'built_in' | 'custom_integration' | 'homebridge' | 'scrypted' | 'docker_app' | 'addon';
 
 export interface IntegrationEntryRecord {
   readonly entry_id: string;
@@ -70,14 +65,7 @@ export interface RepairIssueRecord {
 }
 
 export type UpdateCategory =
-  | 'core'
-  | 'integration'
-  | 'plugin'
-  | 'addon'
-  | 'homebridge'
-  | 'scrypted'
-  | 'hacs'
-  | 'firmware';
+  'core' | 'integration' | 'plugin' | 'addon' | 'homebridge' | 'scrypted' | 'hacs' | 'firmware';
 
 export interface UnifiedUpdateRecord {
   readonly id: string;
@@ -221,7 +209,8 @@ export function filterIntegrationGroups(
       group.domain.toLowerCase().includes(needle) ||
       group.entries.some((entry) => entry.title.toLowerCase().includes(needle));
     if (!matchesQuery) return false;
-    if (filter === 'loaded') return group.entries.some((e) => e.state === 'loaded' && !e.disabled_by);
+    if (filter === 'loaded')
+      return group.entries.some((e) => e.state === 'loaded' && !e.disabled_by);
     if (filter === 'disabled') return group.entries.every((e) => Boolean(e.disabled_by));
     if (filter === 'issues') return group.entries.some((e) => isIntegrationEntryIssue(e, issues));
     return true;
@@ -416,9 +405,40 @@ export function buildDemoIntegrationsState(): DemoIntegrationsState {
       matter: 'Matter',
       zha: 'Zigbee Home',
       sonos: 'Sonos',
+      homekit_controller: 'Apple HomeKit Device',
+      apple_tv: 'Apple TV',
     },
-    progress: [],
-    issues: [],
+    progress: [
+      {
+        flow_id: 'demo-flow-hue',
+        handler: 'hue',
+        title: 'Philips Hue Bridge',
+        source: 'zeroconf',
+      },
+      {
+        flow_id: 'demo-flow-matter',
+        handler: 'matter',
+        title: 'Matter Smart Plug',
+        source: 'matter',
+      },
+      {
+        flow_id: 'demo-flow-homekit',
+        handler: 'homekit_controller',
+        title: 'Aqara Presence FP2',
+        source: 'homekit',
+      },
+    ],
+    issues: [
+      {
+        domain: 'zha',
+        issue_id: 'zigbee_channel_overlap',
+        severity: 'warning',
+        title: 'Zigbee channel overlaps 2.4 GHz Wi-Fi',
+        description: 'Moving the mesh to channel 25 reduces packet retries.',
+        created: '2026-11-23T18:00:00Z',
+        sourceLabel: 'Zigbee Home',
+      },
+    ],
     updates,
   };
 }

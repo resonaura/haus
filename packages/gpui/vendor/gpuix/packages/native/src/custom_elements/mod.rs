@@ -11,7 +11,7 @@
 ///     _              → registry.render(ctx)    (trait dispatch)
 use std::collections::{HashMap, HashSet};
 
-use crate::renderer::EventCallback;
+use crate::renderer::{EventCallback, SharedClickPress};
 
 pub mod anchored;
 pub mod code;
@@ -32,6 +32,8 @@ pub struct CustomRenderContext<'a> {
     pub events: &'a HashSet<String>,
     /// Callback for emitting events back to JS.
     pub event_callback: &'a Option<EventCallback>,
+    /// Primary mouse-down targets for click gesture matching across frames.
+    pub(crate) click_press: SharedClickPress,
     /// Pre-created FocusHandle for this element (if it has keyboard/focus listeners).
     pub focus_handle: Option<&'a gpui::FocusHandle>,
     /// The control holding keyboard focus and its ancestors. See
@@ -119,6 +121,7 @@ pub fn custom_surface(
 
     if let Some(style) = ctx.style {
         el = crate::renderer::apply_interactive_styles(el, style);
+        el = crate::renderer::apply_layer_occlusion(el, style);
     }
     // `bounds_tracker` is `absolute().size_full()`, so it needs a positioned
     // parent to measure.
@@ -151,19 +154,7 @@ pub fn wire_standard_events<E: gpui::StatefulInteractiveElement>(
         let callback = ctx.event_callback.clone();
         match event.as_str() {
             "click" => {
-                // Match retained hosts: GPUI's semantic click is unreliable under
-                // embedded AppKit pumping, so primary mouse-up is the click boundary.
-                el = el.on_mouse_up(gpui::MouseButton::Left, move |mouse_event, _window, _cx| {
-                    crate::renderer::emit_event_full(&callback, id, "click", |p| {
-                        let (x, y) = crate::renderer::point_to_xy(mouse_event.position);
-                        p.x = Some(x);
-                        p.y = Some(y);
-                        p.button = Some(0);
-                        p.click_count = Some(mouse_event.click_count as u32);
-                        p.modifiers = Some(mouse_event.modifiers.into());
-                        p.is_right_click = Some(false);
-                    });
-                });
+                el = crate::renderer::wire_primary_click(el, id, callback, ctx.click_press.clone());
             }
             "mouseEnter" | "mouseLeave" => {
                 // gpui reports both edges through one listener, so wire it once.

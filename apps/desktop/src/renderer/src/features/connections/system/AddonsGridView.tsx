@@ -12,7 +12,13 @@ import {
   HausForm,
   HausModalOverlay as Modal,
   Heading,
-  Pressable,
+  insets,
+  ManagementGlassCard,
+  ManagementStatusPill,
+  pct,
+  px,
+  Row,
+  Stack,
   Text,
   TextInput,
 } from '@haus/ui';
@@ -68,30 +74,46 @@ export const AddonsGridView = memo(function AddonsGridView({
         }
         const running = group.items.filter((addon) => addon.state === 'started').length;
         return (
-          <Box semantic="article" className="addon-card addon-family" key={group.id}>
-            <Box semantic="header" className="addon-family-header">
-              <BrandIcon kind="integration" id={group.id} size={44} hint={{ name: group.name }} />
-              <Box>
-                <Heading level={3}>{group.name}</Heading>
-                <Text semantic="p">
-                  {viewStore
-                    ? `${group.items.length} components`
-                    : `${running}/${group.items.length} running`}
-                </Text>
-              </Box>
-              {!viewStore && running < group.items.length && (
-                <Text className="attention-pill">Attention</Text>
-              )}
-              {group.items.some((addon) => addon.update_available) && (
-                <Text className="update-pill">Update available</Text>
-              )}
-            </Box>
+          <ManagementGlassCard
+            radius={22}
+            padding={insets(18)}
+            key={group.id}
+            style={{ layout: { width: pct(100), gap: px(14) } }}
+          >
+            <Row
+              align="center"
+              justify="between"
+              gapPx={12}
+              style={{ layout: { width: pct(100) } }}
+            >
+              <Row align="center" gapPx={12}>
+                <BrandIcon kind="integration" id={group.id} size={44} hint={{ name: group.name }} />
+                <Stack gapPx={2}>
+                  <Heading level={3} size={15} weight={600}>
+                    {group.name}
+                  </Heading>
+                  <Text size={12} tone="muted">
+                    {viewStore
+                      ? `${group.items.length} components`
+                      : `${running}/${group.items.length} running`}
+                  </Text>
+                </Stack>
+              </Row>
+              <Row align="center" gapPx={6}>
+                {!viewStore && running < group.items.length && (
+                  <ManagementStatusPill label="Attention" tone="warning" />
+                )}
+                {group.items.some((addon) => addon.update_available) && (
+                  <ManagementStatusPill label="Update available" tone="accent" />
+                )}
+              </Row>
+            </Row>
             <Box className="addon-family-components">
               {group.items.map((addon) => (
                 <AddonCard key={addon.slug} addon={addon} component {...actions} />
               ))}
             </Box>
-          </Box>
+          </ManagementGlassCard>
         );
       })}
     </Box>
@@ -112,73 +134,88 @@ const AddonCard = memo(function AddonCard({
   component?: boolean;
 }) {
   const isInstalled = installedSlugs.has(addon.slug);
+  const running = addon.state === 'started';
   return (
-    <Box
-      semantic="article"
-      className="addon-card"
-      dataAttrs={{ component: component || undefined }}
+    <ManagementGlassCard
+      radius={component ? 18 : 22}
+      padding={insets(16, 18)}
+      interactive
+      style={{ layout: { width: pct(100), gap: px(12), justifyContent: 'between' } }}
     >
-      <Text className="addon-glyph">
-        <BrandIcon
-          kind="addon"
-          id={addon.slug}
-          size={44}
-          hint={{
-            name: addon.name,
-            ...(addon.url && addon.url.includes('github.com') ? { repositoryUrl: addon.url } : {}),
-            ...(addon.repository ? { repository: addon.repository } : {}),
-            addonSlug: addon.slug,
-          }}
-        />
-      </Text>
-      <Box className="addon-copy">
-        <Box>
-          <Heading level={component ? 4 : 3}>{addon.name}</Heading>
-          {!viewStore && (
-            <Text
-              className={`status-pill ${addon.state === 'started' ? 'status-available' : 'status-disabled'}`}
-            >
-              <Text semantic="swatch" />
-              {addon.state === 'started' ? 'Running' : humanize(addon.state ?? 'Unknown')}
+      <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(200) } }}>
+          <BrandIcon
+            kind="addon"
+            id={addon.slug}
+            size={44}
+            hint={{
+              name: addon.name,
+              ...(addon.url && addon.url.includes('github.com')
+                ? { repositoryUrl: addon.url }
+                : {}),
+              ...(addon.repository ? { repository: addon.repository } : {}),
+              addonSlug: addon.slug,
+            }}
+          />
+          <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            <Row align="center" gapPx={8} wrap>
+              <Heading level={component ? 4 : 3} size={14.5} weight={600}>
+                {addon.name}
+              </Heading>
+              {!viewStore && (
+                <ManagementStatusPill
+                  label={running ? 'Running' : humanize(addon.state ?? 'Unknown')}
+                  tone={running ? 'success' : 'neutral'}
+                  showDot
+                />
+              )}
+              {addon.update_available && (
+                <ManagementStatusPill label="Update available" tone="accent" />
+              )}
+            </Row>
+            {addon.description && (
+              <Text size={12} tone="muted" style={{ typography: { size: 12, maxLines: 2 } }}>
+                {addon.description}
+              </Text>
+            )}
+            <Text size={11.5} tone="muted">
+              {addon.version
+                ? `Version ${addon.version}`
+                : addon.version_latest
+                  ? `Version ${addon.version_latest}`
+                  : addon.repository}
             </Text>
+          </Stack>
+        </Row>
+        <Row align="center" gapPx={8}>
+          {!viewStore && admin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              isDisabled={busy}
+              aria-label={`${running ? 'Stop' : 'Start'} ${addon.name}`}
+              onPress={() => onAddonAction(addon, running ? 'stop' : 'start')}
+            >
+              {running ? 'Stop' : 'Start'}
+            </Button>
           )}
-          {addon.update_available && <Text className="update-pill">Update available</Text>}
-        </Box>
-        <Text semantic="p">{addon.description}</Text>
-        <Text semantic="small">
-          {addon.version
-            ? `Version ${addon.version}`
-            : addon.version_latest
-              ? `Version ${addon.version_latest}`
-              : addon.repository}
-        </Text>
-      </Box>
-      <Box className="addon-actions">
-        <Pressable
-          className="text-link"
-          ariaLabel={`${viewStore ? 'View details for' : 'Manage'} ${addon.name}`}
-          onPress={() =>
-            onSelectAddon({
-              ...addon,
-              installed: isInstalled,
-            })
-          }
-        >
-          {viewStore ? 'View details' : 'Manage'}
-          <ChevronRight size={14} />
-        </Pressable>
-        {!viewStore && admin && (
           <Button
             variant="secondary"
-            isDisabled={busy}
-            aria-label={`${addon.state === 'started' ? 'Stop' : 'Start'} ${addon.name}`}
-            onPress={() => onAddonAction(addon, addon.state === 'started' ? 'stop' : 'start')}
+            size="sm"
+            aria-label={`${viewStore ? 'View details for' : 'Manage'} ${addon.name}`}
+            onPress={() =>
+              onSelectAddon({
+                ...addon,
+                installed: isInstalled,
+              })
+            }
           >
-            {addon.state === 'started' ? 'Stop' : 'Start'}
+            {viewStore ? 'View details' : 'Manage'}
+            <ChevronRight size={14} />
           </Button>
-        )}
-      </Box>
-    </Box>
+        </Row>
+      </Row>
+    </ManagementGlassCard>
   );
 });
 

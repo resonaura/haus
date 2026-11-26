@@ -139,33 +139,34 @@ export function SceneCollection({
             details={hiddenView}
             disabled={!hiddenView && (applying || scene.state === 'unavailable')}
             showAccessoryCount={showAccessoryCount}
-            portable={false}
             menuOpen={menuScene === scene.entity_id}
             onContextOptions={() => setMenuScene(scene.entity_id)}
             onActivate={() => (hiddenView ? setPreview(scene) : void run(scene))}
             options={
               <>
-                <HausMenu
-                  open={menuScene === scene.entity_id}
-                  onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
-                  placement="bottom"
-                  items={menuItems}
-                  trigger={
-                    <Button
-                      isIconOnly
-                      variant="ghost"
-                      className="mood-details"
-                      aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
-                      onPress={() =>
-                        setMenuScene((current) =>
-                          current === scene.entity_id ? '' : scene.entity_id,
-                        )
-                      }
-                    >
-                      <MoreHorizontal size={17} />
-                    </Button>
-                  }
-                />
+                <Box className="mood-details-slot">
+                  <HausMenu
+                    open={menuScene === scene.entity_id}
+                    onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
+                    placement="bottom"
+                    items={menuItems}
+                    trigger={
+                      <Button
+                        isIconOnly
+                        variant="ghost"
+                        className="mood-details button"
+                        aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
+                        onPress={() =>
+                          setMenuScene((current) =>
+                            current === scene.entity_id ? '' : scene.entity_id,
+                          )
+                        }
+                      >
+                        <MoreHorizontal size={17} />
+                      </Button>
+                    }
+                  />
+                </Box>
                 {hiddenView && (
                   <Pressable className="mood-restore" onPress={() => onToggleApp(scene)}>
                     <Eye size={14} />

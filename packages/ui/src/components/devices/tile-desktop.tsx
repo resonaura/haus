@@ -23,6 +23,8 @@ import { GlassRim } from '../../primitives/glass-rim.js';
 import { resolveColorToCss } from '../../renderers/contract.js';
 import { DEVICE_ICONS, type UiIconName } from '../icons.js';
 import { UiIcon } from '../icon.js';
+import { DeviceBrandIcon } from '../brand/device-icon.js';
+import type { DeviceBrandIconInput } from '../brand/types.js';
 import { useDelayedPending } from './battery.js';
 import type { DeviceTileBatteryData } from './device.js';
 import { DesktopTileActions, DesktopTileIndicators } from './tile-accessories.js';
@@ -59,6 +61,7 @@ export interface DesktopTileRenderProps {
   readonly stateKey?: string;
   readonly icon?: ReactNode;
   readonly iconName?: UiIconName;
+  readonly deviceIcon?: DeviceBrandIconInput;
   readonly indicators?: ReactNode;
   readonly actions?: ReactNode;
   readonly details?: ReactNode;
@@ -147,6 +150,7 @@ export function DesktopDeviceTile(props: DesktopTileRenderProps) {
     stateKey,
     icon,
     iconName = DEVICE_ICONS[category ?? 'other'],
+    deviceIcon,
     indicators,
     actions,
     details,
@@ -244,11 +248,21 @@ export function DesktopDeviceTile(props: DesktopTileRenderProps) {
           ariaLabel={quickLabel}
           disabled={quickDisabled}
           onQuick={onQuick}
-          renderIcon={(orbColor) =>
-            icon ?? (
-              <UiIcon name={iconName} size={19} color={resolveColorToCss(orbColor, theme, false)} />
-            )
-          }
+          renderIcon={(orbColor) => {
+            if (icon) return icon;
+            const resolvedColor = resolveColorToCss(orbColor, theme, false);
+            if (deviceIcon) {
+              return (
+                <DeviceBrandIcon
+                  device={deviceIcon}
+                  size={19}
+                  color={resolvedColor}
+                  fallbackIconName={iconName}
+                />
+              );
+            }
+            return <UiIcon name={iconName} size={19} color={resolvedColor} />;
+          }}
         />
         <DesktopTileIndicators
           slowPending={slowPending}

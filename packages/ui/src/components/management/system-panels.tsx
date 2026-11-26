@@ -1,4 +1,9 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
 
 import { useState } from 'react';
 import {
@@ -10,18 +15,16 @@ import {
   type UnifiedUpdatesSummary,
   type UpdatesFilterId,
 } from '@haus/core/transport';
-import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
+import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
+import { Box, HausButton, Heading, Row, Stack, Text, useHausUi } from '../../primitives/index.js';
 import {
-  Box,
-  HausButton,
-  Heading,
-  Pressable,
-  Row,
-  Stack,
-  Text,
-  useHausUi,
-} from '../../primitives/index.js';
+  BrandIcon,
+  ManagementEmptyCard,
+  ManagementFilterBar,
+  ManagementGlassCard,
+  ManagementStatusPill,
+} from '../brand/index.js';
 import { UiIcon } from '../icon.js';
 
 const UPDATE_TABS: readonly { readonly id: UpdatesFilterId; readonly label: string }[] = [
@@ -74,24 +77,11 @@ export function RepairsPanelView({
       </Stack>
 
       {visible.length === 0 ? (
-        <Stack
-          align="center"
-          gapPx={8}
-          style={{
-            layout: { width: pct(100), padding: insets(36, 20) },
-            material: new SolidMaterial(colorToken('surfaceSecondary')),
-            border: { width: 1, color: colorToken('border') },
-            corners: corners(16),
-          }}
-        >
-          <UiIcon name="check-circle" size={28} />
-          <Heading level={3} size={16} weight={600}>
-            No active repairs
-          </Heading>
-          <Text size={12} tone="muted">
-            Your integrations, bridges, and services are running without repair issues.
-          </Text>
-        </Stack>
+        <ManagementEmptyCard
+          icon="check-circle"
+          title="No active repairs"
+          subtitle="Your integrations, bridges, and services are running without repair issues."
+        />
       ) : (
         <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
           {visible.map((issue) => {
@@ -99,57 +89,65 @@ export function RepairsPanelView({
               issue.title || humanizeIdentifier(issue.translation_key ?? issue.issue_id);
             const age = formatRelativeAge(issue.created);
             const severity = humanizeIdentifier(issue.severity ?? 'warning');
+            const isCritical = issue.severity === 'error' || issue.severity === 'critical';
             return (
-              <Row
+              <ManagementGlassCard
                 key={`${issue.domain}:${issue.issue_id}`}
-                align="center"
-                justify="between"
-                gapPx={14}
-                wrap
-                style={{
-                  layout: { width: pct(100), padding: insets(14, 16) },
-                  material: new SolidMaterial(colorToken('surfaceSecondary')),
-                  border: { width: 1, color: colorToken('border') },
-                  corners: corners(14),
-                }}
+                radius={20}
+                padding={insets(14, 16)}
+                attention={!issue.ignored}
+                style={{ layout: { width: pct(100) } }}
               >
-                <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
-                  <Row align="center" gapPx={8} wrap>
-                    <UiIcon name="wrench" size={16} />
-                    <Text size={14} weight={600}>
-                      {title}
-                    </Text>
-                    <Box
-                      style={{
-                        layout: { padding: insets(2, 8) },
-                        material: new SolidMaterial(rgba(251, 191, 36, 0.14)),
-                        border: { width: 1, color: rgba(251, 191, 36, 0.3) },
-                        corners: corners(999),
-                      }}
-                    >
-                      <Text size={11}>{severity}</Text>
-                    </Box>
-                    {age && (
-                      <Text size={11} tone="muted">
-                        {age}
-                      </Text>
-                    )}
-                  </Row>
-                  {issue.description && (
-                    <Text size={12} tone="muted">
-                      {issue.description}
-                    </Text>
-                  )}
-                </Stack>
-                <HausButton
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onPress={() => onToggleIgnore(issue, !issue.ignored)}
+                <Row
+                  align="center"
+                  justify="between"
+                  gapPx={14}
+                  wrap
+                  style={{ layout: { width: pct(100) } }}
                 >
-                  <Text size={12}>{issue.ignored ? 'Restore' : 'Ignore'}</Text>
-                </HausButton>
-              </Row>
+                  <Row
+                    align="center"
+                    gapPx={12}
+                    style={{ layout: { flexGrow: 1, minWidth: px(220) } }}
+                  >
+                    <BrandIcon
+                      kind="integration"
+                      id={issue.domain}
+                      size={40}
+                      hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
+                    />
+                    <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                      <Row align="center" gapPx={8} wrap>
+                        <Text size={14} weight={600}>
+                          {title}
+                        </Text>
+                        <ManagementStatusPill
+                          label={severity}
+                          tone={isCritical ? 'danger' : 'warning'}
+                        />
+                        {age && (
+                          <Text size={11} tone="muted">
+                            {age}
+                          </Text>
+                        )}
+                      </Row>
+                      {issue.description && (
+                        <Text size={12} tone="muted">
+                          {issue.description}
+                        </Text>
+                      )}
+                    </Stack>
+                  </Row>
+                  <HausButton
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onPress={() => onToggleIgnore(issue, !issue.ignored)}
+                  >
+                    <Text size={12}>{issue.ignored ? 'Restore' : 'Ignore'}</Text>
+                  </HausButton>
+                </Row>
+              </ManagementGlassCard>
             );
           })}
         </Stack>
@@ -186,6 +184,10 @@ export function UpdatesPanelView({
   const availableItems = items.filter((item) => item.updateAvailable);
   const installable = availableItems.filter((item) => item.canInstall);
   const visible = filterUpdates(items, filter);
+  const tabsWithCounts = UPDATE_TABS.map((tab) => ({
+    ...tab,
+    count: filterUpdates(items, tab.id).length,
+  }));
 
   return (
     <Stack gapPx={16} style={{ layout: { width: pct(100) } }}>
@@ -233,101 +235,101 @@ export function UpdatesPanelView({
         </Text>
       </Stack>
 
-      <Row gapPx={8} wrap>
-        {UPDATE_TABS.map((tab) => {
-          const active = filter === tab.id;
-          return (
-            <Pressable
-              key={tab.id}
-              ariaPressed={active}
-              onActivate={() => setFilter(tab.id)}
-              style={{
-                layout: { direction: 'row', alignItems: 'center', padding: insets(6, 12) },
-                material: new SolidMaterial(
-                  active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                ),
-                border: { width: 1, color: active ? colorToken('accent') : colorToken('border') },
-                corners: corners(999),
-              }}
-            >
-              <Text size={12} weight={active ? 600 : 500} tone={active ? 'primary' : 'muted'}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </Row>
+      <ManagementFilterBar
+        idPrefix="updates-filter"
+        tabs={tabsWithCounts}
+        activeId={filter}
+        onChange={setFilter}
+      />
 
       {visible.length === 0 ? (
-        <Stack
-          align="center"
-          gapPx={8}
-          style={{
-            layout: { width: pct(100), padding: insets(36, 20) },
-            material: new SolidMaterial(colorToken('surfaceSecondary')),
-            border: { width: 1, color: colorToken('border') },
-            corners: corners(16),
-          }}
-        >
-          <UiIcon name="check-circle" size={28} />
-          <Heading level={3} size={16} weight={600}>
-            Everything is up to date
-          </Heading>
-          <Text size={12} tone="muted">
-            No pending updates match this filter.
-          </Text>
-        </Stack>
+        <ManagementEmptyCard
+          icon="check-circle"
+          title="Everything is up to date"
+          subtitle="No pending updates match this filter."
+        />
       ) : (
         <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
           {visible.map((item) => (
-            <Row
+            <ManagementGlassCard
               key={item.id}
-              align="center"
-              justify="between"
-              gapPx={14}
-              wrap
-              style={{
-                layout: { width: pct(100), padding: insets(14, 16) },
-                material: new SolidMaterial(colorToken('surfaceSecondary')),
-                border: { width: 1, color: colorToken('border') },
-                corners: corners(14),
-              }}
+              radius={20}
+              padding={insets(14, 16)}
+              interactive
+              style={{ layout: { width: pct(100) } }}
             >
-              <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
-                <Text size={14} weight={600}>
-                  {item.title}
-                </Text>
-                <Text size={12} tone="muted">
-                  {item.updateAvailable
-                    ? `${item.installedVersion} -> ${item.latestVersion}`
-                    : `Installed v${item.installedVersion}`}
-                </Text>
-                {item.releaseSummary && (
-                  <Text size={11.5} tone="muted">
-                    {item.releaseSummary}
-                  </Text>
-                )}
-              </Stack>
-              {item.updateAvailable ? (
-                <HausButton
-                  variant="primary"
-                  size="sm"
-                  disabled={!item.canInstall || Boolean(installingId)}
-                  onPress={() => onInstall(item)}
+              <Row
+                align="center"
+                justify="between"
+                gapPx={14}
+                wrap
+                style={{ layout: { width: pct(100) } }}
+              >
+                <Row
+                  align="center"
+                  gapPx={12}
+                  style={{ layout: { flexGrow: 1, minWidth: px(220) } }}
                 >
-                  <Text
-                    size={12.5}
-                    style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
+                  {item.category === 'core' ? (
+                    <Box
+                      style={{
+                        layout: {
+                          width: px(40),
+                          height: px(40),
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        },
+                        material: new SolidMaterial(colorToken('surface')),
+                        border: { width: 1, color: colorToken('border') },
+                        corners: corners(11),
+                      }}
+                    >
+                      <UiIcon name="arrow-up-circle" size={19} />
+                    </Box>
+                  ) : (
+                    <BrandIcon
+                      kind={item.category === 'firmware' ? 'integration' : item.category}
+                      id={item.domain}
+                      size={40}
+                      hint={{ name: item.title, category: item.category }}
+                    />
+                  )}
+                  <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                    <Text size={14} weight={600}>
+                      {item.title}
+                    </Text>
+                    <Text size={12} tone="muted">
+                      {item.updateAvailable
+                        ? `${item.installedVersion} → ${item.latestVersion}`
+                        : `Installed v${item.installedVersion}`}
+                    </Text>
+                    {item.releaseSummary && (
+                      <Text size={11.5} tone="muted">
+                        {item.releaseSummary}
+                      </Text>
+                    )}
+                  </Stack>
+                </Row>
+                {item.updateAvailable ? (
+                  <HausButton
+                    variant="primary"
+                    size="sm"
+                    disabled={!item.canInstall || Boolean(installingId)}
+                    onPress={() => onInstall(item)}
                   >
-                    {installingId === item.id ? 'Updating…' : 'Update'}
-                  </Text>
-                </HausButton>
-              ) : (
-                <Text size={11.5} tone="muted">
-                  Up to date
-                </Text>
-              )}
-            </Row>
+                    <Text
+                      size={12.5}
+                      style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
+                    >
+                      {installingId === item.id ? 'Updating…' : 'Update'}
+                    </Text>
+                  </HausButton>
+                ) : (
+                  <ManagementStatusPill label="Up to date" tone="success" />
+                )}
+              </Row>
+            </ManagementGlassCard>
           ))}
         </Stack>
       )}

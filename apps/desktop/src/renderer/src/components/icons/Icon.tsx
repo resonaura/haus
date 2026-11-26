@@ -6,7 +6,7 @@
  */
 
 import { useId } from 'react';
-import { px, Text, VectorGraphic } from '@haus/ui';
+import { DeviceBrandIcon, px, VectorGraphic } from '@haus/ui';
 import {
   House,
   Lightbulb,
@@ -18,24 +18,11 @@ import {
   Blinds,
   LayoutGrid,
   Camera,
-  BatteryMedium,
   Armchair,
   DoorOpen,
-  DoorClosed,
-  ShieldAlert,
-  ShieldOff,
-  LockKeyhole,
-  LockKeyholeOpen,
-  Radar,
-  DropletOff,
-  AlarmSmoke,
-  Flame,
-  Lamp,
-  Wind,
   Utensils,
   BedDouble,
   Trees,
-  CircleHelp,
   Printer,
   Router,
   Network,
@@ -46,10 +33,7 @@ import {
   PawPrint,
   CarFront,
   Sparkles,
-  Vibrate,
   Radio,
-  CircuitBoard,
-  ToggleLeft,
   Bath,
   Tv,
   CookingPot,
@@ -57,11 +41,8 @@ import {
   Bot,
   type LucideIcon,
 } from 'lucide-react';
-import { mediaArtwork } from '../../model/media-artwork';
 import { securityIcon } from '../../model/security-icon';
 import { isScaleReading } from '../../model/device-telemetry';
-import { BathroomScaleIcon } from './BathroomScaleIcon';
-import { KettleIcon } from './KettleIcon';
 import { isKettle } from '../../model/water-heater';
 import type { HausAccessory } from '../../model';
 export const categoryIcons: Record<string, LucideIcon> = {
@@ -147,90 +128,32 @@ export function AccessoryIcon({
   accessory: HausAccessory;
   size?: number;
 }) {
-  const domain = accessory.primaryEntityId.split('.')[0];
-  const artwork = mediaArtwork(accessory);
-  if (artwork)
-    return (
-      <VectorGraphic
-        viewWidth={24}
-        viewHeight={24}
-        className="device-state-icon device-brand-icon"
-        rawSvgMarkup={artwork}
-      />
-    );
-  let Icon = categoryIcons[accessory.category] ?? CircleHelp;
-  if (accessory.category === 'network' && accessory.deviceType) {
-    Icon = networkDeviceIcon(accessory.deviceType);
-  }
-  if (accessory.powerStrip) Icon = CircuitBoard;
-  if (accessory.buttonController) Icon = ToggleLeft;
-  if (accessory.physicalHub) Icon = Radio;
-  if (
-    isScaleReading(accessory.state, {
-      id: accessory.deviceId ?? '',
-      name: accessory.name,
-      model: accessory.model,
-    })
-  )
-    Icon = BathroomScaleIcon;
-  if (domain === 'camera') Icon = Camera;
-  if (domain === 'media_player' && accessory.state.attributes.device_class === 'tv') Icon = Tv;
-  if (domain === 'fan') Icon = Wind;
-  if (domain === 'water_heater' && isKettle(accessory)) Icon = KettleIcon;
-  if (
-    ['lights', 'outlets'].includes(accessory.category) &&
-    accessory.name.toLowerCase().includes('lamp')
-  )
-    Icon = Lamp;
-  if (accessory.state.attributes.device_class === 'battery') Icon = BatteryMedium;
-  const stateIcon = securityIcon(accessory.state);
-  const icons: Record<string, LucideIcon> = {
-    'door-open': DoorOpen,
-    'door-closed': DoorClosed,
-    locked: LockKeyhole,
-    unlocked: LockKeyholeOpen,
-    motion: Radar,
-    clear: Radar,
-    vibration: Vibrate,
-    'vibration-clear': Vibrate,
-    wet: Droplets,
-    dry: DropletOff,
-    smoke: AlarmSmoke,
-    fire: Flame,
-    alert: ShieldAlert,
-    protected: ShieldCheck,
-    disarmed: ShieldOff,
-    unknown: CircleHelp,
-  };
-  if (stateIcon?.startsWith('window-'))
-    return (
-      <Text className="device-state-icon" key={stateIcon}>
-        <VectorGraphic
-          width={size}
-          height={size}
-          viewWidth={24}
-          viewHeight={24}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.65}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          ariaHidden
-          rects={[{ x: 4, y: 4, width: 16, height: 16, rx: 1.5 }]}
-          paths={[
-            { d: 'M4 12h16M12 4v16' },
-            stateIcon === 'window-open'
-              ? { d: 'm12 4 6 3v10l-6 3M18 12h2' }
-              : { d: 'M6.5 14.5v3h3' },
-          ]}
-        />
-      </Text>
-    );
-  Icon = stateIcon ? (icons[stateIcon] ?? Icon) : Icon;
   return (
-    <Text className="device-state-icon" key={stateIcon ?? Icon.displayName}>
-      <Icon size={size} strokeWidth={1.65} aria-hidden="true" />
-    </Text>
+    <DeviceBrandIcon
+      size={size}
+      device={{
+        name: accessory.name,
+        primaryEntityId: accessory.primaryEntityId,
+        category: accessory.category,
+        manufacturer: accessory.manufacturer,
+        model: accessory.model,
+        deviceType: accessory.deviceType,
+        deviceClass:
+          typeof accessory.state.attributes.device_class === 'string'
+            ? accessory.state.attributes.device_class
+            : undefined,
+        powerStrip: Boolean(accessory.powerStrip),
+        buttonController: Boolean(accessory.buttonController),
+        physicalHub: Boolean(accessory.physicalHub),
+        securityIconKey: securityIcon(accessory.state) ?? undefined,
+        isScale: isScaleReading(accessory.state, {
+          id: accessory.deviceId ?? '',
+          name: accessory.name,
+          model: accessory.model,
+        }),
+        isKettle: accessory.primaryEntityId.startsWith('water_heater.') && isKettle(accessory),
+      }}
+    />
   );
 }
 

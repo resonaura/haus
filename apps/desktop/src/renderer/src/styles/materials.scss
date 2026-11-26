@@ -42,7 +42,7 @@
     .camera-card:not([data-haus-camera-tile='shared']),
     .accessory-tile:not([data-haus-device-tile='shared']),
     .room-overview-card,
-    .mood-card,
+    .mood-card:not([data-haus-scene-card='shared']),
     .integration-card,
     .addon-card,
     .settings-card,
@@ -114,7 +114,7 @@
 }
 :root
   :is(
-    .mood-icon,
+    .mood-card:not([data-haus-scene-card='shared']) .mood-icon,
     .room-overview-icon,
     .home-avatar,
     .inventory-glyph,
@@ -136,7 +136,7 @@
       .camera-card:not([data-haus-camera-tile='shared']),
       .accessory-tile:not([data-haus-device-tile='shared']),
       .room-overview-card,
-      .mood-card,
+      .mood-card:not([data-haus-scene-card='shared']),
       .integration-card,
       .addon-card,
       .settings-card,
@@ -157,7 +157,7 @@
       .management-fields fieldset,
       .management-server-text,
       .management-search,
-      .mood-icon,
+      .mood-card:not([data-haus-scene-card='shared']) .mood-icon,
       .room-overview-icon,
       .inventory-glyph,
       .management-intro-icon,
@@ -245,7 +245,7 @@
 }
 
 /* Glass belongs to navigation and transient controls, above the content plane. */
-:root .topbar {
+:root .topbar:not([data-haus-topbar='shared']) {
   background: color-mix(in srgb, var(--canvas) 78%, transparent);
   backdrop-filter: blur(24px) saturate(125%);
   -webkit-backdrop-filter: blur(24px) saturate(125%);
@@ -270,7 +270,13 @@
   border-color: var(--material-edge);
   box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
 }
-:root :is(.theme-toggle, .profile-button, .mood-details.button, .haus-controller-close) {
+:root
+  :is(
+    .theme-toggle,
+    .profile-button:not([data-haus-topbar-profile='shared']),
+    .mood-details.button,
+    .haus-controller-close
+  ) {
   background: linear-gradient(155deg, var(--material-top), var(--material-bottom));
   border: 1px solid var(--material-edge);
   box-shadow: 0 2px 6px var(--material-shadow);

@@ -82,21 +82,21 @@ body {
   border-radius: 999px;
   padding: 2px 7px;
 }
-.topbar {
+.topbar:not([data-haus-topbar='shared']) {
   height: 64px;
   border-color: var(--line);
   padding-inline: 34px;
   background: color-mix(in srgb, var(--canvas) 88%, transparent);
 }
-.breadcrumb {
+.topbar:not([data-haus-topbar='shared']) .breadcrumb {
   color: var(--muted-ink);
   font-size: 12px;
 }
-.breadcrumb strong {
+.topbar:not([data-haus-topbar='shared']) .breadcrumb strong {
   color: var(--ink);
   font-weight: 550;
 }
-.demo-badge {
+.topbar:not([data-haus-topbar='shared']) .demo-badge {
   color: var(--muted-ink);
   border-color: var(--line);
   border-radius: 999px;
@@ -122,7 +122,7 @@ body {
   border: 1px solid var(--line);
   background: var(--card);
 }
-.profile-button {
+.profile-button:not([data-haus-topbar-profile='shared']) {
   border: 1px solid var(--line);
   background: var(--soft);
   color: var(--ink);

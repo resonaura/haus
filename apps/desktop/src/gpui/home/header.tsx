@@ -2,7 +2,8 @@
 
 import type { Area } from '@haus/ha/types';
 import type { RegistryController } from '@haus/ha/ui/registry';
-import { CategoryFilter, CategoryRail, DEVICE_ICONS, UiIcon } from '@haus/ui/components';
+import { sanitizeLiquidGlassSettings, type LiquidGlassSettings } from '@haus/ui';
+import { HomeCategoryDock, UiIcon } from '@haus/ui/components';
 import { insets } from '@haus/ui/ir';
 import { HausButton, Heading, Row, Stack, Text } from '@haus/ui/primitives';
 import type { GpuiAddDeviceRequest } from '../management/add-device.js';
@@ -131,39 +132,38 @@ export function WorkspacePageHeader({
 
 export function WorkspaceCategoryRail({
   categories,
+  route,
   activeCategory,
-  onSelectHome,
-  onSelectCategory,
+  bleedX,
+  liquidGlass,
+  onGo,
 }: {
   readonly categories: HomeDashboard['categories'];
+  readonly route: HomeRoute;
   readonly activeCategory?: HomeDashboard['categories'][number];
-  readonly onSelectHome: () => void;
-  readonly onSelectCategory: (id: string) => void;
+  readonly bleedX: number;
+  readonly liquidGlass?: Partial<LiquidGlassSettings>;
+  readonly onGo: (route: HomeRoute) => void;
 }) {
+  const items = [
+    ...categories.filter((item) => item.id !== 'other'),
+    { id: 'servers', name: 'Servers', summary: 'Storage & services' },
+    ...categories.filter((item) => item.id === 'other'),
+  ];
+  const selected = route === 'servers' ? 'servers' : (activeCategory?.id ?? null);
+  const glass = sanitizeLiquidGlassSettings(liquidGlass);
+
   return (
-    <CategoryRail>
-      <CategoryFilter
-        name="All"
-        summary="Your home"
-        icon={<UiIcon name="house" size={19} />}
-        selected={!activeCategory}
-        onSelect={onSelectHome}
-        portable
-      />
-      {categories.map((item) => (
-        <CategoryFilter
-          key={item.id}
-          id={item.id}
-          name={item.name}
-          summary={item.summary}
-          selected={item.id === activeCategory?.id}
-          icon={<UiIcon name={DEVICE_ICONS[item.id]} size={19} />}
-          onSelect={() =>
-            item.id === activeCategory?.id ? onSelectHome() : onSelectCategory(item.id)
-          }
-          portable
-        />
-      ))}
-    </CategoryRail>
+    <HomeCategoryDock
+      categories={items}
+      selected={selected}
+      bleedX={bleedX}
+      liquidGlass={{
+        enabled: glass.enabled,
+        refractionStrength: glass.refractionStrength,
+        dispersion: glass.dispersion,
+      }}
+      onSelect={(id) => onGo(id === 'servers' ? 'servers' : id ? `category:${id}` : 'home')}
+    />
   );
 }

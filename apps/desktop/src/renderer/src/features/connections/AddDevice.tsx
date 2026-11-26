@@ -6,27 +6,23 @@
  */
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import type { OnboardingDiscoveredFlow } from '@haus/core/transport';
 import {
   Box,
+  DiscoveryRadarPanel,
   HausButton as Button,
   HausModalOverlay as Modal,
-  Heading,
+  insets,
+  ManagementGlassCard,
+  pct,
   Pressable,
+  px,
+  Row,
+  Stack,
   Text,
   TextInput,
 } from '@haus/ui';
-import {
-  Camera,
-  ChevronRight,
-  Lamp,
-  QrCode,
-  Radar,
-  RefreshCw,
-  Search,
-  Server,
-  X,
-} from 'lucide-react';
-import { BrandIcon } from '../../components/brand/BrandIcon';
+import { Camera, ChevronRight, Lamp, QrCode, Search, Server, X } from 'lucide-react';
 import type { FlowProgress } from '../../ha/management';
 import type { Snapshot } from '../../model';
 import { CodeFirstCommissioningDialog } from '../commissioning';
@@ -41,15 +37,6 @@ import {
 } from './flow/integration-grid';
 import { IntegrationFlow, type FlowTarget } from './IntegrationFlow';
 import { formatDiscoverySourceLabel } from './system/DiscoveredPanel';
-
-const RADAR_BLIP_COORDS = [
-  { x: 74, y: 26, delay: '0s' },
-  { x: 24, y: 32, delay: '0.45s' },
-  { x: 78, y: 68, delay: '0.9s' },
-  { x: 26, y: 74, delay: '1.35s' },
-  { x: 50, y: 16, delay: '1.8s' },
-  { x: 52, y: 84, delay: '2.2s' },
-] as const;
 
 export function AddDeviceFlow(props: {
   snapshot: Snapshot;
@@ -174,7 +161,17 @@ export function AddDeviceFlow(props: {
     );
 
   if (!demo) {
-    const radarItems = discovered.slice(0, RADAR_BLIP_COORDS.length);
+    const discoveredCards: OnboardingDiscoveredFlow[] = discovered.map((item) => {
+      const integrationTitle = resolveDomainTitle(item.handler);
+      return {
+        flowId: item.flow_id,
+        domain: item.handler,
+        title: integrationTitle,
+        label: item.context?.title_placeholders?.name || integrationTitle,
+        source: item.context?.source,
+        sourceLabel: formatDiscoverySourceLabel(item.context?.source),
+      };
+    });
     const searching = effectiveQuery.trim().length > 0;
     return (
       <Modal
@@ -237,208 +234,124 @@ export function AddDeviceFlow(props: {
                     onSelect={handleSelectIntegration}
                   />
                 ) : (
-                  <Box className="add-device-overview">
-                    <Box
-                      semantic="section"
-                      className="add-device-radar-panel"
-                      ariaLabel="Nearby discovered devices"
-                    >
-                      <Box className="heroui-radar-stage">
-                        <Box className="heroui-radar-disc" ariaHidden={radarItems.length === 0}>
-                          <Text className="heroui-radar-ring ring-outer" />
-                          <Text className="heroui-radar-ring ring-mid" />
-                          <Text className="heroui-radar-ring ring-inner" />
-                          <Text className="heroui-radar-axis axis-h" />
-                          <Text className="heroui-radar-axis axis-v" />
-                          <Text className="heroui-radar-sweep" />
-                          <Text className="heroui-radar-pulse pulse-1" />
-                          <Text className="heroui-radar-pulse pulse-2" />
-                          <Text className="heroui-radar-core">
-                            <Radar size={16} />
-                          </Text>
-                          {radarItems.length > 0 ? (
-                            radarItems.map((item, idx) => {
-                              const coord = RADAR_BLIP_COORDS[idx]!;
-                              const integrationTitle = resolveDomainTitle(item.handler);
-                              const label =
-                                item.context?.title_placeholders?.name || integrationTitle;
-                              return (
-                                <Pressable
-                                  key={item.flow_id}
-                                  className="heroui-radar-blip"
-                                  surfaceTokens={{
-                                    left: `${coord.x}%`,
-                                    top: `${coord.y}%`,
-                                    animationDelay: coord.delay,
-                                  }}
-                                  title={`Set up ${label}`}
-                                  onPress={() =>
-                                    setDirectTarget({
-                                      flowId: item.flow_id,
-                                      domain: item.handler,
-                                      title: integrationTitle,
-                                    })
-                                  }
-                                >
-                                  <Text className="heroui-radar-blip-halo" />
-                                  <Text className="integration-logo">
-                                    <BrandIcon
-                                      kind="integration"
-                                      id={item.handler}
-                                      size={28}
-                                      hint={{ name: label }}
-                                    />
-                                  </Text>
-                                  <Text className="heroui-radar-blip-label">{label}</Text>
-                                </Pressable>
-                              );
-                            })
-                          ) : (
-                            <>
-                              <Text className="heroui-radar-echo echo-1" />
-                              <Text className="heroui-radar-echo echo-2" />
-                              <Text className="heroui-radar-echo echo-3" />
-                            </>
-                          )}
-                        </Box>
-                        <Box className="heroui-radar-caption">
-                          <Text className="heroui-radar-status-dot" />
-                          <Text>
-                            {discovered.length > 0
-                              ? `${discovered.length} ${discovered.length === 1 ? 'device' : 'devices'} broadcasting nearby`
-                              : 'Scanning mDNS, Matter, BLE & HomeKit…'}
-                          </Text>
-                        </Box>
-                      </Box>
+                  <Stack gapPx={14} style={{ layout: { width: pct(100) } }}>
+                    <DiscoveryRadarPanel
+                      discovered={discoveredCards}
+                      loading={loadingDiscovery}
+                      onRescan={() => void loadDiscovery(true)}
+                      onSelectDiscovered={(item) =>
+                        setDirectTarget({
+                          flowId: item.flowId,
+                          domain: item.domain,
+                          title: item.title,
+                        })
+                      }
+                    />
 
-                      <Box className="add-device-discovered-pane">
-                        <Box className="add-device-discovered-head">
-                          <Box className="add-device-discovered-title">
-                            <Heading level={3}>Discovered nearby</Heading>
-                            <Text className="add-device-count-pill">{discovered.length}</Text>
-                          </Box>
-                          <Pressable
-                            className="add-device-rescan-btn"
-                            disabled={loadingDiscovery}
-                            onPress={() => void loadDiscovery(true)}
-                          >
-                            <RefreshCw size={12} className={loadingDiscovery ? 'spin' : ''} />
-                            Rescan
-                          </Pressable>
-                        </Box>
-
-                        {discovered.length > 0 ? (
-                          <Box className="add-device-discovered-list">
-                            {discovered.map((item) => {
-                              const integrationTitle = resolveDomainTitle(item.handler);
-                              const label =
-                                item.context?.title_placeholders?.name || integrationTitle;
-                              const sourceLabel = formatDiscoverySourceLabel(item.context?.source);
-                              return (
-                                <Box key={item.flow_id} className="add-device-discovered-item">
-                                  <Text className="integration-logo">
-                                    <BrandIcon
-                                      kind="integration"
-                                      id={item.handler}
-                                      size={36}
-                                      hint={{
-                                        name: label,
-                                        ...(item.context?.source
-                                          ? { category: item.context.source }
-                                          : {}),
-                                      }}
-                                    />
-                                  </Text>
-                                  <Box className="add-device-discovered-copy">
-                                    <Box className="add-device-discovered-row">
-                                      <Text semantic="strong">{label}</Text>
-                                      <Text className="discovered-source-pill">{sourceLabel}</Text>
-                                    </Box>
-                                    <Text semantic="small">{integrationTitle}</Text>
-                                  </Box>
-                                  <Button
-                                    size="sm"
-                                    onPress={() =>
-                                      setDirectTarget({
-                                        flowId: item.flow_id,
-                                        domain: item.handler,
-                                        title: integrationTitle,
-                                      })
-                                    }
-                                  >
-                                    Set up
-                                  </Button>
-                                </Box>
-                              );
-                            })}
-                          </Box>
-                        ) : (
-                          <Box className="add-device-discovered-empty">
-                            <Text semantic="strong">
-                              {loadingDiscovery
-                                ? 'Listening for nearby devices…'
-                                : 'No unconfigured broadcasts waiting'}
-                            </Text>
-                            <Text semantic="p">
-                              Power on any Matter, HomeKit, Bluetooth, mDNS, or MQTT device and it
-                              will appear on the radar, or choose a setup method below.
-                            </Text>
-                          </Box>
-                        )}
-                      </Box>
-                    </Box>
-
-                    <Box className="add-device-paths-grid">
-                      <Button
-                        variant="secondary"
-                        className="setup-path setup-path-card"
+                    <Row gapPx={10} wrap style={{ layout: { width: pct(100) } }}>
+                      <ManagementGlassCard
+                        radius={18}
+                        padding={insets(12, 14)}
+                        interactive
                         onPress={() => setKind('code')}
+                        style={{ layout: { flexGrow: 1, flexShrink: 1, minWidth: px(200) } }}
                       >
-                        <Text className="setup-path-icon">
-                          <QrCode size={18} />
-                        </Text>
-                        <Text className="setup-path-copy">
-                          <Text semantic="strong">Set up with code</Text>
-                          <Text semantic="small">Matter QR, HomeKit PIN, Improv, or Wi-Fi</Text>
-                        </Text>
-                        <ChevronRight size={15} className="setup-path-chevron" />
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="setup-path setup-path-card"
+                        <Row
+                          align="center"
+                          justify="between"
+                          gapPx={10}
+                          style={{ layout: { width: pct(100) } }}
+                        >
+                          <Row
+                            align="center"
+                            gapPx={10}
+                            style={{ layout: { flexGrow: 1, minWidth: px(0) } }}
+                          >
+                            <Text className="setup-path-icon">
+                              <QrCode size={18} />
+                            </Text>
+                            <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                              <Text size={13} weight={600}>
+                                Set up with code
+                              </Text>
+                              <Text size={11.5} tone="muted">
+                                Matter QR, HomeKit PIN, Improv, or Wi-Fi
+                              </Text>
+                            </Stack>
+                          </Row>
+                          <ChevronRight size={15} />
+                        </Row>
+                      </ManagementGlassCard>
+                      <ManagementGlassCard
+                        radius={18}
+                        padding={insets(12, 14)}
+                        interactive
                         onPress={() => setKind('camera')}
+                        style={{ layout: { flexGrow: 1, flexShrink: 1, minWidth: px(200) } }}
                       >
-                        <Text className="setup-path-icon">
-                          <Camera size={18} />
-                        </Text>
-                        <Text className="setup-path-copy">
-                          <Text semantic="strong">Camera</Text>
-                          <Text semantic="small">
-                            Live video, RTSP/ONVIF, Tuya, Aqara &amp; NVR
-                          </Text>
-                        </Text>
-                        <ChevronRight size={15} className="setup-path-chevron" />
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="setup-path setup-path-card"
+                        <Row
+                          align="center"
+                          justify="between"
+                          gapPx={10}
+                          style={{ layout: { width: pct(100) } }}
+                        >
+                          <Row
+                            align="center"
+                            gapPx={10}
+                            style={{ layout: { flexGrow: 1, minWidth: px(0) } }}
+                          >
+                            <Text className="setup-path-icon">
+                              <Camera size={18} />
+                            </Text>
+                            <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                              <Text size={13} weight={600}>
+                                Camera
+                              </Text>
+                              <Text size={11.5} tone="muted">
+                                Live video, RTSP/ONVIF, Tuya, Aqara &amp; NVR
+                              </Text>
+                            </Stack>
+                          </Row>
+                          <ChevronRight size={15} />
+                        </Row>
+                      </ManagementGlassCard>
+                      <ManagementGlassCard
+                        radius={18}
+                        padding={insets(12, 14)}
+                        interactive
                         onPress={() => setKind('other')}
+                        style={{ layout: { flexGrow: 1, flexShrink: 1, minWidth: px(200) } }}
                       >
-                        <Text className="setup-path-icon">
-                          <Lamp size={18} />
-                        </Text>
-                        <Text className="setup-path-copy">
-                          <Text semantic="strong">Browse all integrations</Text>
-                          <Text semantic="small">
-                            {catalog.length > 0
-                              ? `Explore ${catalog.length.toLocaleString()} bridges, accounts & services`
-                              : 'Bridges, cloud accounts, and smart services'}
-                          </Text>
-                        </Text>
-                        <ChevronRight size={15} className="setup-path-chevron" />
-                      </Button>
-                    </Box>
-                  </Box>
+                        <Row
+                          align="center"
+                          justify="between"
+                          gapPx={10}
+                          style={{ layout: { width: pct(100) } }}
+                        >
+                          <Row
+                            align="center"
+                            gapPx={10}
+                            style={{ layout: { flexGrow: 1, minWidth: px(0) } }}
+                          >
+                            <Text className="setup-path-icon">
+                              <Lamp size={18} />
+                            </Text>
+                            <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                              <Text size={13} weight={600}>
+                                Browse all integrations
+                              </Text>
+                              <Text size={11.5} tone="muted">
+                                {catalog.length > 0
+                                  ? `Explore ${catalog.length.toLocaleString()} bridges, accounts & services`
+                                  : 'Bridges, cloud accounts, and smart services'}
+                              </Text>
+                            </Stack>
+                          </Row>
+                          <ChevronRight size={15} />
+                        </Row>
+                      </ManagementGlassCard>
+                    </Row>
+                  </Stack>
                 )}
               </Modal.Body>
             </Modal.Dialog>

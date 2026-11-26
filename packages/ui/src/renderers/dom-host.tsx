@@ -259,7 +259,14 @@ export class DomHostAdapter implements UiHostAdapter {
 
   renderImage(props: HostImageProps, context: RenderContext): React.ReactElement {
     const { style } = compileStyleToReactCss(props.style ?? {}, context);
-    const mergedStyle = props.objectFit ? { ...style, objectFit: props.objectFit } : style;
+    const filter = props.dropShadow
+      ? `drop-shadow(${props.dropShadow.offsetX}px ${props.dropShadow.offsetY}px ${props.dropShadow.blurRadius}px ${props.dropShadow.color})`
+      : style.filter;
+    const mergedStyle: React.CSSProperties = {
+      ...style,
+      ...(props.objectFit ? { objectFit: props.objectFit } : {}),
+      ...(filter !== undefined ? { filter } : {}),
+    };
     return (
       <img
         id={props.id}
@@ -275,31 +282,41 @@ export class DomHostAdapter implements UiHostAdapter {
   }
 
   renderProgressiveBlur(
-    { maxRadius, start, style }: HostProgressiveBlurProps,
+    { maxRadius, start, edge = 'bottom', style }: HostProgressiveBlurProps,
     context: RenderContext,
   ) {
     const { style: css } = compileStyleToReactCss(style, context);
+    const layers =
+      edge === 'top'
+        ? [
+            { amount: 1, mask: 'linear-gradient(#000 20%, transparent 75%)' },
+            { amount: 0.5, mask: 'linear-gradient(#000 45%, transparent 90%)' },
+            { amount: 1 / 6, mask: 'linear-gradient(#000 70%, transparent)' },
+          ]
+        : [0.25, 0.53, 1].map((amount, index) => {
+            const begin = start + (1 - start) * index * 0.27;
+            const end = start + ((1 - start) * (index + 1)) / 3;
+            return {
+              amount,
+              mask: `linear-gradient(transparent ${begin * 100}%, black ${end * 100}%)`,
+            };
+          });
     return (
       <span aria-hidden="true" style={{ ...css, pointerEvents: 'none', overflow: 'hidden' }}>
-        {[0.25, 0.53, 1].map((amount, index) => {
-          const begin = start + (1 - start) * index * 0.27;
-          const end = start + ((1 - start) * (index + 1)) / 3;
-          const mask = `linear-gradient(transparent ${begin * 100}%, black ${end * 100}%)`;
-          return (
-            <span
-              key={amount}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: 'inherit',
-                backdropFilter: `blur(${maxRadius * amount}px)`,
-                WebkitBackdropFilter: `blur(${maxRadius * amount}px)`,
-                maskImage: mask,
-                WebkitMaskImage: mask,
-              }}
-            />
-          );
-        })}
+        {layers.map((layer) => (
+          <span
+            key={layer.amount}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 'inherit',
+              backdropFilter: `blur(${Number((maxRadius * layer.amount).toFixed(2))}px)`,
+              WebkitBackdropFilter: `blur(${Number((maxRadius * layer.amount).toFixed(2))}px)`,
+              maskImage: layer.mask,
+              WebkitMaskImage: layer.mask,
+            }}
+          />
+        ))}
       </span>
     );
   }

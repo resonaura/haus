@@ -2,8 +2,10 @@
 //! multi-stop linear/radial/conic gradients, 2D affine transforms, squircles,
 //! alpha edge fade masks, glow bloom, and custom user WGSL shaders.
 
-use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
+
+use rustc_hash::{FxHashMap, FxHasher};
 
 use crate::color::parse_color_rgba;
 use crate::style::{
@@ -15,10 +17,18 @@ const LIQUID_GLASS_GPUI_WGSL: &str = include_str!("shaders/liquid-glass.wgsl");
 
 const GRADIENT_GPUI_WGSL: &str = include_str!("shaders/gradient.wgsl");
 
+struct CachedCustomShader {
+    label: String,
+    wgsl: String,
+    samples_backdrop: bool,
+    custom_shape_alpha: bool,
+    result: Result<gpui::Shader, String>,
+}
+
 static LIQUID_GLASS_SHADER: OnceLock<Result<gpui::Shader, String>> = OnceLock::new();
 static GRADIENT_SHADER: OnceLock<Result<gpui::Shader, String>> = OnceLock::new();
 static CUSTOM_SHADER_CACHE: OnceLock<
-    Mutex<HashMap<(String, String, bool, bool), Result<gpui::Shader, String>>>,
+    Mutex<FxHashMap<(u64, usize), Vec<CachedCustomShader>>>,
 > = OnceLock::new();
 
 pub(crate) fn liquid_glass_shader() -> Option<gpui::Shader> {
@@ -59,16 +69,25 @@ pub(crate) fn gradient_shader() -> Option<gpui::Shader> {
 }
 
 fn compile_custom_shader(desc: &CustomShaderDesc) -> Option<gpui::Shader> {
-    let cache = CUSTOM_SHADER_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let key = (
-        desc.label.clone(),
-        desc.wgsl.clone(),
-        desc.samples_backdrop,
-        desc.custom_shape_alpha,
-    );
+    let mut hasher = FxHasher::default();
+    desc.label.hash(&mut hasher);
+    desc.wgsl.hash(&mut hasher);
+    desc.samples_backdrop.hash(&mut hasher);
+    desc.custom_shape_alpha.hash(&mut hasher);
+    let bucket_key = (hasher.finish(), desc.wgsl.len());
+
+    let cache = CUSTOM_SHADER_CACHE.get_or_init(|| Mutex::new(FxHashMap::default()));
     let mut guard = cache.lock().unwrap();
-    if let Some(entry) = guard.get(&key) {
-        return entry.as_ref().ok().copied();
+    if let Some(entries) = guard.get(&bucket_key) {
+        for entry in entries {
+            if entry.samples_backdrop == desc.samples_backdrop
+                && entry.custom_shape_alpha == desc.custom_shape_alpha
+                && entry.label == desc.label
+                && entry.wgsl == desc.wgsl
+            {
+                return entry.result.as_ref().ok().copied();
+            }
+        }
     }
     let result = gpui::Shader::new(
         gpui::ShaderSource::new(desc.label.clone(), desc.wgsl.clone())
@@ -81,7 +100,13 @@ fn compile_custom_shader(desc: &CustomShaderDesc) -> Option<gpui::Shader> {
         message
     });
     let compiled = result.as_ref().ok().copied();
-    guard.insert(key, result);
+    guard.entry(bucket_key).or_default().push(CachedCustomShader {
+        label: desc.label.clone(),
+        wgsl: desc.wgsl.clone(),
+        samples_backdrop: desc.samples_backdrop,
+        custom_shape_alpha: desc.custom_shape_alpha,
+        result,
+    });
     compiled
 }
 
@@ -495,6 +520,62 @@ fn build_custom_shader_instance(
         }
     }
     Some((shader, instance))
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ResolvedBackgroundShader {
+    pub shader: gpui::Shader,
+    pub instance: gpui::ShaderInstance,
+    pub uses_live_time: bool,
+}
+
+pub(crate) fn resolve_background_shaders(style: &StyleDesc) -> Option<Box<[ResolvedBackgroundShader]>> {
+    let mut resolved = Vec::new();
+    if style.background_color.is_none() {
+        if let Some(BackgroundValue::Gradient(ref gradient)) = style.background {
+            if let Some((shader, instance)) = build_gradient_instance(gradient, style) {
+                resolved.push(ResolvedBackgroundShader {
+                    shader,
+                    instance,
+                    uses_live_time: false,
+                });
+            }
+        }
+    }
+    if let Some(ref glass) = style.liquid_glass {
+        if let Some((shader, instance)) = build_liquid_glass_instance(glass, style, 0.0) {
+            resolved.push(ResolvedBackgroundShader {
+                shader,
+                instance,
+                uses_live_time: true,
+            });
+        }
+    }
+    if let Some(ref custom) = style.shader {
+        if let Some((shader, instance)) = build_custom_shader_instance(custom, style, 0.0) {
+            resolved.push(ResolvedBackgroundShader {
+                shader,
+                instance,
+                uses_live_time: custom.time.is_none(),
+            });
+        }
+    }
+    (!resolved.is_empty()).then(|| resolved.into_boxed_slice())
+}
+
+pub(crate) fn apply_resolved_background_shaders<E: gpui::InteractiveElement>(
+    mut el: E,
+    shaders: &[ResolvedBackgroundShader],
+    time_secs: f32,
+) -> E {
+    for entry in shaders {
+        let mut instance = entry.instance;
+        if entry.uses_live_time {
+            instance.time = time_secs;
+        }
+        el = el.paint_background_shader(entry.shader, instance);
+    }
+    el
 }
 
 pub(crate) fn apply_background_shaders<E: gpui::InteractiveElement>(

@@ -135,7 +135,7 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
               refractionStrength: 14,
               saturation: 1.32,
               tintOpacity: 0.84,
-              rimPreset: 'card',
+              rimPreset: 'none',
             })
           : new SolidMaterial(theme.color('surface')),
       corners: corners(cover ? 20 : theme.palette.radii.panel, 'superellipse', 1.4),

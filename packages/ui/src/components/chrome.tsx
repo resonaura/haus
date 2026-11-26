@@ -11,10 +11,12 @@ import {
   rgba,
   transparentColor,
 } from '../ir/geometry.js';
-import { GradientMaterial, SolidMaterial } from '../ir/materials.js';
+import { BackdropMaterial, GradientMaterial, SolidMaterial } from '../ir/materials.js';
 import type { UiStyleSpec } from '../ir/node.js';
+import { useHausUi } from '../primitives/context.js';
 import { Box, Pressable, Text } from '../primitives/elements.js';
 import { GlassRim } from '../primitives/glass-rim.js';
+import { resolveColorToCss } from '../renderers/contract.js';
 import { UiIcon } from './icon.js';
 
 const row = {
@@ -24,9 +26,23 @@ const row = {
 } as const;
 
 const iconButton: UiStyleSpec = {
-  layout: { ...row, gap: px(5), height: px(30), minWidth: px(32), justifyContent: 'center' },
+  layout: {
+    ...row,
+    gap: px(6),
+    padding: insets(6),
+    minWidth: px(31),
+    minHeight: px(31),
+    justifyContent: 'center',
+    position: 'relative',
+    flexShrink: 0,
+  },
   corners: corners(9),
-  states: { hover: { material: new SolidMaterial(colorToken('surfaceHover')) } },
+  states: {
+    hover: {
+      material: new SolidMaterial(colorToken('surfaceHover')),
+      textColor: colorToken('textPrimary'),
+    },
+  },
 };
 
 export function DesktopTopbar({
@@ -41,7 +57,7 @@ export function DesktopTopbar({
   onNotifications,
   onSettings,
   inset,
-  showMenu = true,
+  showMenu,
 }: {
   readonly homeName: string;
   readonly heading: string;
@@ -49,73 +65,100 @@ export function DesktopTopbar({
   readonly userName?: string;
   readonly notificationCount?: number;
   readonly hasAttention?: boolean;
-  readonly onOpenNavigation: () => void;
+  readonly onOpenNavigation?: () => void;
   readonly onSearch: () => void;
   readonly onNotifications: () => void;
   readonly onSettings: () => void;
   readonly inset?: number;
   readonly showMenu?: boolean;
 }) {
-  const portable = inset !== undefined;
+  const { theme, viewport } = useHausUi();
+  const compact = viewport.width <= 760;
+  const padX = inset ?? (compact ? 19 : viewport.width <= 1180 ? 25 : 32);
+  const barHeight = compact ? 57 : 61;
+  const menuVisible = Boolean(onOpenNavigation && (showMenu ?? compact));
+  const mutedInk = resolveColorToCss(colorToken('textMuted'), theme, false);
+
   return (
     <Box
       semantic="header"
       className="topbar"
-      style={
-        portable
-          ? {
-              layout: {
-                ...row,
-                height: px(61),
-                flexShrink: 0,
-                padding: insets(0, inset),
-                justifyContent: 'between',
-              },
-            }
-          : undefined
-      }
+      dataAttrs={{ 'data-haus-topbar': 'shared' }}
+      style={{
+        layout: {
+          ...row,
+          minHeight: px(barHeight),
+          flexShrink: 0,
+          padding: { left: px(padX), right: px(padX) },
+          justifyContent: 'between',
+          position: 'relative',
+          zIndex: 20,
+        },
+        material: new BackdropMaterial(
+          {
+            blurRadius: 24,
+            saturation: 1.25,
+            tintColor: colorToken('canvas', 0.78),
+            tintOpacity: 0.78,
+          },
+          { fallbackColor: colorToken('card') },
+        ),
+      }}
     >
       <Box
         className="breadcrumb"
-        style={portable ? { layout: { ...row, gap: px(11) } } : undefined}
+        style={{ layout: { ...row, gap: px(compact ? 7 : 11), minWidth: px(0) } }}
       >
-        {showMenu && (
+        {menuVisible && (
           <Pressable
             className="mobile-menu icon-button"
             id="topbar-navigation"
             ariaLabel="Open navigation"
-            style={portable ? iconButton : undefined}
+            style={iconButton}
             onActivate={onOpenNavigation}
           >
-            <UiIcon name="menu" size={20} />
+            <UiIcon name="menu" size={20} color={mutedInk} />
           </Pressable>
         )}
-        <UiIcon name="house" size={15} />
-        <Text tone={portable ? 'muted' : undefined} size={portable ? 11 : undefined}>
-          {homeName}
-        </Text>
-        <UiIcon name="chevron-right" size={13} />
-        <Text semantic="strong" size={portable ? 11 : undefined}>
+        <UiIcon name="house" size={15} color={mutedInk} />
+        {!compact && (
+          <>
+            <Text
+              tone="muted"
+              size={11}
+              style={{ typography: { maxLines: 1, whiteSpace: 'nowrap' } }}
+            >
+              {homeName}
+            </Text>
+            <UiIcon name="chevron-right" size={13} color={mutedInk} />
+          </>
+        )}
+        <Text
+          semantic="strong"
+          tone="primary"
+          size={11}
+          weight={600}
+          style={{ typography: { maxLines: 1, whiteSpace: 'nowrap' } }}
+        >
           {heading}
         </Text>
       </Box>
       <Box
         className="topbar-actions"
-        style={portable ? { layout: { ...row, gap: px(12), flexShrink: 0 } } : undefined}
+        style={{ layout: { ...row, gap: px(compact ? 10 : 15), flexShrink: 0 } }}
       >
-        {demo && (
+        {demo && !compact && (
           <Text
             className="demo-badge"
-            style={
-              portable
-                ? {
-                    layout: { padding: insets(5, 8) },
-                    border: { width: 1, color: colorToken('borderSubtle') },
-                    corners: corners(18),
-                    typography: { size: 8, color: colorToken('textMuted') },
-                  }
-                : undefined
-            }
+            tone="muted"
+            size={8}
+            weight={600}
+            style={{
+              layout: { padding: insets(5, 9), flexShrink: 0 },
+              border: { width: 1, color: colorToken('border') },
+              corners: corners(999, 'round'),
+              typography: { letterSpacing: 0.12, lineHeight: 1.1, whiteSpace: 'nowrap' },
+            }}
           >
             DEMO HOME
           </Text>
@@ -124,80 +167,117 @@ export function DesktopTopbar({
           className="icon-button"
           id="home-search"
           ariaLabel="Search devices"
-          style={portable ? iconButton : undefined}
+          style={iconButton}
           onActivate={onSearch}
         >
-          <UiIcon name="search" size={19} />
-          {portable ? (
+          <UiIcon name="search" size={19} color={mutedInk} />
+          {!compact && (
             <Box
+              className="shortcut"
               style={{
-                layout: { ...row, gap: px(2), padding: insets(2, 3) },
-                corners: corners(3),
+                layout: { ...row, gap: px(2), padding: insets(3, 5) },
+                corners: corners(4),
                 material: new SolidMaterial(colorToken('soft')),
                 pointerEvents: 'none',
               }}
             >
-              <UiIcon name="command" size={9} />
-              <Text tone="muted" size={9}>
+              <UiIcon name="command" size={9.5} color={mutedInk} />
+              <Text tone="muted" size={9} style={{ typography: { lineHeight: 1 } }}>
                 K
               </Text>
             </Box>
-          ) : (
-            <Text className="shortcut">
-              <UiIcon name="command" size={10} /> K
-            </Text>
           )}
         </Pressable>
         <Pressable
           className="icon-button notification-button"
           id="home-attention"
           ariaLabel={`Notifications${notificationCount ? `, ${notificationCount}` : ''}`}
-          style={portable ? iconButton : undefined}
+          style={iconButton}
           onActivate={onNotifications}
         >
-          <UiIcon name="bell" size={19} />
+          <UiIcon name="bell" size={19} color={mutedInk} />
           {(notificationCount > 0 || hasAttention) && (
-            <Text
-              semantic="swatch"
-              style={
-                portable
-                  ? {
-                      layout: {
-                        width: px(4),
-                        height: px(4),
-                        position: 'absolute',
-                        inset: insets(5, 5, 0, 0),
-                      },
-                      corners: corners(3),
-                      material: new SolidMaterial(colorToken('warning')),
-                      pointerEvents: 'none',
-                    }
-                  : undefined
-              }
+            <Box
+              ariaHidden
+              style={{
+                layout: {
+                  width: px(6),
+                  height: px(6),
+                  position: 'absolute',
+                  inset: { top: px(5), right: px(6) },
+                },
+                corners: corners(999, 'round'),
+                border: { width: 1, color: colorToken('canvas') },
+                material: new SolidMaterial(colorToken('warning')),
+                pointerEvents: 'none',
+              }}
             />
           )}
         </Pressable>
-        <Text className="topbar-divider" />
+        <Box
+          className="topbar-divider"
+          ariaHidden
+          style={{
+            layout: { width: px(1), height: px(20), flexShrink: 0 },
+            material: new SolidMaterial(colorToken('border')),
+          }}
+        />
         <Pressable
           className="profile-button"
           id="home-settings"
           ariaLabel="Home settings"
-          style={
-            portable
-              ? {
-                  ...iconButton,
-                  corners: corners(15),
-                  layout: { ...row, width: px(30), height: px(30), justifyContent: 'center' },
-                  border: { width: 1, color: colorToken('borderSubtle') },
-                  material: new SolidMaterial(colorToken('soft')),
-                }
-              : undefined
-          }
+          dataAttrs={{ 'data-haus-topbar-profile': 'shared' }}
+          style={{
+            layout: {
+              ...row,
+              width: px(29),
+              height: px(29),
+              justifyContent: 'center',
+              position: 'relative',
+              overflow: 'hidden',
+              flexShrink: 0,
+            },
+            corners: corners(999, 'round'),
+            border: { width: 1, color: colorToken('materialEdge') },
+            material: viewport.reducedTransparency
+              ? new SolidMaterial(colorToken('card'))
+              : new GradientMaterial(
+                  [
+                    { offset: 0, color: colorToken('materialTop') },
+                    { offset: 1, color: colorToken('materialBottom') },
+                  ],
+                  155,
+                  'linear',
+                ),
+            shadows: [
+              { offsetX: 0, offsetY: 2, blurRadius: 6, color: colorToken('materialShadow') },
+            ],
+            states: {
+              hover: {
+                border: { width: 1, color: colorToken('border') },
+              },
+            },
+          }}
           onActivate={onSettings}
         >
-          {userName?.slice(0, 1) ?? 'H'}
+          <Text tone="primary" size={12.5} weight={600} style={{ typography: { lineHeight: 1 } }}>
+            {userName?.slice(0, 1) ?? 'H'}
+          </Text>
+          <GlassRim preset="circle" radiusPx={13.5} opacity={0.74} />
         </Pressable>
       </Box>
+      <Box
+        ariaHidden
+        style={{
+          layout: {
+            position: 'absolute',
+            inset: { right: px(0), bottom: px(0), left: px(0) },
+            height: px(1),
+          },
+          material: new SolidMaterial(mixColor(transparentColor, colorToken('border'), 0.7)),
+          pointerEvents: 'none',
+        }}
+      />
     </Box>
   );
 }
@@ -209,7 +289,6 @@ export function SidebarNavButton({
   active,
   onSelect,
   portable = false,
-  collapsed,
   badge,
   children,
 }: {
@@ -219,7 +298,6 @@ export function SidebarNavButton({
   readonly active: boolean;
   readonly onSelect: () => void;
   readonly portable?: boolean;
-  readonly collapsed?: boolean;
   readonly badge?: string | number;
   readonly children?: ReactNode;
 }) {
@@ -276,47 +354,43 @@ export function SidebarNavButton({
       }
     >
       {icon}
-      {!collapsed && (
-        <>
+      <Text
+        size={portable ? 12 : undefined}
+        weight={portable ? (active ? 600 : 500) : undefined}
+        tone={portable ? (active ? 'primary' : 'muted') : undefined}
+        style={
+          portable && badge !== undefined
+            ? { layout: { flexGrow: 1, minWidth: px(0) }, typography: { maxLines: 1 } }
+            : portable
+              ? { typography: { maxLines: 1 } }
+              : undefined
+        }
+      >
+        {children ?? label}
+      </Text>
+      {portable && badge !== undefined && (
+        <Box
+          style={{
+            layout: {
+              ...row,
+              justifyContent: 'center',
+              minWidth: px(22),
+              padding: insets(2, 7),
+              flexShrink: 0,
+            },
+            material: new SolidMaterial(mixColor(transparentColor, colorToken('ink'), 0.08)),
+            corners: corners(999, 'round'),
+          }}
+        >
           <Text
-            size={portable ? 12 : undefined}
-            weight={portable ? (active ? 600 : 500) : undefined}
-            tone={portable ? (active ? 'primary' : 'muted') : undefined}
-            style={
-              portable && badge !== undefined
-                ? { layout: { flexGrow: 1, minWidth: px(0) }, typography: { maxLines: 1 } }
-                : portable
-                  ? { typography: { maxLines: 1 } }
-                  : undefined
-            }
+            size={9.5}
+            weight={500}
+            tone="muted"
+            style={{ typography: { tabularNums: true, lineHeight: 1.2 } }}
           >
-            {children ?? label}
+            {String(badge)}
           </Text>
-          {portable && badge !== undefined && (
-            <Box
-              style={{
-                layout: {
-                  ...row,
-                  justifyContent: 'center',
-                  minWidth: px(22),
-                  padding: insets(2, 7),
-                  flexShrink: 0,
-                },
-                material: new SolidMaterial(mixColor(transparentColor, colorToken('ink'), 0.08)),
-                corners: corners(999, 'round'),
-              }}
-            >
-              <Text
-                size={9.5}
-                weight={500}
-                tone="muted"
-                style={{ typography: { tabularNums: true, lineHeight: 1.2 } }}
-              >
-                {String(badge)}
-              </Text>
-            </Box>
-          )}
-        </>
+        </Box>
       )}
       {portable && active && <GlassRim preset="control" radiusPx={13} opacity={0.7} />}
     </Pressable>

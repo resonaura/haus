@@ -3,10 +3,13 @@
 import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import { HausButton, HausDialog, Row, Stack, Text } from '../../primitives/index.js';
+import { BrandIcon, ManagementGlassCard, type BrandIconKind } from '../brand/index.js';
 import { UiIcon } from '../icon.js';
 import type { PortableIntegrationEntryItem } from './integrations-view.js';
 
 export function IntegrationDetailsModal({
+  domain,
+  iconKind = 'integration',
   title,
   runtimeLabel,
   iotClassLabel,
@@ -22,6 +25,8 @@ export function IntegrationDetailsModal({
   onOpenDevice,
   onClose,
 }: {
+  readonly domain?: string;
+  readonly iconKind?: BrandIconKind;
   readonly title: string;
   readonly runtimeLabel: string;
   readonly iotClassLabel?: string;
@@ -57,6 +62,27 @@ export function IntegrationDetailsModal({
       }
     >
       <Stack gapPx={14} style={{ layout: { width: pct(100) } }}>
+        {domain && (
+          <ManagementGlassCard
+            radius={18}
+            padding={insets(12, 14)}
+            style={{ layout: { width: pct(100) } }}
+          >
+            <Row align="center" gapPx={12}>
+              <BrandIcon kind={iconKind} id={domain} size={42} hint={{ name: title }} />
+              <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                <Text size={14.5} weight={600}>
+                  {title}
+                </Text>
+                <Text size={12} tone="muted">
+                  {[runtimeLabel, iotClassLabel, version ? `v${version}` : undefined]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              </Stack>
+            </Row>
+          </ManagementGlassCard>
+        )}
         {notice && (
           <Text size={12} tone="muted">
             {notice}

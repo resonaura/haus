@@ -1,14 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { randomUUID } from 'node:crypto';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  appendTerminalOutput,
   buildDemoServersState,
   buildServiceConsoleRequest,
   formatRatio,
   resolveServerConnectionState,
-  runDemoTerminalCommand,
   type ActiveServiceConsole,
   type ServerDetailTabId,
   type ServerResourceSample,
@@ -16,35 +13,14 @@ import {
 } from '@haus/core/transport';
 import type { Snapshot } from '@haus/ha/types';
 import {
-  ServerConsoleView,
   ServerDetailView,
   ServersOverviewView,
-  type ConsoleConnectionState,
-  type PendingHostKeyPrompt,
   type SidebarContextualNav,
 } from '@haus/ui/components';
 import { buildServerSidebarNav } from '../home/navigation.js';
+import { GpuiLiveTerminal } from './live-terminal.js';
 import type { GpuiSystemPorts } from './servers-port.js';
 import { GpuiServiceConsoleModal } from './service-console.js';
-
-function buildDemoConsoleSnapshot(
-  server: ServerSummaryRecord,
-  tab: 'logs' | 'terminal',
-  logsByServerId?: Readonly<Record<string, string>>,
-): { state: ConsoleConnectionState; status: string; output: string } {
-  if (tab === 'logs') {
-    return {
-      state: 'connected',
-      status: 'Demo live logs',
-      output: logsByServerId?.[server.id] ?? '[demo] waiting for log lines…\n',
-    };
-  }
-  return {
-    state: 'connected',
-    status: 'Demo interactive shell',
-    output: `Connected to ${server.name} (demo shell).\nType 'help' for built-in commands.\n\n`,
-  };
-}
 
 export function GpuiServersView({
   snapshot,
@@ -77,21 +53,6 @@ export function GpuiServersView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
-  // Console state (shared across Logs and Terminal tabs)
-  const [consoleState, setConsoleState] = useState<ConsoleConnectionState>('idle');
-  const [consolePaused, setConsolePaused] = useState(false);
-  const [consoleStatusMsg, setConsoleStatusMsg] = useState('');
-  const [consoleOutput, setConsoleOutput] = useState('');
-  const [hostKeyPrompt, setHostKeyPrompt] = useState<PendingHostKeyPrompt | undefined>(undefined);
-  const [reconnectSeq, setReconnectSeq] = useState(0);
-  const [trustFingerprint, setTrustFingerprint] = useState<string | undefined>(undefined);
-
-  const sessionIdRef = useRef<string | undefined>(undefined);
-  const pausedRef = useRef(consolePaused);
-  pausedRef.current = consolePaused;
-  const consoleStateRef = useRef(consoleState);
-  consoleStateRef.current = consoleState;
 
   const loadServers = useCallback(
     async (silent = false) => {
@@ -170,7 +131,6 @@ export function GpuiServersView({
   }, [activeTab, demo, selectedId]);
 
   const selectedServer = selectedId ? servers.find((item) => item.id === selectedId) : undefined;
-  const isConsoleTab = activeTab === 'logs' || activeTab === 'terminal';
 
   const selectTabRef = useRef<(nextTab: ServerDetailTabId) => void>(() => {});
   const closeServerRef = useRef<() => void>(() => {});
@@ -179,18 +139,6 @@ export function GpuiServersView({
 
   const handleSelectTab = (nextTab: ServerDetailTabId) => {
     setError('');
-    if (selectedServer && (nextTab === 'logs' || nextTab === 'terminal')) {
-      if (demo) {
-        const next = buildDemoConsoleSnapshot(selectedServer, nextTab, demoInitial?.logsByServerId);
-        setConsoleState(next.state);
-        setConsoleStatusMsg(next.status);
-        setConsoleOutput(next.output);
-      }
-    } else {
-      setConsoleState('idle');
-      setConsoleStatusMsg('');
-      setHostKeyPrompt(undefined);
-    }
     setActiveTab(nextTab);
   };
 
@@ -198,9 +146,6 @@ export function GpuiServersView({
     setSelectedId(undefined);
     setActiveTab('overview');
     setActiveServiceConsole(undefined);
-    setConsoleState('idle');
-    setConsoleStatusMsg('');
-    setHostKeyPrompt(undefined);
     setError('');
   };
 
@@ -247,168 +192,31 @@ export function GpuiServersView({
 
   useLayoutEffect(() => () => sidebarCallbackRef.current?.(undefined), []);
 
-  // Manage live or demo stream lifecycle for Logs and Terminal tabs.
-  useEffect(() => {
-    if (!selectedServer || !isConsoleTab) {
-      sessionIdRef.current = undefined;
-      setConsoleState('idle');
-      setHostKeyPrompt(undefined);
-      return;
-    }
-
-    if (demo) {
-      if (consoleStateRef.current === 'idle') {
-        const snapshot = buildDemoConsoleSnapshot(
-          selectedServer,
-          activeTab,
-          demoInitial?.logsByServerId,
-        );
-        setConsoleState(snapshot.state);
-        setConsoleStatusMsg(snapshot.status);
-        setConsoleOutput(snapshot.output);
-      }
-      return;
-    }
-
-    if (!system) return;
-    const terminalPort = system.terminal;
-    const sessionId = randomUUID();
-    sessionIdRef.current = sessionId;
-    const decoder = new TextDecoder();
-    setConsoleState('connecting');
-    setConsoleStatusMsg('Opening direct E2EE channel…');
-    setConsoleOutput('');
-    setHostKeyPrompt(undefined);
-
-    const unsubscribe = terminalPort.subscribe((event) => {
-      if (event.sessionId !== sessionId) return;
-      if (event.type === 'data') {
-        terminalPort.ack(sessionId, event.bytes);
-        if (!pausedRef.current) {
-          const text = decoder.decode(event.data, { stream: true });
-          setConsoleOutput((prev) => appendTerminalOutput(prev, text));
-        }
-      } else if (event.type === 'status') {
-        setConsoleState(event.state);
-        setConsoleStatusMsg(
-          event.message ??
-            (event.state === 'connected'
-              ? `${event.scope ?? 'hub'} · ${event.hostname ?? selectedServer.name}`
-              : event.state),
-        );
-      } else if (event.type === 'host-key') {
-        setHostKeyPrompt({ fingerprint: event.fingerprint, changed: event.changed });
-      } else if (event.type === 'exit') {
-        setConsoleState('disconnected');
-        setConsoleStatusMsg(
-          event.code === null ? 'Session closed' : `Exited with code ${event.code}`,
-        );
-      }
-    });
-
-    void terminalPort
-      .open({
-        sessionId,
-        serverId: selectedServer.managedId ?? selectedServer.id,
-        target: activeTab === 'logs' ? { kind: 'hub-logs' } : { kind: 'shell' },
-        cols: 120,
-        rows: 32,
-        ...(trustFingerprint ? { trustFingerprint } : {}),
-      })
-      .catch((err: unknown) => {
-        if (sessionIdRef.current !== sessionId) return;
-        setConsoleState('disconnected');
-        setConsoleStatusMsg(err instanceof Error ? err.message : 'Terminal connection failed.');
-      });
-
-    return () => {
-      unsubscribe();
-      terminalPort.close(sessionId);
-      if (sessionIdRef.current === sessionId) sessionIdRef.current = undefined;
-    };
-  }, [
-    activeTab,
-    demo,
-    demoInitial,
-    isConsoleTab,
-    reconnectSeq,
-    selectedServer,
-    system,
-    trustFingerprint,
-  ]);
-
-  const sendCommand = (command: string) => {
-    if (!selectedServer) return;
-    if (demo) {
-      const result = runDemoTerminalCommand(selectedServer.name, command);
-      if (result.clear) {
-        setConsoleOutput('');
-      } else {
-        setConsoleOutput((prev) => appendTerminalOutput(prev, result.output));
-      }
-      return;
-    }
-    const id = sessionIdRef.current;
-    if (!id || !system) return;
-    void system.terminal.write(id, `${command}\n`).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Could not send command.');
-    });
-  };
-
-  const sendInterrupt = () => {
-    if (demo) {
-      setConsoleOutput((prev) => appendTerminalOutput(prev, '^C\n'));
-      return;
-    }
-    const id = sessionIdRef.current;
-    if (!id || !system) return;
-    void system.terminal.write(id, '\x03').catch(() => undefined);
-  };
-
   if (selectedServer) {
-    const consoleNode = (
-      <ServerConsoleView
-        title={
-          activeTab === 'logs'
-            ? `${selectedServer.name} · Hub logs`
-            : `${selectedServer.name} · Shell`
-        }
-        readOnly={activeTab === 'logs'}
-        state={consoleState}
-        output={consoleOutput}
-        paused={consolePaused}
-        statusMessage={consoleStatusMsg}
-        pendingHostKey={hostKeyPrompt}
-        onTogglePause={() => setConsolePaused((prev) => !prev)}
-        onClear={() => setConsoleOutput('')}
-        onReconnect={() => {
-          if (demo && (activeTab === 'logs' || activeTab === 'terminal')) {
-            const next = buildDemoConsoleSnapshot(
-              selectedServer,
-              activeTab,
-              demoInitial?.logsByServerId,
-            );
-            setConsoleState(next.state);
-            setConsoleStatusMsg(next.status);
-            setConsoleOutput(next.output);
-            return;
-          }
-          setReconnectSeq((n) => n + 1);
-        }}
-        onSendCommand={activeTab === 'terminal' ? sendCommand : undefined}
-        onSendInterrupt={activeTab === 'terminal' ? sendInterrupt : undefined}
-        onCopyOutput={onCopyText}
-        onTrustHostKey={(fingerprint) => {
-          setTrustFingerprint(fingerprint);
-          setHostKeyPrompt(undefined);
-          setReconnectSeq((n) => n + 1);
-        }}
-        onDismissHostKey={() => {
-          setHostKeyPrompt(undefined);
-          if (sessionIdRef.current && system) system.terminal.close(sessionIdRef.current);
-        }}
-      />
-    );
+    const serverTargetId = selectedServer.managedId ?? selectedServer.id;
+    const logsSlot =
+      activeTab === 'logs' ? (
+        <GpuiLiveTerminal
+          serverId={serverTargetId}
+          serverName={selectedServer.name}
+          target={{ kind: 'hub-logs' }}
+          demo={demo}
+          demoLogs={demoInitial?.logsByServerId[selectedServer.id]}
+          terminal={system?.terminal}
+          onCopyText={onCopyText}
+        />
+      ) : undefined;
+    const terminalSlot =
+      activeTab === 'terminal' ? (
+        <GpuiLiveTerminal
+          serverId={serverTargetId}
+          serverName={selectedServer.name}
+          target={{ kind: 'shell' }}
+          demo={demo}
+          terminal={system?.terminal}
+          onCopyText={onCopyText}
+        />
+      ) : undefined;
 
     return (
       <>
@@ -420,8 +228,8 @@ export function GpuiServersView({
           contextualNavigation={Boolean(onContextualSidebarChange)}
           busy={busy}
           error={error || undefined}
-          logsSlot={consoleNode}
-          terminalSlot={consoleNode}
+          logsSlot={logsSlot}
+          terminalSlot={terminalSlot}
           onInspectService={(service, mode) =>
             setActiveServiceConsole(buildServiceConsoleRequest(service, mode))
           }
@@ -453,7 +261,7 @@ export function GpuiServersView({
         />
         {activeServiceConsole && (
           <GpuiServiceConsoleModal
-            serverId={selectedServer.managedId ?? selectedServer.id}
+            serverId={serverTargetId}
             serverName={selectedServer.name}
             consoleState={activeServiceConsole}
             demo={demo}
