@@ -1109,7 +1109,8 @@ impl App {
         })
     }
 
-    pub(crate) fn detect_accessed_entities<R>(
+    /// Runs `callback` and returns `(result, entities_accessed_during_callback)`.
+    pub fn detect_accessed_entities<R>(
         &mut self,
         callback: impl FnOnce(&mut App) -> R,
     ) -> (R, FxHashSet<EntityId>) {

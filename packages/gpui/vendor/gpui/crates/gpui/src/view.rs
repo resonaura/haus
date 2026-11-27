@@ -334,7 +334,8 @@ impl<V: View> Element for ViewElement<V> {
         if let Some(entity_id) = self.entity_id {
             // Stateful path: create a reactive boundary.
             window.with_rendered_view(entity_id, |window| {
-                let caching_disabled = window.is_inspector_picking(cx);
+                let caching_disabled =
+                    window.is_inspector_picking(cx) || !crate::incremental_rendering_enabled();
                 match self.cached_style.as_ref() {
                     Some(style) if !caching_disabled => {
                         let mut root_style = Style::default();
@@ -402,6 +403,7 @@ impl<V: View> Element for ViewElement<V> {
                         // while they prepaint, and the tree is built anew each frame, so a screen reader
                         // would lose the view.
                         if let Some(mut element_state) = element_state
+                            && crate::incremental_rendering_enabled()
                             && element_state.cache_key.bounds == bounds
                             && element_state.cache_key.content_mask == content_mask
                             && element_state.cache_key.text_style == text_style
@@ -414,6 +416,7 @@ impl<V: View> Element for ViewElement<V> {
                         {
                             let prepaint_start = window.prepaint_index();
                             window.reuse_prepaint(element_state.prepaint_range.clone());
+                            window.record_replayed_view();
                             cx.entities
                                 .extend_accessed(&element_state.accessed_entities);
                             let prepaint_end = window.prepaint_index();
@@ -485,7 +488,8 @@ impl<V: View> Element for ViewElement<V> {
         if let Some(entity_id) = self.entity_id {
             // Stateful path.
             window.with_rendered_view(entity_id, |window| {
-                let caching_disabled = window.is_inspector_picking(cx);
+                let caching_disabled =
+                    window.is_inspector_picking(cx) || !crate::incremental_rendering_enabled();
                 if self.cached_style.is_some() && !caching_disabled {
                     window.with_element_state::<ViewElementState, _>(
                         global_id.unwrap(),

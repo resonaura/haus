@@ -1259,8 +1259,9 @@ pub(crate) struct Frame {
     pub(crate) tab_stops: TabStopMap,
 }
 
+/// Opaque frame-prepaint index checkpoint used to record and replay cached subtrees.
 #[derive(Clone, Default)]
-pub(crate) struct PrepaintStateIndex {
+pub struct PrepaintStateIndex {
     hitboxes_index: usize,
     tooltips_index: usize,
     deferred_draws_index: usize,
@@ -1269,8 +1270,17 @@ pub(crate) struct PrepaintStateIndex {
     line_layout_index: LineLayoutIndex,
 }
 
+impl PrepaintStateIndex {
+    /// Returns whether any `deferred(...)` draw was scheduled between `self` and `end`.
+    #[inline]
+    pub fn has_deferred_draws(&self, end: &Self) -> bool {
+        self.deferred_draws_index != end.deferred_draws_index
+    }
+}
+
+/// Opaque frame-paint index checkpoint used to record and replay cached subtrees.
 #[derive(Clone, Default)]
-pub(crate) struct PaintIndex {
+pub struct PaintIndex {
     scene_index: usize,
     mouse_listeners_index: usize,
     root_key_listeners_index: usize,
@@ -1608,6 +1618,16 @@ pub struct WindowDrawTimings {
     pub draw_count: u64,
     /// Number of `Window::present` calls executed.
     pub present_count: u64,
+    /// Number of Taffy layout nodes allocated or mutated on the last drawn frame.
+    pub taffy_writes: u64,
+    /// Number of cached subtrees/views replayed without rebuilding on the last drawn frame.
+    pub replayed_views: u64,
+    /// Total number of primitives present in the finished `Scene` of the last drawn frame.
+    pub scene_primitives: u64,
+    /// Number of GPU backdrop capture / blur executions during the last presented frame.
+    pub backdrop_passes: u64,
+    /// Number of GPU backdrop draws served directly from cached blurred textures.
+    pub backdrop_cache_hits: u64,
 }
 
 #[derive(Default, Debug)]
@@ -2367,6 +2387,74 @@ impl Window {
             self.refreshing = true;
             self.invalidator.set_dirty(true);
         }
+    }
+
+    /// Number of completed frames drawn by this window so far.
+    #[inline]
+    pub fn drawn_frames(&self) -> u64 {
+        self.drawn_frames
+    }
+
+    #[inline]
+    pub(crate) fn record_replayed_view(&mut self) {
+        self.last_draw_timings.replayed_views =
+            self.last_draw_timings.replayed_views.saturating_add(1);
+    }
+
+    /// Returns whether a subtree recorded on `recorded_frame` is eligible to replay on this frame.
+    #[inline]
+    pub fn can_replay_subtree(&self, recorded_frame: u64) -> bool {
+        crate::incremental_rendering_enabled()
+            && !self.refreshing
+            && !self.a11y.is_active()
+            && recorded_frame.saturating_add(1) == self.drawn_frames
+    }
+
+    /// Returns whether any entity in `entities` has been notified since the last frame.
+    #[inline]
+    pub fn has_any_dirty_view(&self, entities: &FxHashSet<EntityId>) -> bool {
+        entities.iter().any(|id| self.dirty_views.contains(id))
+    }
+
+    /// Returns a snapshot of the current prepaint state cursor.
+    #[inline]
+    pub fn prepaint_checkpoint(&self) -> PrepaintStateIndex {
+        self.prepaint_index()
+    }
+
+    /// Replays a previously recorded prepaint range into the current frame and returns the new range.
+    pub fn replay_prepaint(
+        &mut self,
+        range: Range<PrepaintStateIndex>,
+        accessed_entities: &FxHashSet<EntityId>,
+        cx: &mut App,
+    ) -> Range<PrepaintStateIndex> {
+        let start = self.prepaint_index();
+        self.reuse_prepaint(range);
+        self.record_replayed_view();
+        cx.entities.extend_accessed(accessed_entities);
+        let end = self.prepaint_index();
+        start..end
+    }
+
+    /// Returns a snapshot of the current paint state cursor.
+    #[inline]
+    pub fn paint_checkpoint(&self) -> PaintIndex {
+        self.paint_index()
+    }
+
+    /// Replays a previously recorded paint range into the current frame and returns the new range.
+    pub fn replay_paint(&mut self, range: Range<PaintIndex>) -> Range<PaintIndex> {
+        let start = self.paint_index();
+        self.reuse_paint(range);
+        let end = self.paint_index();
+        start..end
+    }
+
+    /// Schedules `view_id` to re-render next frame when a cached subtree replayed under a changed opacity.
+    #[inline]
+    pub fn mark_faded_view(&mut self, view_id: EntityId) {
+        self.faded_views.push(view_id);
     }
 
     /// Close this window.
@@ -3321,10 +3409,13 @@ impl Window {
         }
 
         let finish_start = Instant::now();
-        self.layout_engine.as_mut().unwrap().clear();
+        let layout_engine = self.layout_engine.as_mut().unwrap();
+        self.last_draw_timings.taffy_writes = layout_engine.take_writes() as u64;
+        layout_engine.clear();
         self.layout_keys.clear();
         self.text_system().finish_frame();
         self.next_frame.finish(&mut self.rendered_frame);
+        self.last_draw_timings.scene_primitives = self.next_frame.scene.primitive_count() as u64;
         self.last_draw_timings.scene_finish_ms = finish_start.elapsed().as_secs_f64() * 1000.0;
 
         self.invalidator.set_phase(DrawPhase::Focus);
@@ -3429,12 +3520,31 @@ impl Window {
     }
 
     #[profiling::function]
+    #[expect(missing_docs)]
+    pub fn present_if_needed(&mut self) {
+        if self.needs_present.get() {
+            self.present();
+        }
+    }
+
+    #[expect(missing_docs)]
+    pub fn sync_external_backdrop_stats(&mut self) {
+        let (backdrop_passes, backdrop_cache_hits) = crate::take_backdrop_stats();
+        self.last_draw_timings.backdrop_passes = backdrop_passes;
+        self.last_draw_timings.backdrop_cache_hits = backdrop_cache_hits;
+    }
+
+    #[profiling::function]
     fn present(&mut self) {
         #[cfg(feature = "profiler")]
         let _foreground_turn = profiler::journal::foreground_turn();
+        let _ = crate::take_backdrop_stats();
         let present_start = Instant::now();
         self.platform_window.draw(&self.rendered_frame.scene);
         let present_end = Instant::now();
+        let (backdrop_passes, backdrop_cache_hits) = crate::take_backdrop_stats();
+        self.last_draw_timings.backdrop_passes = backdrop_passes;
+        self.last_draw_timings.backdrop_cache_hits = backdrop_cache_hits;
         self.last_draw_timings.present_ms =
             present_end.duration_since(present_start).as_secs_f64() * 1000.0;
         self.last_draw_timings.present_count =
@@ -3527,6 +3637,7 @@ impl Window {
     }
 
     fn draw_roots(&mut self, cx: &mut App) {
+        self.last_draw_timings.replayed_views = 0;
         self.invalidator.set_phase(DrawPhase::Prepaint);
         self.tooltip_bounds.take();
 
@@ -4202,9 +4313,9 @@ impl Window {
     }
 
     /// Obtain the current element opacity. This method should only be called during the
-    /// prepaint phase of element drawing.
+    /// prepaint or paint phase of element drawing.
     #[inline]
-    pub(crate) fn element_opacity(&self) -> f32 {
+    pub fn element_opacity(&self) -> f32 {
         self.invalidator.debug_assert_paint_or_prepaint();
         self.element_opacity
     }
@@ -5631,6 +5742,33 @@ impl Window {
             scale_factor,
             &cx.layout_id_buffer,
         )
+    }
+
+    /// Add a leaf layout node pinned to an exact unrounded device-pixel border-box size
+    /// recorded from a previous Taffy pass, preserving subpixel accumulation for siblings.
+    #[must_use]
+    pub fn request_replayed_layout(
+        &mut self,
+        style: Style,
+        raw_device_size: Size<f32>,
+    ) -> LayoutId {
+        self.invalidator.debug_assert_prepaint();
+        let rem_size = self.rem_size();
+        let scale_factor = self.scale_factor();
+        let key = self.layout_keys.take(self.element_id_stack.hash());
+        self.layout_engine
+            .as_mut()
+            .unwrap()
+            .request_replayed_layout(Some(key), style, raw_device_size, rem_size, scale_factor)
+    }
+
+    /// Returns the unrounded `(absolute_outer_origin_dp, layout_size_dp)` computed by Taffy.
+    pub fn raw_layout_geometry(&mut self, layout_id: LayoutId) -> (Point<f32>, Size<f32>) {
+        let scale_factor = self.scale_factor();
+        self.layout_engine
+            .as_mut()
+            .unwrap()
+            .raw_layout_geometry(layout_id, scale_factor)
     }
 
     /// Add a node to the layout tree for the current frame. Instead of taking a `Style` and children,

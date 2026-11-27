@@ -40,6 +40,8 @@ impl ElementBounds {
 
 thread_local! {
     static BOUNDS: RefCell<HashMap<u64, ElementBounds>> = RefCell::new(HashMap::new());
+    static BOUNDS_LOG: RefCell<Vec<(u64, ElementBounds)>> = const { RefCell::new(Vec::new()) };
+    static PREV_BOUNDS_LOG: RefCell<Vec<(u64, ElementBounds)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Zero-size canvas. Keep it ahead of the app subtree under the root.
@@ -53,6 +55,14 @@ pub fn bounds_frame_reset() -> impl IntoElement {
         |_, _, _| (),
         move |_, _, _, _| {
             BOUNDS.with(|cell| cell.borrow_mut().clear());
+            BOUNDS_LOG.with(|curr| {
+                PREV_BOUNDS_LOG.with(|prev| {
+                    let mut curr = curr.borrow_mut();
+                    let mut prev = prev.borrow_mut();
+                    std::mem::swap(&mut *curr, &mut *prev);
+                    curr.clear();
+                });
+            });
         },
     )
     .absolute()
@@ -116,10 +126,39 @@ where
 pub type PaintReporter = Rc<dyn Fn(Bounds<Pixels>, &mut App)>;
 
 pub fn record_bounds(id: u64, bounds: Bounds<Pixels>) {
+    let eb = ElementBounds::from_gpui(bounds);
     BOUNDS.with(|cell| {
-        cell.borrow_mut()
-            .insert(id, ElementBounds::from_gpui(bounds));
+        cell.borrow_mut().insert(id, eb);
     });
+    BOUNDS_LOG.with(|log| {
+        log.borrow_mut().push((id, eb));
+    });
+}
+
+#[inline]
+pub fn bounds_log_len() -> usize {
+    BOUNDS_LOG.with(|log| log.borrow().len())
+}
+
+pub fn replay_bounds_range(range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    let start = bounds_log_len();
+    PREV_BOUNDS_LOG.with(|prev| {
+        let prev = prev.borrow();
+        if range.start <= range.end && range.end <= prev.len() {
+            let slice = &prev[range];
+            BOUNDS.with(|map| {
+                let mut map = map.borrow_mut();
+                for &(id, eb) in slice {
+                    map.insert(id, eb);
+                }
+            });
+            BOUNDS_LOG.with(|curr| {
+                curr.borrow_mut().extend_from_slice(slice);
+            });
+        }
+    });
+    let end = bounds_log_len();
+    start..end
 }
 
 pub fn get_bounds(id: u64) -> Option<ElementBounds> {

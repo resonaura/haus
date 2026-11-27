@@ -333,7 +333,15 @@ export interface PerfMetrics {
   presentCount: number
   applyBatchCount: number
   applyBatchMs: number
+  noopBatchCount: number
   retainedElements: number
+  builtElements: number
+  replayedSubtrees: number
+  replayedElements: number
+  taffyWrites: number
+  scenePrimitives: number
+  backdropPasses: number
+  backdropCacheHits: number
 }
 
 export interface StyleDesc {
@@ -946,6 +954,8 @@ export type NativeRenderer = MutationHost &
       | "configureMotionValue"
       | "getPerfMetrics"
       | "resetPerfMetrics"
+      | "setIncrementalRendering"
+      | "isIncrementalRenderingEnabled"
       | "getListScrollTop"
       | "getSelectedText"
       | "clearSelection"

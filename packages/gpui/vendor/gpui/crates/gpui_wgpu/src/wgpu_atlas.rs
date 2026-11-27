@@ -3,10 +3,17 @@ use collections::FxHashMap;
 use etagere::{BucketedAtlasAllocator, size2};
 use gpui::{
     AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTextureList, AtlasTile, Bounds, DevicePixels,
-    PlatformAtlas, Point, Size,
+    PlatformAtlas, Point, Size, TileId,
 };
 use parking_lot::Mutex;
-use std::{borrow::Cow, ops, sync::Arc};
+use std::{
+    borrow::Cow,
+    ops,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use crate::WgpuContext;
 
@@ -21,7 +28,10 @@ fn etagere_point_to_device(point: etagere::Point) -> Point<DevicePixels> {
     }
 }
 
-pub struct WgpuAtlas(Mutex<WgpuAtlasState>);
+pub struct WgpuAtlas {
+    state: Mutex<WgpuAtlasState>,
+    has_tile_mutations: AtomicBool,
+}
 
 struct PendingUpload {
     id: AtlasTextureId,
@@ -37,6 +47,18 @@ struct WgpuAtlasState {
     storage: WgpuAtlasStorage,
     tiles_by_key: FxHashMap<AtlasKey, AtlasTile>,
     pending_uploads: Vec<PendingUpload>,
+    tile_generations: FxHashMap<(AtlasTextureId, TileId), u64>,
+    next_tile_generation: u64,
+    reset_epoch: u64,
+}
+
+impl WgpuAtlasState {
+    fn bump_tile_generation(&mut self, texture_id: AtlasTextureId, tile_id: TileId) {
+        let generation = self.next_tile_generation;
+        self.next_tile_generation = self.next_tile_generation.wrapping_add(1).max(1);
+        self.tile_generations
+            .insert((texture_id, tile_id), generation);
+    }
 }
 
 pub struct WgpuTextureInfo {
@@ -50,15 +72,31 @@ impl WgpuAtlas {
         color_texture_format: wgpu::TextureFormat,
     ) -> Self {
         let max_texture_size = device.limits().max_texture_dimension_2d;
-        WgpuAtlas(Mutex::new(WgpuAtlasState {
-            device,
-            queue,
-            max_texture_size,
-            color_texture_format,
-            storage: WgpuAtlasStorage::default(),
-            tiles_by_key: Default::default(),
-            pending_uploads: Vec::new(),
-        }))
+        WgpuAtlas {
+            state: Mutex::new(WgpuAtlasState {
+                device,
+                queue,
+                max_texture_size,
+                color_texture_format,
+                storage: WgpuAtlasStorage::default(),
+                tiles_by_key: Default::default(),
+                pending_uploads: Vec::new(),
+                tile_generations: Default::default(),
+                next_tile_generation: 1,
+                reset_epoch: 0,
+            }),
+            has_tile_mutations: AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) fn snapshot_tile_generations(
+        &self,
+    ) -> (u64, Option<FxHashMap<(AtlasTextureId, TileId), u64>>) {
+        if !self.has_tile_mutations.load(Ordering::Relaxed) {
+            return (0, None);
+        }
+        let lock = self.state.lock();
+        (lock.reset_epoch, Some(lock.tile_generations.clone()))
     }
 
     pub fn from_context(context: &WgpuContext) -> Self {
@@ -70,12 +108,12 @@ impl WgpuAtlas {
     }
 
     pub fn before_frame(&self) {
-        let mut lock = self.0.lock();
+        let mut lock = self.state.lock();
         lock.flush_uploads();
     }
 
     pub fn get_texture_info(&self, id: AtlasTextureId) -> WgpuTextureInfo {
-        let lock = self.0.lock();
+        let lock = self.state.lock();
         let texture = &lock.storage[id];
         WgpuTextureInfo {
             view: texture.view.clone(),
@@ -85,22 +123,28 @@ impl WgpuAtlas {
     /// Clears all cached textures and tiles, forcing them to be recreated.
     /// Use this for incremental recovery when the device is still valid.
     pub fn clear(&self) {
-        let mut lock = self.0.lock();
+        let mut lock = self.state.lock();
         lock.storage = WgpuAtlasStorage::default();
         lock.tiles_by_key.clear();
         lock.pending_uploads.clear();
+        lock.tile_generations.clear();
+        lock.reset_epoch = lock.reset_epoch.wrapping_add(1);
+        self.has_tile_mutations.store(true, Ordering::Relaxed);
     }
 
     /// Handles device lost by clearing all textures and cached tiles.
     /// The atlas will lazily recreate textures as needed on subsequent frames.
     pub fn handle_device_lost(&self, context: &WgpuContext) {
-        let mut lock = self.0.lock();
+        let mut lock = self.state.lock();
         lock.device = context.device.clone();
         lock.queue = context.queue.clone();
         lock.color_texture_format = context.color_texture_format();
         lock.storage = WgpuAtlasStorage::default();
         lock.tiles_by_key.clear();
         lock.pending_uploads.clear();
+        lock.tile_generations.clear();
+        lock.reset_epoch = lock.reset_epoch.wrapping_add(1);
+        self.has_tile_mutations.store(true, Ordering::Relaxed);
     }
 }
 
@@ -110,7 +154,7 @@ impl PlatformAtlas for WgpuAtlas {
         key: &AtlasKey,
         build: &mut dyn FnMut() -> Result<Option<(Size<DevicePixels>, Cow<'a, [u8]>)>>,
     ) -> Result<Option<AtlasTile>> {
-        let mut lock = self.0.lock();
+        let mut lock = self.state.lock();
         if let Some(tile) = lock.tiles_by_key.get(key) {
             Ok(Some(*tile))
         } else {
@@ -136,10 +180,12 @@ impl PlatformAtlas for WgpuAtlas {
         size: Size<DevicePixels>,
         bytes: &[u8],
     ) -> Result<Option<AtlasTile>> {
-        let mut lock = self.0.lock();
+        let mut lock = self.state.lock();
         if let Some(tile) = lock.tiles_by_key.get(key).copied() {
             if tile.bounds.size == size {
                 lock.upload_texture(tile.texture_id, tile.bounds, bytes);
+                lock.bump_tile_generation(tile.texture_id, tile.tile_id);
+                self.has_tile_mutations.store(true, Ordering::Relaxed);
                 return Ok(Some(tile));
             }
         }
@@ -149,12 +195,14 @@ impl PlatformAtlas for WgpuAtlas {
     }
 
     fn remove(&self, key: &AtlasKey) {
-        let mut lock = self.0.lock();
+        let mut lock = self.state.lock();
 
         let Some(tile) = lock.tiles_by_key.remove(key) else {
             return;
         };
         let id = tile.texture_id;
+        lock.bump_tile_generation(id, tile.tile_id);
+        self.has_tile_mutations.store(true, Ordering::Relaxed);
 
         let Some(texture_slot) = lock.storage[id.kind].textures.get_mut(id.index as usize) else {
             return;

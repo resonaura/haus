@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock};
 
+use crate::cache::dirty::{diff_style_flags, DirtyFlags};
 use crate::style::StyleDesc;
 
 /// What one `elements_at` walk carries along.
@@ -58,6 +59,16 @@ pub struct RetainedElement {
     /// the cache exists for. Style, `activeIndex`, colours and a native
     /// element's own props never move this.
     pub search_revision: u64,
+    /// Last layout-affecting mutation inside this subtree (excluding isolated deferred portals).
+    pub layout_revision: u64,
+    /// Last visual paint/composite/backdrop mutation inside this subtree (excluding isolated deferred portals).
+    pub paint_revision: u64,
+    /// Last mutation inside this subtree excluding descendants of deferred viewport/positioned `<anchored>` portals.
+    pub portal_free_revision: u64,
+    /// Accumulated dirty categories from mutations touching this subtree.
+    pub dirty_flags: DirtyFlags,
+    /// Number of retained elements in this subtree (including `self`), excluding detached nodes.
+    pub subtree_size: u32,
     /// Stable locator id from the React `testId` prop.
     pub test_id: Option<String>,
 }
@@ -119,6 +130,11 @@ impl RetainedElement {
             subtree_revision: revision,
             own_revision: revision,
             search_revision: revision,
+            layout_revision: revision,
+            paint_revision: revision,
+            portal_free_revision: revision,
+            dirty_flags: DirtyFlags::STRUCTURE,
+            subtree_size: 1,
             test_id: None,
         }
     }
@@ -274,9 +290,11 @@ pub struct RetainedTree {
     pub pinned_ids: HashSet<u64>,
     /// Elements subscribed to `layout` or `scrollChange` paint reports.
     pub layout_observer_ids: HashSet<u64>,
+    /// Deferred `<anchored>` portal element IDs (`fill="window"` or explicit `position`), in ID order.
+    pub portal_ids: std::collections::BTreeSet<u64>,
     /// How many `anchored` elements exist. Without any, an `elements_at` walk
     /// can drop a clipped subtree whole.
-    anchored_count: usize,
+    pub(crate) anchored_count: usize,
     pub styles: StyleTable,
     /// The root element ID set by appendChildToContainer.
     pub root_id: Option<u64>,
@@ -288,6 +306,8 @@ pub struct RetainedTree {
     /// leaves it false, so the window is not asked to rebuild its element tree
     /// for a frame that would come out identical.
     dirty: bool,
+    /// Bitwise union of [`DirtyFlags`] accumulated since the last `take_dirty`.
+    pub dirty_summary: DirtyFlags,
 }
 
 impl RetainedTree {
@@ -303,19 +323,47 @@ impl RetainedTree {
             event_revision: 0,
             pinned_ids: HashSet::new(),
             layout_observer_ids: HashSet::new(),
+            portal_ids: Default::default(),
             anchored_count: 0,
             styles: StyleTable::default(),
             root_id: None,
             keyboard_focus_dim: true,
             next_revision: 1,
             dirty: false,
+            dirty_summary: DirtyFlags::NONE,
         }
     }
 
     /// Whether a frame drawn now would differ from the last one, clearing the
     /// answer. Call once per applied batch.
     pub fn take_dirty(&mut self) -> bool {
+        self.dirty_summary = DirtyFlags::NONE;
         std::mem::take(&mut self.dirty)
+    }
+
+    /// Returns `(dirty, flags)` accumulated since the previous `take_dirty` call.
+    pub fn take_dirty_with_flags(&mut self) -> (bool, DirtyFlags) {
+        let flags = std::mem::take(&mut self.dirty_summary);
+        (std::mem::take(&mut self.dirty), flags)
+    }
+
+    /// True when `id` is a deferred `<anchored>` portal laid out against the window or an
+    /// explicit screen coordinate, so mutations inside it cannot alter host-tree geometry.
+    pub fn is_deferred_portal(&self, id: u64) -> bool {
+        let Some(element) = self.elements.get(&id) else {
+            return false;
+        };
+        if element.element_type != "anchored" {
+            return false;
+        }
+        let props = element.custom_props();
+        let deferred = props
+            .get("deferred")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        deferred
+            && (props.get("fill").and_then(|v| v.as_str()) == Some("window")
+                || props.get("position").is_some())
     }
 
     pub fn keyboard_focus_dim(&self) -> bool {
@@ -346,8 +394,7 @@ impl RetainedTree {
         self.track_pinned(id);
     }
 
-    /// Bring `pinned_ids` in line with `id` after anything `is_viewport_pinned`
-    /// reads has changed.
+    /// Bring `pinned_ids` and `portal_ids` in line with `id` after anything they read has changed.
     fn track_pinned(&mut self, id: u64) {
         if self
             .elements
@@ -357,6 +404,29 @@ impl RetainedTree {
             self.pinned_ids.insert(id);
         } else {
             self.pinned_ids.remove(&id);
+        }
+        if self.is_deferred_portal(id) {
+            self.portal_ids.insert(id);
+        } else {
+            self.portal_ids.remove(&id);
+        }
+    }
+
+    fn adjust_ancestor_subtree_size(&mut self, start_parent: Option<u64>, delta: i64) {
+        if delta == 0 {
+            return;
+        }
+        let mut current = start_parent;
+        while let Some(curr_id) = current {
+            let Some(el) = self.elements.get_mut(&curr_id) else {
+                break;
+            };
+            if delta > 0 {
+                el.subtree_size = el.subtree_size.saturating_add(delta as u32);
+            } else {
+                el.subtree_size = el.subtree_size.saturating_sub((-delta) as u32).max(1);
+            }
+            current = el.parent;
         }
     }
 
@@ -425,20 +495,23 @@ impl RetainedTree {
 
     /// Invalidate `id` and its ancestors, including their searchable text.
     fn mark_changed(&mut self, id: u64) {
-        self.mark_changed_detail(id, true);
+        self.mark_changed_with_flags(id, DirtyFlags::STRUCTURE | DirtyFlags::LAYOUT | DirtyFlags::PAINT, true);
     }
 
     /// Invalidate for rendering only. Use for changes that cannot move a glyph
     /// into or out of the searchable text: style, and a native element's own
     /// props, whose text is matched at paint and never enters a `GroupList`.
     fn mark_render_changed(&mut self, id: u64) {
-        self.mark_changed_detail(id, false);
+        self.mark_changed_with_flags(id, DirtyFlags::LAYOUT | DirtyFlags::PAINT, false);
     }
 
-    fn mark_changed_detail(&mut self, id: u64, search: bool) {
+    fn mark_changed_with_flags(&mut self, id: u64, flags: DirtyFlags, search: bool) {
         let revision = self.take_revision();
+        self.dirty_summary |= flags;
         let mut current = Some(id);
+        let mut crossed_portal = false;
         while let Some(current_id) = current {
+            let is_portal = self.is_deferred_portal(current_id);
             let Some(element) = self.elements.get_mut(&current_id) else {
                 break;
             };
@@ -446,10 +519,24 @@ impl RetainedTree {
                 element.own_revision = revision;
             }
             element.subtree_revision = revision;
+            element.dirty_flags |= flags;
+            if !crossed_portal {
+                element.portal_free_revision = revision;
+                if flags.affects_layout() {
+                    element.layout_revision = revision;
+                }
+                if flags.affects_paint() {
+                    element.paint_revision = revision;
+                }
+            }
             if search {
                 element.search_revision = revision;
             }
-            current = element.parent;
+            let next_parent = element.parent;
+            if is_portal {
+                crossed_portal = true;
+            }
+            current = next_parent;
         }
     }
 
@@ -460,10 +547,16 @@ impl RetainedTree {
     /// changed so caches cannot serve text that is no longer in the tree.
     pub fn destroy_element(&mut self, id: u64) -> Vec<u64> {
         let parent_id = self.elements.get(&id).and_then(|element| element.parent);
+        let removed_size = self
+            .elements
+            .get(&id)
+            .map(|element| element.subtree_size as i64)
+            .unwrap_or(0);
         if let Some(parent_id) = parent_id {
             if let Some(parent) = self.elements.get_mut(&parent_id) {
                 parent.children.retain(|child| *child != id);
             }
+            self.adjust_ancestor_subtree_size(Some(parent_id), -removed_size);
         }
         let mut destroyed = Vec::new();
         self.destroy_element_recursive(id, &mut destroyed);
@@ -487,6 +580,7 @@ impl RetainedTree {
                 self.motion_revision = self.motion_revision.wrapping_add(1);
             }
             self.pinned_ids.remove(&id);
+            self.portal_ids.remove(&id);
             self.layout_observer_ids.remove(&id);
             self.positive_tab_ids.remove(&id);
             if self.focusable_ids.remove(&id) {
@@ -501,12 +595,18 @@ impl RetainedTree {
     }
 
     pub fn append_child(&mut self, parent_id: u64, child_id: u64) {
+        let child_size = self
+            .elements
+            .get(&child_id)
+            .map(|e| e.subtree_size as i64)
+            .unwrap_or(0);
         // Remove from old parent if any
         let old_parent_id = self.elements.get(&child_id).and_then(|e| e.parent);
         if let Some(old_parent_id) = old_parent_id {
             if let Some(old_parent) = self.elements.get_mut(&old_parent_id) {
                 old_parent.children.retain(|c| *c != child_id);
             }
+            self.adjust_ancestor_subtree_size(Some(old_parent_id), -child_size);
         }
         // Set new parent
         if let Some(child) = self.elements.get_mut(&child_id) {
@@ -515,6 +615,7 @@ impl RetainedTree {
         // Add to new parent's children
         if let Some(parent) = self.elements.get_mut(&parent_id) {
             parent.children.push(child_id);
+            self.adjust_ancestor_subtree_size(Some(parent_id), child_size);
         }
         if let Some(old_parent_id) = old_parent_id {
             self.mark_changed(old_parent_id);
@@ -523,12 +624,18 @@ impl RetainedTree {
     }
 
     pub fn insert_before(&mut self, parent_id: u64, child_id: u64, before_id: u64) {
+        let child_size = self
+            .elements
+            .get(&child_id)
+            .map(|e| e.subtree_size as i64)
+            .unwrap_or(0);
         // Remove from old parent if any
         let old_parent_id = self.elements.get(&child_id).and_then(|e| e.parent);
         if let Some(old_parent_id) = old_parent_id {
             if let Some(old_parent) = self.elements.get_mut(&old_parent_id) {
                 old_parent.children.retain(|c| *c != child_id);
             }
+            self.adjust_ancestor_subtree_size(Some(old_parent_id), -child_size);
         }
         // Set new parent
         if let Some(child) = self.elements.get_mut(&child_id) {
@@ -542,6 +649,7 @@ impl RetainedTree {
                 .position(|c| *c == before_id)
                 .unwrap_or(parent.children.len());
             parent.children.insert(pos, child_id);
+            self.adjust_ancestor_subtree_size(Some(parent_id), child_size);
         }
         if let Some(old_parent_id) = old_parent_id {
             self.mark_changed(old_parent_id);
@@ -556,6 +664,7 @@ impl RetainedTree {
     /// are two `Arc`s holding the same style. Only a pointer miss pays for the
     /// ~80-field compare, which is what decides whether this repaints.
     pub fn set_style(&mut self, id: u64, style: Arc<StyleDesc>) {
+        let mut flags = DirtyFlags::NONE;
         let mut changed = false;
         if let Some(element) = self.elements.get_mut(&id) {
             let same = element
@@ -563,13 +672,19 @@ impl RetainedTree {
                 .as_ref()
                 .is_some_and(|current| Arc::ptr_eq(current, &style) || **current == *style);
             if !same {
+                flags = diff_style_flags(element.style.as_deref(), &style);
                 element.style = Some(style);
                 changed = true;
             }
         }
         if changed {
             self.track_pinned(id);
-            self.mark_render_changed(id);
+            let effective = if flags.is_empty() {
+                DirtyFlags::PAINT
+            } else {
+                flags
+            };
+            self.mark_changed_with_flags(id, effective, false);
         }
     }
 
@@ -598,13 +713,13 @@ impl RetainedTree {
                 false
             };
             // Which listeners exist decides how the element is built, though it
-            // does not touch any cached text.
+            // does not touch any cached text or Taffy geometry.
             self.dirty |= changed;
             if changed {
                 self.event_revision = self.event_revision.wrapping_add(1);
                 self.track_focusable(id);
                 self.track_layout_observer(id);
-                self.mark_render_changed(id);
+                self.mark_changed_with_flags(id, DirtyFlags::HIT_TEST, false);
             }
         }
     }
@@ -620,6 +735,7 @@ impl RetainedTree {
         let is_highlight = key == "highlight";
         let is_motion = key == "motion";
         let is_tab_index = key == "tabIndex";
+        let is_portal_mode_key = matches!(key.as_str(), "fill" | "deferred" | "position");
         let was_declaration = self
             .elements
             .get(&id)
@@ -674,7 +790,20 @@ impl RetainedTree {
         if is_highlight {
             self.track_pinned(id);
         }
+        let anchored_portal_mode_key = is_portal_mode_key
+            && self
+                .elements
+                .get(&id)
+                .is_some_and(|el| el.element_type == "anchored");
+        if anchored_portal_mode_key {
+            self.track_pinned(id);
+        }
         self.mark_render_changed(id);
+        if anchored_portal_mode_key {
+            if let Some(parent) = self.elements.get(&id).and_then(|element| element.parent) {
+                self.mark_render_changed(parent);
+            }
+        }
         let is_declaration = self
             .elements
             .get(&id)
@@ -1523,5 +1652,67 @@ mod tests {
         let after = tree.elements[&1].subtree_revision;
         tree.set_text(3, "changed".to_string());
         assert_eq!(tree.elements[&1].subtree_revision, after);
+    }
+
+    #[test]
+    fn deferred_window_portal_isolates_host_portal_free_revision() {
+        let mut tree = RetainedTree::new();
+        for (id, kind) in [
+            (1, "div"),
+            (2, "div"),
+            (3, "anchored"),
+            (4, "div"),
+            (5, "text"),
+        ] {
+            tree.create_element(id, kind.to_string());
+        }
+        tree.set_root(1);
+        tree.set_custom_prop(3, "fill".to_string(), serde_json::json!("window"));
+        tree.set_custom_prop(3, "deferred".to_string(), serde_json::json!(true));
+        tree.append_child(1, 2);
+        tree.append_child(1, 3);
+        tree.append_child(3, 4);
+        tree.append_child(4, 5);
+
+        assert!(tree.portal_ids.contains(&3));
+        assert_eq!(tree.elements[&1].subtree_size, 5);
+        assert_eq!(tree.elements[&3].subtree_size, 3);
+
+        let root_portal_free_before = tree.elements[&1].portal_free_revision;
+        let root_layout_before = tree.elements[&1].layout_revision;
+        let portal_rev_before = tree.elements[&3].portal_free_revision;
+
+        // Mutating text and style inside the deferred window portal updates the portal's
+        // revisions without advancing the host root's `portal_free_revision` or `layout_revision`.
+        tree.set_text(5, "modal query".to_string());
+        tree.set_style(
+            4,
+            Arc::new(StyleDesc {
+                width: Some(crate::style::DimensionValue::Pixels(320.0)),
+                ..Default::default()
+            }),
+        );
+        assert_eq!(
+            tree.elements[&1].portal_free_revision,
+            root_portal_free_before
+        );
+        assert_eq!(tree.elements[&1].layout_revision, root_layout_before);
+        assert!(tree.elements[&3].portal_free_revision > portal_rev_before);
+
+        // Destroying a child inside the portal updates `subtree_size` cleanly and still keeps
+        // the host root's `portal_free_revision` stable.
+        tree.destroy_element(5);
+        assert_eq!(tree.elements[&3].subtree_size, 2);
+        assert_eq!(tree.elements[&1].subtree_size, 4);
+        assert_eq!(
+            tree.elements[&1].portal_free_revision,
+            root_portal_free_before
+        );
+
+        // Destroying the portal itself invalidates the host parent and removes `portal_ids`.
+        tree.destroy_element(3);
+        assert!(!tree.portal_ids.contains(&3));
+        assert_eq!(tree.elements[&1].subtree_size, 2);
+        assert!(tree.elements[&1].portal_free_revision > root_portal_free_before);
     }
 }

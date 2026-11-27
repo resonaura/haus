@@ -268,15 +268,12 @@ impl TestGpuixRenderer {
         // Convert typed WindowHandle<GpuixView> to AnyWindowHandle for simulation methods.
         let window: gpui::AnyWindowHandle = window_handle.into();
 
-        // Visual tests have no VoiceOver / UIA client, so AccessKit never
-        // activates. Pretend one is connected so every flush builds a tree
-        // that get_a11y_tree can dump.
-        //
-        // The offscreen window is also never key. GPUI reports focus paths
-        // only for an active window, so without this onFocus / onBlur never
-        // fire in tests. Real activation would take the user's keyboard.
+        // The offscreen window is never key. GPUI reports focus paths only for
+        // an active window, so without this onFocus / onBlur never fire in
+        // tests. Accessibility stays lazy until `get_a11y_tree` is queried so
+        // ordinary test frames exercise the same view/subtree caches as a real
+        // desktop window without VoiceOver/UIA attached.
         cx.update_window(window, |_, window, cx| {
-            window.set_a11y_active_for_tests(true);
             window.set_active_for_tests(true, cx);
         })
         .map_err(|e| Error::from_reason(e.to_string()))?;
@@ -312,8 +309,12 @@ impl TestGpuixRenderer {
         let started = std::time::Instant::now();
         let mut tree = self.tree.lock().unwrap();
         let destroyed = apply_batch_to_tree(&mut tree, json.as_bytes()).map_err(Error::from_reason)?;
+        let dirty = tree.take_dirty();
         drop(tree);
         crate::perf::record_apply_batch(started.elapsed().as_nanos() as u64);
+        if !dirty {
+            crate::perf::record_noop_batch();
+        }
         Ok(destroyed)
     }
 
@@ -1092,6 +1093,23 @@ impl TestGpuixRenderer {
     }
 
     #[napi]
+    pub fn set_incremental_rendering(&self, enabled: Option<bool>) -> Result<bool> {
+        gpui::set_incremental_rendering_enabled(enabled);
+        with_test_state(|cx, window, _view| {
+            cx.update_window(window, |_, window, _app| {
+                window.refresh();
+            })
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+            Ok(gpui::incremental_rendering_enabled())
+        })
+    }
+
+    #[napi]
+    pub fn is_incremental_rendering_enabled(&self) -> bool {
+        gpui::incremental_rendering_enabled()
+    }
+
+    #[napi]
     pub fn set_motion_value(&self, id: String, value: f64) -> Result<()> {
         with_test_state(|cx, window, view| {
             let view = view.clone();
@@ -1161,6 +1179,19 @@ impl TestGpuixRenderer {
         })
     }
 
+    /// Present the most recently drawn scene through the platform GPU renderer
+    /// (Metal/DirectX) if a new frame is pending, updating `presentMs`,
+    /// `backdropPasses`, and `backdropCacheHits` in `getPerfMetrics()`.
+    #[napi]
+    pub fn present_frame(&self) -> Result<()> {
+        with_test_state(|cx, window, _view| {
+            cx.update_window(window, |_, window, _| {
+                window.present_if_needed();
+            })
+            .map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
     /// Capture a screenshot of the current rendered state and save as PNG.
     /// Supported on macOS through Metal and Windows through DirectX.
     #[napi]
@@ -1169,26 +1200,30 @@ impl TestGpuixRenderer {
             let view = view.clone();
 
             // Flush: notify view and run until parked so layout/rendering are current.
-            cx.update_window(window, |_, _window, app| {
+            // Only force `window.refresh()` on the very first frame or when incremental
+            // rendering is explicitly disabled, so incremental screenshots test the exact
+            // same cached subtree/portal pipeline as live frames.
+            cx.update_window(window, |_, window, app| {
                 view.update(app, |_, cx| {
                     cx.notify();
                 });
-            })
-            .map_err(|e| Error::from_reason(e.to_string()))?;
-
-            // Force a window refresh before capture so render_to_image reads
-            // the most recent frame scene.
-            cx.update_window(window, |_, window, _app| {
-                window.refresh();
+                if window.drawn_frames() == 0 || !gpui::incremental_rendering_enabled() {
+                    window.refresh();
+                }
             })
             .map_err(|e| Error::from_reason(e.to_string()))?;
 
             cx.run_until_parked();
 
+            let _ = gpui::take_backdrop_stats();
             // Capture via the platform renderer's render_to_image implementation.
             let image = cx
                 .capture_screenshot(window)
                 .map_err(|e| Error::from_reason(format!("Screenshot capture failed: {}", e)))?;
+            cx.update_window(window, |_, window, _| {
+                window.sync_external_backdrop_stats();
+            })
+            .map_err(|e| Error::from_reason(e.to_string()))?;
 
             // Save as PNG (format inferred from file extension).
             image
@@ -1261,9 +1296,18 @@ impl TestGpuixRenderer {
     }
 
     /// GPUI accessibility dump from the last painted frame.
-    /// Empty until a11y is active; the test renderer turns that on at construct.
+    /// Lazily activates test a11y on first request so normal frames keep subtree caching enabled.
     #[napi(js_name = "getA11yTree")]
     pub fn get_a11y_tree(&self) -> Result<String> {
+        with_test_state(|cx, window, _view| {
+            cx.update_window(window, |_, window, _| {
+                if !window.is_a11y_active() {
+                    window.set_a11y_active_for_tests(true);
+                    window.refresh();
+                }
+            })
+            .map_err(|e| Error::from_reason(e.to_string()))
+        })?;
         self.flush()?;
         with_test_state(|cx, window, _view| {
             cx.update_window(window, |_, window, _| {

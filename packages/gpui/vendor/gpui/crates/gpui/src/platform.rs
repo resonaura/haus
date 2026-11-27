@@ -1514,7 +1514,7 @@ pub enum AtlasTextureKind {
     Subpixel = 2,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 #[expect(missing_docs)]
 pub struct TileId(pub u32);

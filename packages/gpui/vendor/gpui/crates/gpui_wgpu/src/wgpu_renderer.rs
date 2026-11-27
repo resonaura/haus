@@ -24,6 +24,32 @@ const IDLE_RELEASE: Duration = Duration::from_secs(2);
 
 /// How deeply filtered layers can nest before the innermost ones stop being filtered.
 const LAYER_DEPTH: usize = 8;
+const MAX_BACKDROP_CACHE_ENTRIES: usize = 32;
+const MAX_FRAMES_IN_FLIGHT: u64 = 2;
+
+fn canonical_f32_bits(value: f32) -> u32 {
+    if value == 0.0 { 0 } else { value.to_bits() }
+}
+
+fn bounds_to_bits(bounds: Bounds<ScaledPixels>) -> [u32; 4] {
+    [
+        canonical_f32_bits(bounds.origin.x.0),
+        canonical_f32_bits(bounds.origin.y.0),
+        canonical_f32_bits(bounds.size.width.0),
+        canonical_f32_bits(bounds.size.height.0),
+    ]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct BackdropCacheKey {
+    frame_size: (u32, u32),
+    atlas_reset_epoch: u64,
+    is_shader_zero_blur: bool,
+    sigma_bits: u32,
+    clip_bits: Option<[u32; 4]>,
+    source_clip_bits: Option<[u32; 4]>,
+    underneath_digest: u64,
+}
 
 const INSTANCE_TEXTURE_TEXEL_SIZE: u64 = 16;
 
@@ -315,6 +341,116 @@ impl FilterTarget {
     }
 }
 
+struct BackdropCacheEntry {
+    key: BackdropCacheKey,
+    size: (u32, u32),
+    scratch: Scratch,
+    used_frame_seq: u64,
+}
+
+#[derive(Default)]
+struct BackdropBlurCache {
+    frame_size: (u32, u32),
+    entries: Vec<BackdropCacheEntry>,
+}
+
+impl BackdropBlurCache {
+    fn destroy_all(&mut self) {
+        for entry in self.entries.drain(..) {
+            entry.scratch.texture.destroy();
+        }
+    }
+
+    fn sync_frame_size(&mut self, frame_size: (u32, u32)) {
+        if self.frame_size != frame_size {
+            self.destroy_all();
+            self.frame_size = frame_size;
+        }
+    }
+
+    fn contains(&self, key: &BackdropCacheKey) -> bool {
+        self.entries.iter().any(|entry| &entry.key == key)
+    }
+
+    fn get_and_touch(
+        &mut self,
+        key: &BackdropCacheKey,
+        now: Instant,
+        frame_seq: u64,
+    ) -> Option<wgpu::TextureView> {
+        let entry = self.entries.iter_mut().find(|entry| &entry.key == key)?;
+        entry.used_frame_seq = frame_seq;
+        Some(entry.scratch.touch(now))
+    }
+
+    fn acquire_store_view(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        frame_size: (u32, u32),
+        target_size: (u32, u32),
+        key: BackdropCacheKey,
+        now: Instant,
+        frame_seq: u64,
+    ) -> wgpu::TextureView {
+        self.sync_frame_size(frame_size);
+        let usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        if let Some(existing_idx) = self.entries.iter().position(|entry| entry.key == key) {
+            let can_reuse = self.entries[existing_idx].used_frame_seq + MAX_FRAMES_IN_FLIGHT
+                < frame_seq
+                && self.entries[existing_idx].size == target_size;
+            if !can_reuse {
+                self.entries[existing_idx].scratch =
+                    Scratch::new(device, "backdrop_cache", format, target_size, 1, usage, now);
+                self.entries[existing_idx].size = target_size;
+            }
+            self.entries[existing_idx].used_frame_seq = frame_seq;
+            return self.entries[existing_idx].scratch.touch(now);
+        }
+        if self.entries.len() >= MAX_BACKDROP_CACHE_ENTRIES {
+            let lru_idx = self
+                .entries
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.used_frame_seq)
+                .map(|(idx, _)| idx)
+                .unwrap_or(0);
+            let can_reuse = self.entries[lru_idx].used_frame_seq + MAX_FRAMES_IN_FLIGHT < frame_seq
+                && self.entries[lru_idx].size == target_size;
+            if can_reuse {
+                let entry = &mut self.entries[lru_idx];
+                entry.key = key;
+                entry.used_frame_seq = frame_seq;
+                return entry.scratch.touch(now);
+            }
+            let scratch =
+                Scratch::new(device, "backdrop_cache", format, target_size, 1, usage, now);
+            let view = scratch.view.clone();
+            self.entries[lru_idx] = BackdropCacheEntry {
+                key,
+                size: target_size,
+                scratch,
+                used_frame_seq: frame_seq,
+            };
+            return view;
+        }
+        let scratch = Scratch::new(device, "backdrop_cache", format, target_size, 1, usage, now);
+        let view = scratch.view.clone();
+        self.entries.push(BackdropCacheEntry {
+            key,
+            size: target_size,
+            scratch,
+            used_frame_seq: frame_seq,
+        });
+        view
+    }
+
+    fn release_idle_at(&mut self, now: Instant) {
+        self.entries
+            .retain(|entry| now.duration_since(entry.scratch.used) < IDLE_RELEASE);
+    }
+}
+
 #[derive(Default)]
 struct FilterTargets {
     frame: Option<Scratch>,
@@ -381,6 +517,7 @@ struct WgpuResources {
     path_intermediate: Option<Scratch>,
     path_msaa: Option<Scratch>,
     filter_targets: FilterTargets,
+    backdrop_cache: BackdropBlurCache,
 }
 
 /// Offscreen render target plus the buffer its pixels are copied into.
@@ -402,6 +539,7 @@ impl WgpuResources {
                 scratch.texture.destroy();
             }
         }
+        self.backdrop_cache.destroy_all();
     }
 
     fn release_targets_idle_at(&mut self, now: Instant) {
@@ -414,6 +552,7 @@ impl WgpuResources {
                 *slot = None;
             }
         }
+        self.backdrop_cache.release_idle_at(now);
     }
 }
 
@@ -434,6 +573,7 @@ pub struct WgpuRenderer {
     instance_data_alignment: u64,
     uses_webgl_instance_data: bool,
     frame_time: Instant,
+    frame_seq: u64,
     frame_size: (u32, u32),
     rendering_params: RenderingParameters,
     is_bgr: bool,
@@ -848,6 +988,7 @@ impl WgpuRenderer {
             path_intermediate: None,
             path_msaa: None,
             filter_targets: FilterTargets::default(),
+            backdrop_cache: BackdropBlurCache::default(),
         };
 
         let frame_size = (surface_config.width, surface_config.height);
@@ -865,6 +1006,7 @@ impl WgpuRenderer {
             instance_data_alignment,
             uses_webgl_instance_data,
             frame_time: Instant::now(),
+            frame_seq: MAX_FRAMES_IN_FLIGHT + 1,
             frame_size,
             rendering_params,
             is_bgr: false,
@@ -2341,7 +2483,189 @@ impl WgpuRenderer {
         });
     }
 
+    fn blur_settled_size_and_scissor(
+        &self,
+        sigma: f32,
+        clip: Option<Bounds<ScaledPixels>>,
+    ) -> ((u32, u32), Option<[u32; 4]>) {
+        match BlurPasses::for_sigma(sigma) {
+            BlurPasses::Gaussian(_) => {
+                let target_size = (self.frame_size.0.max(1), self.frame_size.1.max(1));
+                let within = clip.map(|c| self.scissor(c.dilate(ScaledPixels(1.0)), 1));
+                (target_size, within)
+            }
+            BlurPasses::Kawase(kawase) => {
+                let shrink = 1u32 << kawase.settled;
+                let target_size = (
+                    (self.frame_size.0 / shrink).max(1),
+                    (self.frame_size.1 / shrink).max(1),
+                );
+                let within = clip.map(|c| {
+                    self.scissor(
+                        c.dilate(ScaledPixels(kawase.reach() + shrink as f32)),
+                        shrink,
+                    )
+                });
+                (target_size, within)
+            }
+        }
+    }
+
+    fn precompute_backdrop_keys(
+        &self,
+        scene: &Scene,
+        filtered: bool,
+        has_backdrops: bool,
+    ) -> Vec<Option<BackdropCacheKey>> {
+        let mut keys = Vec::new();
+        if !filtered || !has_backdrops {
+            return keys;
+        }
+        let incremental = gpui::incremental_rendering_enabled();
+        let (atlas_reset_epoch, tile_generations) = if incremental {
+            self.atlas.snapshot_tile_generations()
+        } else {
+            (0, None)
+        };
+        let lookup_gen = |tex_id: AtlasTextureId, tile_id: gpui::TileId| -> u64 {
+            tile_generations
+                .as_ref()
+                .and_then(|map| map.get(&(tex_id, tile_id)).copied())
+                .unwrap_or(0)
+        };
+        let frame_size = self.frame_size;
+        let clear_alpha_bits = 0u32;
+        let mut sim_stack: Vec<usize> = Vec::new();
+
+        for batch in scene.batches() {
+            let wanted = filtered
+                .then(|| scene.filtered(scene.batch_order(&batch)))
+                .flatten()
+                .map(|index| scene.filter_chain(index))
+                .unwrap_or_default();
+            let shared = sim_stack
+                .iter()
+                .zip(wanted.iter())
+                .take_while(|(open, next)| open == next)
+                .count();
+            let mut merged = false;
+            while sim_stack.len() > shared {
+                if sim_stack.len() == shared + 1
+                    && wanted.len() == sim_stack.len()
+                    && let Some(open) = sim_stack.last_mut()
+                {
+                    let next = scene.effects[wanted[shared]];
+                    let held = scene.effects[*open];
+                    if held.can_merge_with(&next) {
+                        *open = wanted[shared];
+                        merged = true;
+                        break;
+                    }
+                }
+                sim_stack.pop();
+            }
+            for index in wanted.iter().skip(shared + usize::from(merged)) {
+                if sim_stack.len() >= LAYER_DEPTH {
+                    break;
+                }
+                sim_stack.push(*index);
+            }
+
+            match batch {
+                PrimitiveBatch::Backdrops(range) => {
+                    if !incremental || range.is_empty() {
+                        keys.push(None);
+                        continue;
+                    }
+                    let backdrops = &scene.backdrops[range.clone()];
+                    let sigma = backdrops
+                        .iter()
+                        .fold(0.0_f32, |widest, backdrop| widest.max(backdrop.blur));
+                    let clip = backdrops
+                        .iter()
+                        .map(|backdrop| backdrop.bounds)
+                        .reduce(|union, bounds| union.union(&bounds));
+                    let source_clip =
+                        clip.map(|c| c.dilate(BlurPasses::for_sigma(sigma).source_margin()));
+                    let key = scene
+                        .backdrop_underneath_digest_for_backdrops(
+                            range.start,
+                            source_clip,
+                            &sim_stack,
+                            clear_alpha_bits,
+                            lookup_gen,
+                        )
+                        .map(|underneath_digest| BackdropCacheKey {
+                            frame_size,
+                            atlas_reset_epoch,
+                            is_shader_zero_blur: false,
+                            sigma_bits: canonical_f32_bits(sigma.max(0.0)),
+                            clip_bits: clip.map(bounds_to_bits),
+                            source_clip_bits: source_clip.map(bounds_to_bits),
+                            underneath_digest,
+                        });
+                    keys.push(key);
+                }
+                PrimitiveBatch::Shaders { shader, range } => {
+                    if range.is_empty() {
+                        continue;
+                    }
+                    let shaders = &scene.shaders[range.clone()];
+                    let first_shader = shaders[0];
+                    let samples_backdrop = (first_shader.flags & gpui::SHADER_FLAG_SAMPLES_BACKDROP)
+                        != 0
+                        || gpui::shader_program(shader)
+                            .is_some_and(|program| program.samples_backdrop);
+                    if !samples_backdrop {
+                        continue;
+                    }
+                    if !incremental {
+                        keys.push(None);
+                        continue;
+                    }
+                    let blur_sigma = first_shader.backdrop_blur_radius;
+                    let union_bounds = shaders
+                        .iter()
+                        .map(|instance| instance.bounds)
+                        .reduce(|acc, bounds| acc.union(&bounds));
+                    let refraction_margin = ScaledPixels(64.0);
+                    let blur_margin = if blur_sigma > 0.0 {
+                        BlurPasses::for_sigma(blur_sigma).source_margin()
+                    } else {
+                        ScaledPixels(0.0)
+                    };
+                    let clip = union_bounds.map(|bounds| bounds.dilate(refraction_margin));
+                    let source_clip =
+                        union_bounds.map(|bounds| bounds.dilate(refraction_margin + blur_margin));
+                    let key = scene
+                        .backdrop_underneath_digest_for_shaders(
+                            range.start,
+                            source_clip,
+                            &sim_stack,
+                            clear_alpha_bits,
+                            lookup_gen,
+                        )
+                        .map(|underneath_digest| BackdropCacheKey {
+                            frame_size,
+                            atlas_reset_epoch,
+                            is_shader_zero_blur: blur_sigma <= 0.0,
+                            sigma_bits: canonical_f32_bits(blur_sigma.max(0.0)),
+                            clip_bits: clip.map(bounds_to_bits),
+                            source_clip_bits: source_clip.map(bounds_to_bits),
+                            underneath_digest,
+                        });
+                    keys.push(key);
+                }
+                _ => {}
+            }
+        }
+        keys
+    }
+
     fn record_frame(&mut self, scene: &Scene, frame_view: &wgpu::TextureView) -> Result<()> {
+        self.frame_seq = self.frame_seq.wrapping_add(1);
+        let frame_size = self.frame_size;
+        self.resources_mut().backdrop_cache.sync_frame_size(frame_size);
         let mut instance_offset = 0;
         let has_backdrops = scene.has_backdrops()
             || scene.shaders.iter().any(|shader| {
@@ -2349,6 +2673,13 @@ impl WgpuRenderer {
             });
         let filtered =
             (has_backdrops || !scene.effects.is_empty()) && !self.uses_webgl_instance_data;
+        let backdrop_keys = self.precompute_backdrop_keys(scene, filtered, has_backdrops);
+        let all_backdrops_cached = !backdrop_keys.is_empty() && {
+            let cache = &self.resources().backdrop_cache;
+            backdrop_keys
+                .iter()
+                .all(|key| key.as_ref().is_some_and(|k| cache.contains(k)))
+        };
         let instance_bindings = self
             .write_instances(scene, &mut instance_offset)
             .with_context(|| {
@@ -2373,8 +2704,9 @@ impl WgpuRenderer {
                 });
 
         // Layers composite into whatever they are drawn over, so only a backdrop or
-        // backdrop-sampling custom shader routes the main frame through an offscreen target.
-        let mirrored = filtered && has_backdrops;
+        // backdrop-sampling custom shader routes the main frame through an offscreen target —
+        // and when every backdrop batch hits the blur cache, nothing samples `main_view`.
+        let mirrored = filtered && has_backdrops && !all_backdrops_cached;
         let main_view = match mirrored {
             true => self.filter_view(FilterTarget::Frame),
             false => frame_view.clone(),
@@ -2399,6 +2731,7 @@ impl WgpuRenderer {
             let mut target = main_view.clone();
             let mut stack: Vec<usize> = Vec::new();
             let mut spans: Vec<Bounds<ScaledPixels>> = Vec::new();
+            let mut backdrop_batch_cursor: usize = 0;
             for batch in scene.batches() {
                 let wanted = filtered
                     .then(|| scene.filtered(scene.batch_order(&batch)))
@@ -2488,13 +2821,42 @@ impl WgpuRenderer {
                         if range.is_empty() {
                             continue;
                         }
+                        let shaders = &scene.shaders[range.clone()];
+                        let first_shader = shaders[0];
+                        let pre_samples_backdrop =
+                            (first_shader.flags & gpui::SHADER_FLAG_SAMPLES_BACKDROP) != 0
+                                || gpui::shader_program(shader)
+                                    .is_some_and(|program| program.samples_backdrop);
+                        let cache_key = if pre_samples_backdrop && filtered {
+                            let key = backdrop_keys
+                                .get(backdrop_batch_cursor)
+                                .copied()
+                                .flatten();
+                            backdrop_batch_cursor += 1;
+                            key
+                        } else {
+                            None
+                        };
                         if let Some((pipeline, shader_samples_backdrop)) = self.custom_pipeline(shader)
                         {
-                            let shaders = &scene.shaders[range.clone()];
-                            let first_shader = shaders[0];
                             let instances = instance_range(range);
                             if shader_samples_backdrop {
-                                let backdrop_view = if filtered {
+                                let now = self.frame_time;
+                                let frame_seq = self.frame_seq;
+                                let cached_hit = if filtered {
+                                    cache_key.and_then(|key| {
+                                        self.resources_mut()
+                                            .backdrop_cache
+                                            .get_and_touch(&key, now, frame_seq)
+                                    })
+                                } else {
+                                    None
+                                };
+                                let backdrop_view = if let Some(cached_view) = cached_hit {
+                                    gpui::record_backdrop_cache_hit();
+                                    cached_view
+                                } else if filtered {
+                                    gpui::record_backdrop_pass();
                                     let blur_sigma = first_shader.backdrop_blur_radius;
                                     let union_bounds = shaders
                                         .iter()
@@ -2553,6 +2915,48 @@ impl WgpuRenderer {
                                     } else {
                                         source
                                     };
+                                    if let Some(key) = cache_key {
+                                        let (target_size, cache_within) = if blur_sigma > 0.0 {
+                                            self.blur_settled_size_and_scissor(blur_sigma, clip)
+                                        } else {
+                                            (
+                                                (self.frame_size.0.max(1), self.frame_size.1.max(1)),
+                                                source_clip.map(|c| self.scissor(c, 1)),
+                                            )
+                                        };
+                                        if cache_within.is_none_or(|[_, _, w, h]| w > 0 && h > 0) {
+                                            let format = self.surface_config.format;
+                                            let frame_size = self.frame_size;
+                                            let cache_view = {
+                                                let resources = self.resources_mut();
+                                                let device = Arc::clone(&resources.device);
+                                                resources.backdrop_cache.acquire_store_view(
+                                                    &device,
+                                                    format,
+                                                    frame_size,
+                                                    target_size,
+                                                    key,
+                                                    now,
+                                                    frame_seq,
+                                                )
+                                            };
+                                            let plain = self.write_instance_binding(
+                                                "backdrop_cache_store_bind_group",
+                                                &mut instance_offset,
+                                                &[BlurParams::default()],
+                                            )?;
+                                            let blit = self.resources().pipelines.blit.clone();
+                                            self.fullscreen_pass(
+                                                &mut encoder,
+                                                "backdrop_cache_store",
+                                                &blit,
+                                                &prepared,
+                                                &cache_view,
+                                                &plain,
+                                                cache_within,
+                                            );
+                                        }
+                                    }
                                     pass = Self::resume_pass(
                                         &mut encoder,
                                         "main_pass_continued",
@@ -2663,6 +3067,29 @@ impl WgpuRenderer {
                         if !filtered {
                             continue;
                         }
+                        let cache_key = backdrop_keys
+                            .get(backdrop_batch_cursor)
+                            .copied()
+                            .flatten();
+                        backdrop_batch_cursor += 1;
+                        let now = self.frame_time;
+                        let frame_seq = self.frame_seq;
+                        if let Some(cached) = cache_key.and_then(|key| {
+                            self.resources_mut()
+                                .backdrop_cache
+                                .get_and_touch(&key, now, frame_seq)
+                        }) {
+                            gpui::record_backdrop_cache_hit();
+                            self.draw_backdrops(
+                                &instance_bindings.backdrops,
+                                &cached,
+                                instance_range(range),
+                                &mut pass,
+                            );
+                            continue;
+                        }
+
+                        gpui::record_backdrop_pass();
                         let backdrops = &scene.backdrops[range.clone()];
                         let sigma = backdrops
                             .iter()
@@ -2689,6 +3116,42 @@ impl WgpuRenderer {
                             clip,
                             &mut instance_offset,
                         )?;
+                        if let Some(key) = cache_key {
+                            let (target_size, cache_within) =
+                                self.blur_settled_size_and_scissor(sigma, clip);
+                            if cache_within.is_none_or(|[_, _, w, h]| w > 0 && h > 0) {
+                                let format = self.surface_config.format;
+                                let frame_size = self.frame_size;
+                                let cache_view = {
+                                    let resources = self.resources_mut();
+                                    let device = Arc::clone(&resources.device);
+                                    resources.backdrop_cache.acquire_store_view(
+                                        &device,
+                                        format,
+                                        frame_size,
+                                        target_size,
+                                        key,
+                                        now,
+                                        frame_seq,
+                                    )
+                                };
+                                let plain = self.write_instance_binding(
+                                    "backdrop_cache_store_bind_group",
+                                    &mut instance_offset,
+                                    &[BlurParams::default()],
+                                )?;
+                                let blit = self.resources().pipelines.blit.clone();
+                                self.fullscreen_pass(
+                                    &mut encoder,
+                                    "backdrop_cache_store",
+                                    &blit,
+                                    &blurred,
+                                    &cache_view,
+                                    &plain,
+                                    cache_within,
+                                );
+                            }
+                        }
                         pass = Self::resume_pass(
                             &mut encoder,
                             "main_pass_continued",

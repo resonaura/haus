@@ -109,6 +109,8 @@ interface NativeTestRendererApi extends NativeRenderer {
   configureMotionValue(id: string, configJson: string): void
   getPerfMetrics(): PerfMetrics
   resetPerfMetrics(): void
+  setIncrementalRendering(enabled?: boolean | null): boolean
+  isIncrementalRenderingEnabled(): boolean
   getListScrollTop(elementId: number): number[] | null
   setDebugFrameOverlay(mode: DebugFrameOverlayMode): string
   getDebugFrameOverlay(): string
@@ -122,6 +124,7 @@ interface NativeTestRendererApi extends NativeRenderer {
   getSyntaxCacheStats(): number[]
   clearSelection(): void
   captureScreenshot(path: string): void
+  presentFrame(): void
 }
 
 interface NativeTestRendererConstructor {
@@ -690,6 +693,14 @@ export class TestRenderer implements NativeRenderer {
     this.native.resetPerfMetrics()
   }
 
+  setIncrementalRendering(enabled?: boolean | null): boolean {
+    return this.native.setIncrementalRendering(enabled)
+  }
+
+  isIncrementalRenderingEnabled(): boolean {
+    return this.native.isIncrementalRenderingEnabled()
+  }
+
   /** The logical scroll anchor of a `<virtual-list>`:
    *  `[itemIndex, offsetInItemPx, viewportHeightPx]`, or null for anything
    *  else. `itemIndex == item count` is gpui's at-end sentinel. Exact even
@@ -767,9 +778,13 @@ export class TestRenderer implements NativeRenderer {
     return this.native.getDebugFrameOverlayStats()
   }
 
+  /** Present the most recently drawn scene through the platform GPU renderer. */
+  presentFrame(): void {
+    this.native.presentFrame()
+  }
+
   /** Capture the current Metal or DirectX frame and save it as a PNG. */
   captureScreenshot(path: string): void {
-    this.native.flush()
     this.native.captureScreenshot(path)
   }
 

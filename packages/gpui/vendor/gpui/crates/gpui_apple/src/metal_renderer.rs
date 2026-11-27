@@ -59,6 +59,200 @@ const FRAME_STALL: Duration = Duration::from_millis(250);
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 const IDLE_RELEASE: Duration = Duration::from_secs(2);
 const LAYER_DEPTH: usize = 8;
+const MAX_BACKDROP_CACHE_ENTRIES: usize = 32;
+
+fn canonical_f32_bits(value: f32) -> u32 {
+    if value == 0.0 { 0 } else { value.to_bits() }
+}
+
+fn bounds_to_bits(bounds: Bounds<ScaledPixels>) -> [u32; 4] {
+    [
+        canonical_f32_bits(bounds.origin.x.0),
+        canonical_f32_bits(bounds.origin.y.0),
+        canonical_f32_bits(bounds.size.width.0),
+        canonical_f32_bits(bounds.size.height.0),
+    ]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct BackdropCacheKey {
+    viewport_size: (i32, i32),
+    is_shader_zero_blur: bool,
+    sigma_bits: u32,
+    clip_bits: Option<[u32; 4]>,
+    source_clip_bits: Option<[u32; 4]>,
+    underneath_digest: u64,
+}
+
+struct BackdropCacheEntry {
+    key: BackdropCacheKey,
+    texture: metal::Texture,
+    used: Instant,
+    used_frame_seq: u64,
+}
+
+#[derive(Default)]
+struct BackdropBlurCache {
+    viewport_size: Size<DevicePixels>,
+    entries: Vec<BackdropCacheEntry>,
+}
+
+impl BackdropBlurCache {
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    fn sync_viewport(&mut self, viewport_size: Size<DevicePixels>) {
+        if self.viewport_size != viewport_size {
+            self.entries.clear();
+            self.viewport_size = viewport_size;
+        }
+    }
+
+    fn contains(&self, key: &BackdropCacheKey) -> bool {
+        self.entries.iter().any(|entry| &entry.key == key)
+    }
+
+    fn get_and_touch(
+        &mut self,
+        key: &BackdropCacheKey,
+        now: Instant,
+        frame_seq: u64,
+    ) -> Option<metal::Texture> {
+        let entry = self.entries.iter_mut().find(|entry| &entry.key == key)?;
+        entry.used = now;
+        entry.used_frame_seq = frame_seq;
+        Some(entry.texture.clone())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn store(
+        &mut self,
+        device: &metal::Device,
+        command_buffer: &metal::CommandBufferRef,
+        pixel_format: MTLPixelFormat,
+        viewport_size: Size<DevicePixels>,
+        key: BackdropCacheKey,
+        prepared: &metal::TextureRef,
+        copy_scissor: Option<metal::MTLScissorRect>,
+        now: Instant,
+        frame_seq: u64,
+    ) {
+        self.sync_viewport(viewport_size);
+        let tex_w = prepared.width();
+        let tex_h = prepared.height();
+        if tex_w == 0 || tex_h == 0 {
+            return;
+        }
+        let (origin_x, origin_y, copy_w, copy_h) = match copy_scissor {
+            Some(scissor) => {
+                let x = scissor.x.min(tex_w);
+                let y = scissor.y.min(tex_h);
+                let w = scissor.width.min(tex_w.saturating_sub(x));
+                let h = scissor.height.min(tex_h.saturating_sub(y));
+                (x, y, w, h)
+            }
+            None => (0, 0, tex_w, tex_h),
+        };
+        if copy_w == 0 || copy_h == 0 {
+            return;
+        }
+
+        let alloc_texture = || {
+            let descriptor = metal::TextureDescriptor::new();
+            descriptor.set_texture_type(metal::MTLTextureType::D2);
+            descriptor.set_pixel_format(pixel_format);
+            descriptor.set_width(tex_w);
+            descriptor.set_height(tex_h);
+            descriptor.set_storage_mode(metal::MTLStorageMode::Private);
+            descriptor
+                .set_usage(metal::MTLTextureUsage::RenderTarget | metal::MTLTextureUsage::ShaderRead);
+            device.new_texture(&descriptor)
+        };
+
+        let max_in_flight = MAX_FRAMES_IN_FLIGHT as u64;
+        let cache_texture = if let Some(existing_idx) =
+            self.entries.iter().position(|entry| entry.key == key)
+        {
+            let can_reuse = (self.entries[existing_idx].used_frame_seq + max_in_flight) < frame_seq
+                && self.entries[existing_idx].texture.width() == tex_w
+                && self.entries[existing_idx].texture.height() == tex_h;
+            if !can_reuse {
+                self.entries[existing_idx].texture = alloc_texture();
+            }
+            self.entries[existing_idx].used = now;
+            self.entries[existing_idx].used_frame_seq = frame_seq;
+            self.entries[existing_idx].texture.clone()
+        } else if self.entries.len() >= MAX_BACKDROP_CACHE_ENTRIES {
+            let lru_idx = self
+                .entries
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.used_frame_seq)
+                .map(|(idx, _)| idx)
+                .unwrap_or(0);
+            let can_reuse = (self.entries[lru_idx].used_frame_seq + max_in_flight) < frame_seq
+                && self.entries[lru_idx].texture.width() == tex_w
+                && self.entries[lru_idx].texture.height() == tex_h;
+            if can_reuse {
+                let entry = &mut self.entries[lru_idx];
+                entry.key = key;
+                entry.used = now;
+                entry.used_frame_seq = frame_seq;
+                entry.texture.clone()
+            } else {
+                let texture = alloc_texture();
+                self.entries[lru_idx] = BackdropCacheEntry {
+                    key,
+                    texture: texture.clone(),
+                    used: now,
+                    used_frame_seq: frame_seq,
+                };
+                texture
+            }
+        } else {
+            let texture = alloc_texture();
+            self.entries.push(BackdropCacheEntry {
+                key,
+                texture: texture.clone(),
+                used: now,
+                used_frame_seq: frame_seq,
+            });
+            texture
+        };
+
+        let blit = command_buffer.new_blit_command_encoder();
+        blit.copy_from_texture(
+            prepared,
+            0,
+            0,
+            metal::MTLOrigin {
+                x: origin_x,
+                y: origin_y,
+                z: 0,
+            },
+            metal::MTLSize {
+                width: copy_w,
+                height: copy_h,
+                depth: 1,
+            },
+            &cache_texture,
+            0,
+            0,
+            metal::MTLOrigin {
+                x: origin_x,
+                y: origin_y,
+                z: 0,
+            },
+        );
+        blit.end_encoding();
+    }
+
+    fn release_idle_at(&mut self, now: Instant) {
+        self.entries
+            .retain(|entry| now.duration_since(entry.used) < IDLE_RELEASE);
+    }
+}
 
 #[derive(Default)]
 struct FramePacing {
@@ -182,6 +376,8 @@ pub struct MetalRenderer {
     path_targets: Option<PathTargets>,
     path_sample_count: u32,
     filter_targets: FilterTargets,
+    backdrop_cache: BackdropBlurCache,
+    frame_seq: u64,
     /// Offscreen render target reused across `render_scene` calls when
     /// rendering headlessly without reading pixels back.
     #[cfg(any(test, feature = "test-support"))]
@@ -522,6 +718,8 @@ impl MetalRenderer {
             path_targets: None,
             path_sample_count: PATH_SAMPLE_COUNT,
             filter_targets: FilterTargets::default(),
+            backdrop_cache: BackdropBlurCache::default(),
+            frame_seq: MAX_FRAMES_IN_FLIGHT as u64 + 1,
             #[cfg(any(test, feature = "test-support"))]
             headless_render_target: None,
             readback_target: None,
@@ -578,6 +776,9 @@ impl MetalRenderer {
         }
         if self.filter_targets.size != size {
             self.filter_targets = FilterTargets::default();
+        }
+        if self.backdrop_cache.viewport_size != size {
+            self.backdrop_cache.clear();
         }
     }
 
@@ -700,6 +901,7 @@ impl MetalRenderer {
                 *slot = None;
             }
         }
+        self.backdrop_cache.release_idle_at(now);
     }
 
     pub fn update_transparency(&mut self, transparent: bool) {
@@ -1006,6 +1208,178 @@ impl MetalRenderer {
         Ok(())
     }
 
+    fn blur_settled_scissor(
+        sigma: f32,
+        clip: Option<Bounds<ScaledPixels>>,
+        viewport_size: Size<DevicePixels>,
+    ) -> Option<Option<metal::MTLScissorRect>> {
+        let Some(clip) = clip else {
+            return Some(None);
+        };
+        let rect = match BlurPasses::for_sigma(sigma) {
+            BlurPasses::Gaussian(_) => Self::scissor(clip.dilate(ScaledPixels(1.0)), viewport_size, 1),
+            BlurPasses::Kawase(kawase) => {
+                let shrink = 1u32 << kawase.settled;
+                let grown = ScaledPixels(kawase.reach() + shrink as f32);
+                Self::scissor(clip.dilate(grown), viewport_size, shrink)
+            }
+        };
+        rect.map(Some)
+    }
+
+    fn precompute_backdrop_keys(
+        &self,
+        scene: &Scene,
+        filtered: bool,
+        viewport_size: Size<DevicePixels>,
+        clear_alpha_bits: u32,
+    ) -> Vec<Option<BackdropCacheKey>> {
+        let mut keys = Vec::new();
+        if !filtered || !scene.has_backdrops() {
+            return keys;
+        }
+        let incremental = gpui::incremental_rendering_enabled();
+        let tile_generations = if incremental {
+            self.sprite_atlas.snapshot_tile_generations()
+        } else {
+            None
+        };
+        let lookup_gen = |tex_id: AtlasTextureId, tile_id: gpui::TileId| -> u64 {
+            tile_generations
+                .as_ref()
+                .and_then(|map| map.get(&(tex_id, tile_id)).copied())
+                .unwrap_or(0)
+        };
+        let vp_tuple = (viewport_size.width.0, viewport_size.height.0);
+        let mut sim_stack: Vec<usize> = Vec::new();
+        let mut sim_wiped: Vec<Bounds<ScaledPixels>> = Vec::new();
+
+        for batch in scene.batches() {
+            let wanted = filtered
+                .then(|| scene.filtered(scene.batch_order(&batch)))
+                .flatten()
+                .map(|index| scene.filter_chain(index))
+                .unwrap_or_default();
+            let shared = sim_stack
+                .iter()
+                .zip(wanted.iter())
+                .take_while(|(open, next)| open == next)
+                .count();
+            let mut merged = false;
+            while sim_stack.len() > shared {
+                if sim_stack.len() == shared + 1
+                    && wanted.len() == sim_stack.len()
+                    && let Some(open) = sim_stack.last_mut()
+                {
+                    let next = scene.effects[wanted[shared]];
+                    let layer = scene.effects[*open];
+                    if layer.can_merge_with(&next)
+                        && sim_wiped
+                            .last()
+                            .is_some_and(|wiped| covers(*wiped, layer_wipe(next)))
+                    {
+                        *open = wanted[shared];
+                        merged = true;
+                        break;
+                    }
+                }
+                sim_stack.pop();
+                sim_wiped.pop();
+            }
+            for index in wanted.iter().skip(shared + usize::from(merged)) {
+                if sim_stack.len() >= LAYER_DEPTH {
+                    break;
+                }
+                let layer = scene.effects[*index];
+                sim_stack.push(*index);
+                sim_wiped.push(layer_wipe(layer));
+            }
+
+            match batch {
+                PrimitiveBatch::Backdrops(range) => {
+                    if !incremental || range.is_empty() {
+                        keys.push(None);
+                        continue;
+                    }
+                    let backdrops = &scene.backdrops[range.clone()];
+                    let sigma = backdrops
+                        .iter()
+                        .fold(0.0_f32, |widest, backdrop| widest.max(backdrop.blur));
+                    let clip = backdrops
+                        .iter()
+                        .map(|backdrop| backdrop.bounds)
+                        .reduce(|union, bounds| union.union(&bounds));
+                    let source_clip =
+                        clip.map(|c| c.dilate(BlurPasses::for_sigma(sigma).source_margin()));
+                    let key = scene
+                        .backdrop_underneath_digest_for_backdrops(
+                            range.start,
+                            source_clip,
+                            &sim_stack,
+                            clear_alpha_bits,
+                            lookup_gen,
+                        )
+                        .map(|underneath_digest| BackdropCacheKey {
+                            viewport_size: vp_tuple,
+                            is_shader_zero_blur: false,
+                            sigma_bits: canonical_f32_bits(sigma.max(0.0)),
+                            clip_bits: clip.map(bounds_to_bits),
+                            source_clip_bits: source_clip.map(bounds_to_bits),
+                            underneath_digest,
+                        });
+                    keys.push(key);
+                }
+                PrimitiveBatch::Shaders { range, .. } => {
+                    if range.is_empty() {
+                        continue;
+                    }
+                    let shaders = &scene.shaders[range.clone()];
+                    let first_shader = shaders[0];
+                    if (first_shader.flags & gpui::SHADER_FLAG_SAMPLES_BACKDROP) == 0 {
+                        continue;
+                    }
+                    if !incremental {
+                        keys.push(None);
+                        continue;
+                    }
+                    let blur_sigma = first_shader.backdrop_blur_radius;
+                    let union_bounds = shaders
+                        .iter()
+                        .map(|instance| instance.bounds)
+                        .reduce(|acc, bounds| acc.union(&bounds));
+                    let refraction_margin = ScaledPixels(64.0);
+                    let blur_margin = if blur_sigma > 0.0 {
+                        BlurPasses::for_sigma(blur_sigma).source_margin()
+                    } else {
+                        ScaledPixels(0.0)
+                    };
+                    let clip = union_bounds.map(|bounds| bounds.dilate(refraction_margin));
+                    let source_clip =
+                        union_bounds.map(|bounds| bounds.dilate(refraction_margin + blur_margin));
+                    let key = scene
+                        .backdrop_underneath_digest_for_shaders(
+                            range.start,
+                            source_clip,
+                            &sim_stack,
+                            clear_alpha_bits,
+                            lookup_gen,
+                        )
+                        .map(|underneath_digest| BackdropCacheKey {
+                            viewport_size: vp_tuple,
+                            is_shader_zero_blur: blur_sigma <= 0.0,
+                            sigma_bits: canonical_f32_bits(blur_sigma.max(0.0)),
+                            clip_bits: clip.map(bounds_to_bits),
+                            source_clip_bits: source_clip.map(bounds_to_bits),
+                            underneath_digest,
+                        });
+                    keys.push(key);
+                }
+                _ => {}
+            }
+        }
+        keys
+    }
+
     fn draw_primitives_to_texture(
         &mut self,
         scene: &Scene,
@@ -1015,15 +1389,24 @@ impl MetalRenderer {
         viewport_size: Size<DevicePixels>,
     ) -> Result<metal::CommandBuffer> {
         self.frame_time = Instant::now();
+        self.frame_seq = self.frame_seq.wrapping_add(1);
+        self.backdrop_cache.sync_viewport(viewport_size);
         let command_queue = self.command_queue.clone();
         let command_buffer = command_queue.new_command_buffer();
         let alpha = if self.opaque { 1. } else { 0. };
+        let clear_alpha_bits = canonical_f32_bits(alpha as f32);
         let filtered =
             filters_enabled() && (!scene.effects.is_empty() || scene.has_backdrops());
+        let backdrop_keys =
+            self.precompute_backdrop_keys(scene, filtered, viewport_size, clear_alpha_bits);
+        let all_backdrops_cached = !backdrop_keys.is_empty()
+            && backdrop_keys
+                .iter()
+                .all(|key| key.as_ref().is_some_and(|k| self.backdrop_cache.contains(k)));
         // Backdrops and backdrop-sampling custom shaders read what the frame has drawn so far,
         // which a drawable cannot be sampled from, so a frame carrying them is drawn offscreen
-        // and blitted back at the end.
-        let mirrored = filtered && scene.has_backdrops();
+        // and blitted back at the end — unless every backdrop in the frame hits the blur cache.
+        let mirrored = filtered && scene.has_backdrops() && !all_backdrops_cached;
         let main_texture = match mirrored {
             true => self.filter_texture(FilterTarget::Frame, viewport_size),
             false => texture.to_owned(),
@@ -1043,6 +1426,7 @@ impl MetalRenderer {
         // The part of each open layer's target that was wiped when it opened. A neighbour may only
         // share the target when everything it draws lands inside it.
         let mut wiped: Vec<Bounds<ScaledPixels>> = Vec::new();
+        let mut backdrop_batch_cursor: usize = 0;
 
         for batch in scene.batches() {
             let wanted = filtered
@@ -1121,6 +1505,27 @@ impl MetalRenderer {
                     if !filtered {
                         continue;
                     }
+                    let cache_key = backdrop_keys
+                        .get(backdrop_batch_cursor)
+                        .copied()
+                        .flatten();
+                    backdrop_batch_cursor += 1;
+                    if let Some(cached) = cache_key.and_then(|key| {
+                        self.backdrop_cache
+                            .get_and_touch(&key, self.frame_time, self.frame_seq)
+                    }) {
+                        gpui::record_backdrop_cache_hit();
+                        self.draw_backdrops(
+                            range,
+                            instance_bindings,
+                            &cached,
+                            viewport_size,
+                            command_encoder,
+                        );
+                        continue;
+                    }
+
+                    gpui::record_backdrop_pass();
                     let backdrops = &scene.backdrops[range.clone()];
                     let sigma = backdrops
                         .iter()
@@ -1146,6 +1551,23 @@ impl MetalRenderer {
                         clip,
                         viewport_size,
                     );
+                    if let Some(key) = cache_key {
+                        if let Some(copy_scissor) =
+                            Self::blur_settled_scissor(sigma, clip, viewport_size)
+                        {
+                            self.backdrop_cache.store(
+                                &self.device,
+                                command_buffer,
+                                self.pixel_format,
+                                viewport_size,
+                                key,
+                                &blurred,
+                                copy_scissor,
+                                self.frame_time,
+                                self.frame_seq,
+                            );
+                        }
+                    }
                     let target = match stack.len().checked_sub(1) {
                         Some(depth) => self.filter_texture(
                             FilterTarget::Layer(depth.min(LAYER_DEPTH - 1)),
@@ -1174,15 +1596,35 @@ impl MetalRenderer {
                     if range.is_empty() {
                         continue;
                     }
+                    let shaders = &scene.shaders[range.clone()];
+                    let first_shader = shaders[0];
+                    let samples_backdrop =
+                        (first_shader.flags & gpui::SHADER_FLAG_SAMPLES_BACKDROP) != 0;
+                    let cache_key = if samples_backdrop && filtered {
+                        let key = backdrop_keys
+                            .get(backdrop_batch_cursor)
+                            .copied()
+                            .flatten();
+                        backdrop_batch_cursor += 1;
+                        key
+                    } else {
+                        None
+                    };
                     if let Some(pipeline) = self.custom_pipeline_state(shader) {
-                        let shaders = &scene.shaders[range.clone()];
-                        let first_shader = shaders[0];
-                        let samples_backdrop =
-                            (first_shader.flags & gpui::SHADER_FLAG_SAMPLES_BACKDROP) != 0;
                         let backdrop_texture = if samples_backdrop {
                             if !filtered {
                                 None
+                            } else if let Some(cached) = cache_key.and_then(|key| {
+                                self.backdrop_cache.get_and_touch(
+                                    &key,
+                                    self.frame_time,
+                                    self.frame_seq,
+                                )
+                            }) {
+                                gpui::record_backdrop_cache_hit();
+                                Some(cached)
                             } else {
+                                gpui::record_backdrop_pass();
                                 let blur_sigma = first_shader.backdrop_blur_radius;
                                 let union_bounds = shaders
                                     .iter()
@@ -1272,6 +1714,29 @@ impl MetalRenderer {
                                 } else {
                                     source
                                 };
+                                if let Some(key) = cache_key {
+                                    let copy_scissor = if blur_sigma > 0.0 {
+                                        Self::blur_settled_scissor(blur_sigma, clip, viewport_size)
+                                    } else {
+                                        match source_clip {
+                                            None => Some(None),
+                                            Some(c) => Self::scissor(c, viewport_size, 1).map(Some),
+                                        }
+                                    };
+                                    if let Some(copy_scissor) = copy_scissor {
+                                        self.backdrop_cache.store(
+                                            &self.device,
+                                            command_buffer,
+                                            self.pixel_format,
+                                            viewport_size,
+                                            key,
+                                            &prepared,
+                                            copy_scissor,
+                                            self.frame_time,
+                                            self.frame_seq,
+                                        );
+                                    }
+                                }
                                 let target = match stack.len().checked_sub(1) {
                                     Some(depth) => self.filter_texture(
                                         FilterTarget::Layer(depth.min(LAYER_DEPTH - 1)),

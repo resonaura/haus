@@ -109,6 +109,19 @@ impl Scene {
         self.surfaces.clear();
     }
 
+    pub fn primitive_count(&self) -> usize {
+        self.shadows.len()
+            + self.backdrops.len()
+            + self.quads.len()
+            + self.shaders.len()
+            + self.paths.len()
+            + self.underlines.len()
+            + self.monochrome_sprites.len()
+            + self.subpixel_sprites.len()
+            + self.polychrome_sprites.len()
+            + self.surfaces.len()
+    }
+
     fn capture_primitive_snapshot(&self) -> PrimitiveSnapshot {
         PrimitiveSnapshot {
             shadows: self.shadows.len(),
@@ -549,6 +562,7 @@ impl Scene {
     }
 
     pub fn replay(&mut self, range: Range<usize>, prev_scene: &Scene) {
+        self.paint_operations.reserve(range.len());
         for operation in &prev_scene.paint_operations[range] {
             match operation {
                 PaintOperation::Primitive(primitive) => self.insert_primitive(primitive.clone()),
@@ -594,6 +608,446 @@ impl Scene {
         self.polychrome_sprites
             .sort_by_key(|sprite| (sprite.order, sprite.tile.tile_id));
         self.surfaces.sort_by_key(|surface| surface.order);
+    }
+
+    pub fn backdrop_underneath_digest_for_backdrops(
+        &self,
+        start_index: usize,
+        source_clip: Option<Bounds<ScaledPixels>>,
+        open_effects: &[usize],
+        clear_alpha_bits: u32,
+        tile_generation: impl Fn(AtlasTextureId, crate::TileId) -> u64,
+    ) -> Option<u64> {
+        let before_order = self.backdrops.get(start_index)?.order;
+        self.backdrop_underneath_digest_inner(
+            before_order,
+            PrimitiveKind::Backdrop,
+            Some(start_index),
+            None,
+            source_clip,
+            open_effects,
+            clear_alpha_bits,
+            tile_generation,
+        )
+    }
+
+    pub fn backdrop_underneath_digest_for_shaders(
+        &self,
+        start_index: usize,
+        source_clip: Option<Bounds<ScaledPixels>>,
+        open_effects: &[usize],
+        clear_alpha_bits: u32,
+        tile_generation: impl Fn(AtlasTextureId, crate::TileId) -> u64,
+    ) -> Option<u64> {
+        let before_order = self.shaders.get(start_index)?.order;
+        self.backdrop_underneath_digest_inner(
+            before_order,
+            PrimitiveKind::Shader,
+            None,
+            Some(start_index),
+            source_clip,
+            open_effects,
+            clear_alpha_bits,
+            tile_generation,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn backdrop_underneath_digest_inner(
+        &self,
+        before_order: DrawOrder,
+        before_kind: PrimitiveKind,
+        exact_backdrops_end: Option<usize>,
+        exact_shaders_end: Option<usize>,
+        source_clip: Option<Bounds<ScaledPixels>>,
+        open_effects: &[usize],
+        clear_alpha_bits: u32,
+        tile_generation: impl Fn(AtlasTextureId, crate::TileId) -> u64,
+    ) -> Option<u64> {
+        use std::hash::{Hash, Hasher};
+
+        if !crate::incremental_rendering_enabled() {
+            return None;
+        }
+
+        #[inline]
+        fn f_bits(v: f32) -> u32 {
+            if v == 0.0 { 0 } else { v.to_bits() }
+        }
+        #[inline]
+        fn hash_f32(h: &mut collections::FxHasher, v: f32) {
+            f_bits(v).hash(h);
+        }
+        #[inline]
+        fn hash_point_sp(h: &mut collections::FxHasher, p: Point<ScaledPixels>) {
+            hash_f32(h, p.x.0);
+            hash_f32(h, p.y.0);
+        }
+        #[inline]
+        fn hash_bounds_sp(h: &mut collections::FxHasher, b: Bounds<ScaledPixels>) {
+            hash_point_sp(h, b.origin);
+            hash_f32(h, b.size.width.0);
+            hash_f32(h, b.size.height.0);
+        }
+        #[inline]
+        fn hash_corners_sp(h: &mut collections::FxHasher, c: Corners<ScaledPixels>) {
+            hash_f32(h, c.top_left.0);
+            hash_f32(h, c.top_right.0);
+            hash_f32(h, c.bottom_right.0);
+            hash_f32(h, c.bottom_left.0);
+        }
+        #[inline]
+        fn hash_edges_sp(h: &mut collections::FxHasher, e: Edges<ScaledPixels>) {
+            hash_f32(h, e.top.0);
+            hash_f32(h, e.right.0);
+            hash_f32(h, e.bottom.0);
+            hash_f32(h, e.left.0);
+        }
+        #[inline]
+        fn hash_hsla(h: &mut collections::FxHasher, c: Hsla) {
+            hash_f32(h, c.h);
+            hash_f32(h, c.s);
+            hash_f32(h, c.l);
+            hash_f32(h, c.a);
+        }
+        #[inline]
+        fn hash_background(h: &mut collections::FxHasher, bg: Background) {
+            (bg.tag as u32).hash(h);
+            (bg.color_space as u32).hash(h);
+            hash_hsla(h, bg.solid);
+            hash_f32(h, bg.gradient_angle_or_pattern_height);
+            for stop in bg.colors {
+                hash_hsla(h, stop.color);
+                hash_f32(h, stop.percentage);
+            }
+        }
+        #[inline]
+        fn hash_tile(h: &mut collections::FxHasher, tile: AtlasTile, generation: u64) {
+            tile.texture_id.hash(h);
+            tile.tile_id.hash(h);
+            tile.padding.hash(h);
+            tile.bounds.origin.x.0.hash(h);
+            tile.bounds.origin.y.0.hash(h);
+            tile.bounds.size.width.0.hash(h);
+            tile.bounds.size.height.0.hash(h);
+            generation.hash(h);
+        }
+        #[inline]
+        fn hash_matrix(h: &mut collections::FxHasher, m: TransformationMatrix) {
+            hash_f32(h, m.rotation_scale[0][0]);
+            hash_f32(h, m.rotation_scale[0][1]);
+            hash_f32(h, m.rotation_scale[1][0]);
+            hash_f32(h, m.rotation_scale[1][1]);
+            hash_f32(h, m.translation[0]);
+            hash_f32(h, m.translation[1]);
+        }
+        #[inline]
+        fn hash_filter(h: &mut collections::FxHasher, f: Filter) {
+            hash_f32(h, f.blur);
+            hash_f32(h, f.fade_top);
+            hash_f32(h, f.fade_bottom);
+            hash_f32(h, f.fade_left);
+            hash_f32(h, f.fade_right);
+            hash_f32(h, f.scale_x);
+            hash_f32(h, f.scale_y);
+            hash_f32(h, f.rotate_rad);
+            hash_f32(h, f.skew_x_rad);
+            hash_f32(h, f.skew_y_rad);
+            hash_point_sp(h, f.translate);
+            hash_corners_sp(h, f.clip_radii);
+            hash_f32(h, f.clip_smoothing);
+        }
+
+        // Expand `effective_clip` across any earlier closed `LayerEffect` whose composited
+        // destination touches our capture region and transforms or blurs its offscreen source.
+        let mut effective_clip = source_clip;
+        if let Some(mut clip) = effective_clip {
+            for effect in self.effects.iter().rev() {
+                if effect.end <= effect.start + 1 || effect.end > before_order {
+                    continue;
+                }
+                let dst = effect.destination_scissor_bounds(effect.destination_clip());
+                if dst.intersects(&clip) && (effect.filter.transforms() || effect.filter.blurs()) {
+                    let margin = if effect.filter.blurs() {
+                        BlurPasses::for_sigma(effect.filter.blur).source_margin()
+                    } else {
+                        ScaledPixels(0.0)
+                    };
+                    clip = clip.union(&effect.source_bounds.dilate(margin));
+                }
+            }
+            effective_clip = Some(clip);
+        }
+
+        #[inline]
+        fn touches_clip(
+            bounds: Bounds<ScaledPixels>,
+            mask: Bounds<ScaledPixels>,
+            clip: Option<Bounds<ScaledPixels>>,
+        ) -> bool {
+            let clipped = bounds.intersect(&mask);
+            if clipped.is_empty() {
+                return false;
+            }
+            match clip {
+                Some(region) => clipped.intersects(&region),
+                None => true,
+            }
+        }
+
+        let end_for_kind = |kind: PrimitiveKind, len: usize, order_at: &dyn Fn(usize) -> DrawOrder| {
+            let mut lo = 0usize;
+            let mut hi = len;
+            while lo < hi {
+                let mid = lo + (hi - lo) / 2;
+                let ord = order_at(mid);
+                let before = if kind < before_kind {
+                    ord <= before_order
+                } else {
+                    ord < before_order
+                };
+                if before {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            lo
+        };
+
+        // Live hardware video surfaces (`CVPixelBuffer` / GPU `PaintSurface`) underneath a
+        // backdrop must always blur the latest video frame rather than serving a cached texture.
+        let surfaces_end =
+            end_for_kind(PrimitiveKind::Surface, self.surfaces.len(), &|i| {
+                self.surfaces[i].order
+            });
+        for surface in &self.surfaces[..surfaces_end] {
+            if touches_clip(surface.bounds, surface.content_mask.bounds, effective_clip) {
+                return None;
+            }
+        }
+
+        let mut hasher = collections::FxHasher::default();
+        0x4841_5553_4244_5250_u64.hash(&mut hasher);
+        clear_alpha_bits.hash(&mut hasher);
+
+        // Enclosing open `LayerEffect` stack (`effect.end` is intentionally omitted because
+        // foreground primitives drawn after the backdrop inside the same open layer can shift
+        // `effect.end` without changing anything drawn before the backdrop).
+        open_effects.len().hash(&mut hasher);
+        for &effect_idx in open_effects {
+            if let Some(effect) = self.effects.get(effect_idx) {
+                effect.start.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, effect.source_bounds);
+                hash_bounds_sp(&mut hasher, effect.clip_bounds);
+                hash_point_sp(&mut hasher, effect.transform_origin);
+                hash_bounds_sp(&mut hasher, effect.content_mask);
+                hash_filter(&mut hasher, effect.filter);
+                effect.parent.hash(&mut hasher);
+            }
+        }
+
+        // Closed `LayerEffect`s that composited before this batch inside `effective_clip`.
+        0x4546_4653_u32.hash(&mut hasher);
+        for (idx, effect) in self.effects.iter().enumerate() {
+            if effect.end <= effect.start + 1 || effect.end > before_order {
+                continue;
+            }
+            let dst = effect.destination_scissor_bounds(effect.destination_clip());
+            let intersects = match effective_clip {
+                Some(region) => dst.intersects(&region),
+                None => !dst.is_empty(),
+            };
+            if intersects {
+                idx.hash(&mut hasher);
+                effect.start.hash(&mut hasher);
+                effect.end.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, effect.source_bounds);
+                hash_bounds_sp(&mut hasher, effect.clip_bounds);
+                hash_point_sp(&mut hasher, effect.transform_origin);
+                hash_bounds_sp(&mut hasher, effect.content_mask);
+                hash_filter(&mut hasher, effect.filter);
+                effect.parent.hash(&mut hasher);
+            }
+        }
+
+        let shadows_end =
+            end_for_kind(PrimitiveKind::Shadow, self.shadows.len(), &|i| {
+                self.shadows[i].order
+            });
+        0x5348_4457_u32.hash(&mut hasher);
+        for s in &self.shadows[..shadows_end] {
+            if touches_clip(s.bounds, s.content_mask.bounds, effective_clip) {
+                s.order.hash(&mut hasher);
+                hash_f32(&mut hasher, s.blur_radius.0);
+                hash_bounds_sp(&mut hasher, s.bounds);
+                hash_corners_sp(&mut hasher, s.corner_radii);
+                hash_bounds_sp(&mut hasher, s.content_mask.bounds);
+                hash_hsla(&mut hasher, s.color);
+                hash_bounds_sp(&mut hasher, s.element_bounds);
+                hash_corners_sp(&mut hasher, s.element_corner_radii);
+                s.inset.hash(&mut hasher);
+                hash_f32(&mut hasher, s.element_corner_smoothing);
+            }
+        }
+
+        let backdrops_end = exact_backdrops_end.unwrap_or_else(|| {
+            end_for_kind(PrimitiveKind::Backdrop, self.backdrops.len(), &|i| {
+                self.backdrops[i].order
+            })
+        });
+        0x424B_4450_u32.hash(&mut hasher);
+        for b in &self.backdrops[..backdrops_end] {
+            if touches_clip(b.bounds, b.content_mask.bounds, effective_clip) {
+                b.order.hash(&mut hasher);
+                hash_f32(&mut hasher, b.corner_smoothing);
+                hash_f32(&mut hasher, b.blur);
+                hash_f32(&mut hasher, b.opacity);
+                hash_bounds_sp(&mut hasher, b.bounds);
+                hash_bounds_sp(&mut hasher, b.content_mask.bounds);
+                hash_corners_sp(&mut hasher, b.corner_radii);
+            }
+        }
+
+        let quads_end =
+            end_for_kind(PrimitiveKind::Quad, self.quads.len(), &|i| self.quads[i].order);
+        0x5155_4144_u32.hash(&mut hasher);
+        for q in &self.quads[..quads_end] {
+            if touches_clip(q.bounds, q.content_mask.bounds, effective_clip) {
+                q.order.hash(&mut hasher);
+                q.border_style.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, q.bounds);
+                hash_bounds_sp(&mut hasher, q.content_mask.bounds);
+                hash_background(&mut hasher, q.background);
+                hash_hsla(&mut hasher, q.border_color);
+                hash_corners_sp(&mut hasher, q.corner_radii);
+                hash_edges_sp(&mut hasher, q.border_widths);
+                hash_f32(&mut hasher, q.corner_smoothing);
+            }
+        }
+
+        let shaders_end = exact_shaders_end.unwrap_or_else(|| {
+            end_for_kind(PrimitiveKind::Shader, self.shaders.len(), &|i| {
+                self.shaders[i].order
+            })
+        });
+        0x5348_4452_u32.hash(&mut hasher);
+        for s in &self.shaders[..shaders_end] {
+            if touches_clip(s.bounds, s.content_mask.bounds, effective_clip) {
+                s.order.hash(&mut hasher);
+                s.shader.hash(&mut hasher);
+                hash_f32(&mut hasher, s.opacity);
+                hash_f32(&mut hasher, s.time);
+                hash_bounds_sp(&mut hasher, s.bounds);
+                hash_bounds_sp(&mut hasher, s.content_mask.bounds);
+                hash_corners_sp(&mut hasher, s.corner_radii);
+                hash_f32(&mut hasher, s.scale_factor);
+                hash_f32(&mut hasher, s.corner_smoothing);
+                s.flags.hash(&mut hasher);
+                hash_f32(&mut hasher, s.backdrop_blur_radius);
+                for p in s.params {
+                    hash_f32(&mut hasher, p);
+                }
+                for rgba in s.colors {
+                    for ch in rgba {
+                        hash_f32(&mut hasher, ch);
+                    }
+                }
+            }
+        }
+
+        let paths_end =
+            end_for_kind(PrimitiveKind::Path, self.paths.len(), &|i| self.paths[i].order);
+        0x5041_5448_u32.hash(&mut hasher);
+        for p in &self.paths[..paths_end] {
+            if touches_clip(p.bounds, p.content_mask.bounds, effective_clip) {
+                p.order.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, p.bounds);
+                hash_bounds_sp(&mut hasher, p.content_mask.bounds);
+                hash_background(&mut hasher, p.color);
+                p.vertices.len().hash(&mut hasher);
+                for v in &p.vertices {
+                    hash_point_sp(&mut hasher, v.xy_position);
+                    hash_f32(&mut hasher, v.st_position.x);
+                    hash_f32(&mut hasher, v.st_position.y);
+                }
+            }
+        }
+
+        let underlines_end = end_for_kind(
+            PrimitiveKind::Underline,
+            self.underlines.len(),
+            &|i| self.underlines[i].order,
+        );
+        0x554E_444C_u32.hash(&mut hasher);
+        for u in &self.underlines[..underlines_end] {
+            if touches_clip(u.bounds, u.content_mask.bounds, effective_clip) {
+                u.order.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, u.bounds);
+                hash_bounds_sp(&mut hasher, u.content_mask.bounds);
+                hash_hsla(&mut hasher, u.color);
+                hash_f32(&mut hasher, u.thickness.0);
+                u.wavy.0.hash(&mut hasher);
+            }
+        }
+
+        let mono_end = end_for_kind(
+            PrimitiveKind::MonochromeSprite,
+            self.monochrome_sprites.len(),
+            &|i| self.monochrome_sprites[i].order,
+        );
+        0x4D4F_4E4F_u32.hash(&mut hasher);
+        for sp in &self.monochrome_sprites[..mono_end] {
+            if touches_clip(sp.bounds, sp.content_mask.bounds, effective_clip) {
+                sp.order.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, sp.bounds);
+                hash_bounds_sp(&mut hasher, sp.content_mask.bounds);
+                hash_hsla(&mut hasher, sp.color);
+                let gen_id = tile_generation(sp.tile.texture_id, sp.tile.tile_id);
+                hash_tile(&mut hasher, sp.tile, gen_id);
+                hash_matrix(&mut hasher, sp.transformation);
+            }
+        }
+
+        let subpixel_end = end_for_kind(
+            PrimitiveKind::SubpixelSprite,
+            self.subpixel_sprites.len(),
+            &|i| self.subpixel_sprites[i].order,
+        );
+        0x5355_4250_u32.hash(&mut hasher);
+        for sp in &self.subpixel_sprites[..subpixel_end] {
+            if touches_clip(sp.bounds, sp.content_mask.bounds, effective_clip) {
+                sp.order.hash(&mut hasher);
+                hash_bounds_sp(&mut hasher, sp.bounds);
+                hash_bounds_sp(&mut hasher, sp.content_mask.bounds);
+                hash_hsla(&mut hasher, sp.color);
+                let gen_id = tile_generation(sp.tile.texture_id, sp.tile.tile_id);
+                hash_tile(&mut hasher, sp.tile, gen_id);
+                hash_matrix(&mut hasher, sp.transformation);
+            }
+        }
+
+        let poly_end = end_for_kind(
+            PrimitiveKind::PolychromeSprite,
+            self.polychrome_sprites.len(),
+            &|i| self.polychrome_sprites[i].order,
+        );
+        0x504F_4C59_u32.hash(&mut hasher);
+        for sp in &self.polychrome_sprites[..poly_end] {
+            if touches_clip(sp.bounds, sp.content_mask.bounds, effective_clip) {
+                sp.order.hash(&mut hasher);
+                sp.nearest_neighbor.0.hash(&mut hasher);
+                sp.grayscale.0.hash(&mut hasher);
+                hash_f32(&mut hasher, sp.opacity);
+                hash_bounds_sp(&mut hasher, sp.bounds);
+                hash_bounds_sp(&mut hasher, sp.content_mask.bounds);
+                hash_corners_sp(&mut hasher, sp.corner_radii);
+                let gen_id = tile_generation(sp.tile.texture_id, sp.tile.tile_id);
+                hash_tile(&mut hasher, sp.tile, gen_id);
+            }
+        }
+
+        Some(hasher.finish())
     }
 
     #[cfg_attr(
@@ -1426,6 +1880,99 @@ mod layer_filter_tests {
         assert!(hit_scene.quads[0].order < eff.start);
         assert!(hit_scene.quads[1].order > eff.start && hit_scene.quads[1].order < eff.end);
         assert!(hit_scene.quads[2].order > hit_scene.quads[1].order && hit_scene.quads[2].order < eff.end);
+    }
+
+    #[test]
+    fn backdrop_underneath_digest_tracks_only_overlapping_lower_primitives() {
+        crate::set_incremental_rendering_enabled(Some(true));
+        let vp_mask = ContentMask {
+            bounds: rect(0.0, 0.0, 1000.0, 800.0),
+        };
+        let modal_clip = rect(200.0, 150.0, 400.0, 300.0);
+
+        let build_scene = |under_color_l: f32, outside_color_l: f32, above_color_l: f32| {
+            let mut scene = Scene::default();
+            // Lower primitive inside modal_clip
+            scene.insert_primitive(Quad {
+                bounds: rect(240.0, 180.0, 120.0, 80.0),
+                content_mask: vp_mask,
+                background: crate::solid_background(Hsla {
+                    h: 0.5,
+                    s: 0.6,
+                    l: under_color_l,
+                    a: 1.0,
+                }),
+                ..Default::default()
+            });
+            // Lower primitive completely outside modal_clip
+            scene.insert_primitive(Quad {
+                bounds: rect(20.0, 20.0, 80.0, 80.0),
+                content_mask: vp_mask,
+                background: crate::solid_background(Hsla {
+                    h: 0.2,
+                    s: 0.6,
+                    l: outside_color_l,
+                    a: 1.0,
+                }),
+                ..Default::default()
+            });
+            // Modal backdrop
+            scene.insert_primitive(Backdrop {
+                blur: 24.0,
+                opacity: 1.0,
+                bounds: modal_clip,
+                content_mask: vp_mask,
+                ..Default::default()
+            });
+            // Foreground primitive painted on top of modal backdrop
+            scene.insert_primitive(Quad {
+                bounds: rect(260.0, 200.0, 160.0, 40.0),
+                content_mask: vp_mask,
+                background: crate::solid_background(Hsla {
+                    h: 0.0,
+                    s: 0.0,
+                    l: above_color_l,
+                    a: 1.0,
+                }),
+                ..Default::default()
+            });
+            scene.finish();
+            scene
+        };
+
+        let base = build_scene(0.3, 0.4, 0.9);
+        let d_base = base
+            .backdrop_underneath_digest_for_backdrops(0, Some(modal_clip), &[], 0, |_, _| 0)
+            .expect("digest enabled");
+
+        // Foreground mutation above the backdrop MUST NOT invalidate the digest.
+        let fg_changed = build_scene(0.3, 0.4, 0.1);
+        let d_fg = fg_changed
+            .backdrop_underneath_digest_for_backdrops(0, Some(modal_clip), &[], 0, |_, _| 0)
+            .expect("digest enabled");
+        assert_eq!(d_base, d_fg);
+
+        // Background mutation outside `modal_clip` MUST NOT invalidate the digest.
+        let outside_changed = build_scene(0.3, 0.85, 0.9);
+        let d_outside = outside_changed
+            .backdrop_underneath_digest_for_backdrops(0, Some(modal_clip), &[], 0, |_, _| 0)
+            .expect("digest enabled");
+        assert_eq!(d_base, d_outside);
+
+        // Background mutation inside `modal_clip` MUST immediately invalidate the digest.
+        let under_changed = build_scene(0.55, 0.4, 0.9);
+        let d_under = under_changed
+            .backdrop_underneath_digest_for_backdrops(0, Some(modal_clip), &[], 0, |_, _| 0)
+            .expect("digest enabled");
+        assert_ne!(d_base, d_under);
+
+        // Disabling incremental rendering returns `None`.
+        crate::set_incremental_rendering_enabled(Some(false));
+        assert!(
+            base.backdrop_underneath_digest_for_backdrops(0, Some(modal_clip), &[], 0, |_, _| 0)
+                .is_none()
+        );
+        crate::set_incremental_rendering_enabled(None);
     }
 }
 

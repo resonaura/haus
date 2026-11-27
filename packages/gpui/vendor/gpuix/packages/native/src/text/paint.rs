@@ -36,6 +36,7 @@ use super::selection::{self, SelectionState};
 pub type SharedSelection = Arc<Mutex<SelectionState>>;
 
 /// One painted text element, registered per frame in document order.
+#[derive(Clone)]
 struct RegEntry {
     key: Arc<str>,
     text: SharedString,
@@ -68,6 +69,7 @@ impl LinkPressState {
 /// `userSelect: "none"` chrome and native inputs register `selectable: false`
 /// so a same-row nearest-text clamp cannot steal their press. An explicit
 /// `userSelect: "text"` island registers `true` and can override an ancestor.
+#[derive(Clone, Copy)]
 struct StartRegion {
     bounds: Bounds<gpui::Pixels>,
     selectable: bool,
@@ -93,7 +95,9 @@ pub struct PaintedHighlight {
 
 thread_local! {
     static REGISTRY: RefCell<Vec<RegEntry>> = const { RefCell::new(Vec::new()) };
+    static PREV_REGISTRY: RefCell<Vec<RegEntry>> = const { RefCell::new(Vec::new()) };
     static START_REGIONS: RefCell<Vec<StartRegion>> = const { RefCell::new(Vec::new()) };
+    static PREV_START_REGIONS: RefCell<Vec<StartRegion>> = const { RefCell::new(Vec::new()) };
     static LINK_PRESS: RefCell<LinkPressState> = RefCell::new(LinkPressState::default());
     /// Every string painted this frame, selectable or not, in paint order.
     ///
@@ -102,8 +106,79 @@ thread_local! {
     /// way to assert what `<code>` or `<diff>` rendered is a screenshot, which
     /// tells you something changed but never what.
     static PAINTED: RefCell<Vec<SharedString>> = const { RefCell::new(Vec::new()) };
+    static PREV_PAINTED: RefCell<Vec<SharedString>> = const { RefCell::new(Vec::new()) };
     /// Same idea for highlight washes. See [`PaintedHighlight`].
     static HIGHLIGHTS: RefCell<Vec<PaintedHighlight>> = const { RefCell::new(Vec::new()) };
+    static PREV_HIGHLIGHTS: RefCell<Vec<PaintedHighlight>> = const { RefCell::new(Vec::new()) };
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TextPaintCheckpoint {
+    pub registry: usize,
+    pub start_regions: usize,
+    pub painted: usize,
+    pub highlights: usize,
+}
+
+pub fn text_paint_checkpoint() -> TextPaintCheckpoint {
+    TextPaintCheckpoint {
+        registry: REGISTRY.with(|r| r.borrow().len()),
+        start_regions: START_REGIONS.with(|r| r.borrow().len()),
+        painted: PAINTED.with(|p| p.borrow().len()),
+        highlights: HIGHLIGHTS.with(|h| h.borrow().len()),
+    }
+}
+
+pub fn replay_text_paint_range(
+    start: &TextPaintCheckpoint,
+    end: &TextPaintCheckpoint,
+) -> (TextPaintCheckpoint, TextPaintCheckpoint) {
+    let new_start = text_paint_checkpoint();
+    PREV_REGISTRY.with(|prev| {
+        let prev = prev.borrow();
+        if start.registry <= end.registry && end.registry <= prev.len() {
+            REGISTRY.with(|curr| {
+                curr.borrow_mut()
+                    .extend_from_slice(&prev[start.registry..end.registry]);
+            });
+        }
+    });
+    PREV_START_REGIONS.with(|prev| {
+        let prev = prev.borrow();
+        if start.start_regions <= end.start_regions && end.start_regions <= prev.len() {
+            START_REGIONS.with(|curr| {
+                curr.borrow_mut()
+                    .extend_from_slice(&prev[start.start_regions..end.start_regions]);
+            });
+        }
+    });
+    PREV_PAINTED.with(|prev| {
+        let prev = prev.borrow();
+        if start.painted <= end.painted && end.painted <= prev.len() {
+            PAINTED.with(|curr| {
+                curr.borrow_mut()
+                    .extend_from_slice(&prev[start.painted..end.painted]);
+            });
+        }
+    });
+    PREV_HIGHLIGHTS.with(|prev| {
+        let prev = prev.borrow();
+        if start.highlights <= end.highlights && end.highlights <= prev.len() {
+            HIGHLIGHTS.with(|curr| {
+                curr.borrow_mut()
+                    .extend_from_slice(&prev[start.highlights..end.highlights]);
+            });
+        }
+    });
+    let new_end = text_paint_checkpoint();
+    (new_start, new_end)
+}
+
+fn swap_and_clear<T>(curr: &RefCell<Vec<T>>, prev: &RefCell<Vec<T>>) {
+    let mut curr = curr.borrow_mut();
+    let mut prev = prev.borrow_mut();
+    std::mem::swap(&mut *curr, &mut *prev);
+    curr.clear();
 }
 
 /// A zero-size canvas that clears the per-frame registries and installs the
@@ -118,10 +193,10 @@ pub fn selection_frame_reset(
     canvas(
         |_, _, _| (),
         move |_, _, window, _| {
-            REGISTRY.with(|r| r.borrow_mut().clear());
-            START_REGIONS.with(|r| r.borrow_mut().clear());
-            PAINTED.with(|p| p.borrow_mut().clear());
-            HIGHLIGHTS.with(|h| h.borrow_mut().clear());
+            REGISTRY.with(|curr| PREV_REGISTRY.with(|prev| swap_and_clear(curr, prev)));
+            START_REGIONS.with(|curr| PREV_START_REGIONS.with(|prev| swap_and_clear(curr, prev)));
+            PAINTED.with(|curr| PREV_PAINTED.with(|prev| swap_and_clear(curr, prev)));
+            HIGHLIGHTS.with(|curr| PREV_HIGHLIGHTS.with(|prev| swap_and_clear(curr, prev)));
             super::search::ordinal_frame_reset();
             register_link_press_hooks(window);
             register_copy_listener(window, &selection);

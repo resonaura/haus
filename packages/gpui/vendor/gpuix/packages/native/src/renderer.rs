@@ -398,7 +398,9 @@ fn update_window_without_view<R>(
 fn invalidate_window() -> Result<()> {
     update_window(|_view, window, cx| {
         cx.notify();
-        window.refresh();
+        if window.drawn_frames() == 0 {
+            window.refresh();
+        }
     })
 }
 
@@ -600,7 +602,9 @@ fn refresh_ui_window(
 ) -> anyhow::Result<()> {
     window.update(cx, |_view, window, cx| {
         cx.notify();
-        window.refresh();
+        if window.drawn_frames() == 0 {
+            window.refresh();
+        }
     })
 }
 
@@ -1704,6 +1708,8 @@ impl GpuixRenderer {
         // tree to draw the frame it already has.
         if dirty {
             self.request_invalidate()?;
+        } else {
+            crate::perf::record_noop_batch();
         }
         Ok(destroyed)
     }
@@ -2706,6 +2712,17 @@ impl GpuixRenderer {
     }
 
     #[napi]
+    pub fn set_incremental_rendering(&self, enabled: Option<bool>) -> bool {
+        gpui::set_incremental_rendering_enabled(enabled);
+        gpui::incremental_rendering_enabled()
+    }
+
+    #[napi]
+    pub fn is_incremental_rendering_enabled(&self) -> bool {
+        gpui::incremental_rendering_enabled()
+    }
+
+    #[napi]
     pub fn set_motion_value(&self, id: String, value: f64) -> Result<()> {
         #[cfg(target_os = "macos")]
         return update_window(move |view, window, cx| {
@@ -3653,6 +3670,8 @@ impl WebGpuixRenderer {
         drop(tree);
         if dirty {
             notify_web();
+        } else {
+            crate::perf::record_noop_batch();
         }
         Ok(web_number_array(destroyed))
     }
@@ -4239,6 +4258,10 @@ pub struct GpuixView {
     paint_reports: SharedPaintReports,
     /// Primary mouse-down targets for click gesture matching across frames.
     click_press: SharedClickPress,
+    /// Persistent GPUI prepaint/paint replay records for background and interior subtrees.
+    subtree_cache: crate::cache::subtree::SharedSubtreeCache,
+    /// Tracks recent scroll offset changes so edge-fade transitions finish before freezing a scroller.
+    scroll_activity_ms: rustc_hash::FxHashMap<u64, (u32, u32, f64)>,
 }
 
 #[derive(Default)]
@@ -4595,6 +4618,8 @@ impl GpuixView {
             highlights: HashMap::new(),
             paint_reports: SharedPaintReports::default(),
             click_press: SharedClickPress::default(),
+            subtree_cache: Default::default(),
+            scroll_activity_ms: Default::default(),
         }
     }
 
@@ -4863,8 +4888,23 @@ impl GpuixView {
             has_animated_shader: false,
             active_motion_ids: &active_motion_ids,
             has_built_active_motion: false,
+            built_elements: 0,
+            subtree_cache: &self.subtree_cache,
+            gpuix_view_id: cx.entity_id(),
+            weak_view: cx.weak_entity(),
+            hoist_portals: false,
+            interior_cache_allowed: false,
+            bg_scroll_settling: false,
+            bg_scroll_hash: 0,
+            focus_hash: 0,
+            motion_epoch: 0,
+            bg_pointer_hash: 0,
+            pointer_branch: &empty_pinned,
+            has_blocked_cache_feature: true,
+            fallback_root_size: None,
         };
         let child = build_element(expected_child_id, &mut build_ctx, window, cx);
+        crate::perf::add_frame_built_elements(build_ctx.built_elements as u64);
         let has_animated_shader = build_ctx.has_animated_shader;
         let has_built_active_motion = build_ctx.has_built_active_motion;
         emit_highlight_events(&callback, &highlight_events);
@@ -5016,6 +5056,21 @@ pub(crate) struct BuildCtx<'a> {
     active_motion_ids: &'a rustc_hash::FxHashSet<u64>,
     /// True if any built (visible/materialized) element on this frame has an active motion.
     pub has_built_active_motion: bool,
+    /// Number of retained elements visited by `build_element` during this frame.
+    pub built_elements: usize,
+    subtree_cache: &'a crate::cache::subtree::SharedSubtreeCache,
+    gpuix_view_id: gpui::EntityId,
+    weak_view: gpui::WeakEntity<GpuixView>,
+    hoist_portals: bool,
+    interior_cache_allowed: bool,
+    bg_scroll_settling: bool,
+    bg_scroll_hash: u64,
+    focus_hash: u64,
+    motion_epoch: u64,
+    bg_pointer_hash: u64,
+    pointer_branch: &'a rustc_hash::FxHashSet<u64>,
+    has_blocked_cache_feature: bool,
+    fallback_root_size: Option<(u64, gpui::Size<gpui::Pixels>)>,
 }
 
 /// Style properties that cascade into descendants.
@@ -5792,6 +5847,11 @@ impl gpui::Render for GpuixView {
             );
             self.virtual_lists
                 .retain(|id, _| tree.elements.contains_key(id));
+            self.subtree_cache
+                .borrow_mut()
+                .prune_missing(|id| tree.elements.contains_key(&id));
+            self.scroll_activity_ms
+                .retain(|id, _| tree.elements.contains_key(id));
         }
         // Pruned by listener, not existence: dropping `onLayout` and adding it
         // back reports the size again, like a fresh observer.
@@ -5881,43 +5941,242 @@ impl gpui::Render for GpuixView {
         };
         let mut has_animated_shader = false;
         let mut has_built_active_motion = false;
+        let mut built_elements = 0usize;
+        let mut portal_elements: Vec<gpui::AnyElement> = Vec::new();
         let _ = motion_active;
+        let now_ms = self.clock.now_ms();
+        self.subtree_cache.borrow_mut().begin_frame();
+        crate::perf::reset_frame_build_stats();
+
+        let incremental_enabled = gpui::incremental_rendering_enabled();
+        let gpuix_view_id = cx.entity_id();
+        let weak_view = cx.weak_entity();
         let result = match tree.root_id {
             Some(root_id) => {
-                let mut ctx = BuildCtx {
-                    tree: &tree,
-                    host_styles: &mut self.host_styles,
-                    viewport: &mut self.viewport,
-                    pinned_ancestors: &pinned_ancestors,
-                    viewport_clip: None,
-                    ancestor_own_hash: 0,
-                    culling_allowed,
-                    event_callback: &callback,
-                    focus_handles: &self.focus_handles,
-                    scroll_handles: &mut self.scroll_handles,
-                    custom_registry: &mut self.custom_registry,
-                    virtual_lists: &mut self.virtual_lists,
-                    motion_states: &mut self.motion_states,
-                    now,
-                    time_secs,
-                    selection: self.selection.clone(),
-                    inherited: Inherited::root(&theme),
-                    highlights: &mut self.highlights,
-                    paint_reports: &self.paint_reports,
-                    click_press: &self.click_press,
-                    highlight_events: &mut highlight_events,
-                    keyboard_focus,
-                    has_animated_shader: false,
-                    active_motion_ids: &active_motion_ids,
-                    has_built_active_motion: false,
+                let root_inherited = Inherited::root(&theme);
+                let hoist_portals = incremental_enabled;
+                let (hoisted_portals, portals_hash) = if hoist_portals {
+                    collect_hoisted_portals(
+                        &tree,
+                        root_id,
+                        &root_inherited,
+                        &theme,
+                        &mut self.highlights,
+                        &mut highlight_events,
+                    )
+                } else {
+                    (Vec::new(), 0)
                 };
-                let built = build_element(root_id, &mut ctx, window, cx);
-                has_animated_shader = ctx.has_animated_shader;
-                has_built_active_motion = ctx.has_built_active_motion;
-                built
+
+                let bg_scroll_handles: HashMap<u64, gpui::ScrollHandle> = self
+                    .scroll_handles
+                    .iter()
+                    .filter(|(&sid, _)| !is_inside_any_portal(&tree, sid))
+                    .map(|(&sid, h)| (sid, h.clone()))
+                    .collect();
+                let (bg_scroll_hash, bg_scroll_settling) = crate::cache::subtree::hash_scroll_handles(
+                    &bg_scroll_handles,
+                    now_ms,
+                    &mut self.scroll_activity_ms,
+                );
+                let focus_hash = crate::cache::subtree::hash_focus(
+                    keyboard_focus.as_deref(),
+                    tree.keyboard_focus_dim(),
+                );
+
+                let vp = window.viewport_size();
+                let vp_bits = (
+                    f32::from(vp.width).to_bits(),
+                    f32::from(vp.height).to_bits(),
+                    window.scale_factor().to_bits(),
+                    f32::from(window.rem_size()).to_bits(),
+                );
+                let root_el = tree.elements.get(&root_id);
+                let root_layout_rev = root_el.map(|e| e.layout_revision).unwrap_or(0);
+                let root_portal_free_rev = root_el.map(|e| e.portal_free_revision).unwrap_or(0);
+                let root_layout_clean = {
+                    let cache = self.subtree_cache.borrow();
+                    cache.last_root_layout_revision == Some(root_layout_rev)
+                        && cache.last_viewport_bits == Some(vp_bits)
+                };
+
+                if !root_layout_clean {
+                    self.subtree_cache.borrow_mut().records.clear();
+                }
+
+                let motion_epoch = crate::motion_values::motion_values_epoch();
+                let (bg_pointer_hash, pointer_branch) = compute_bg_pointer_state(
+                    &tree,
+                    &hoisted_portals,
+                    window.mouse_position(),
+                    &self.click_press,
+                );
+                let bg_key = crate::cache::subtree::SubtreeCacheKey {
+                    revision: root_portal_free_rev,
+                    scroll_hash: bg_scroll_hash,
+                    inherited_hash: crate::cache::subtree::hash_inherited(&root_inherited),
+                    focus_hash,
+                    portals_hash,
+                    motion_epoch,
+                    pointer_hash: bg_pointer_hash,
+                };
+                let bg_replay = if culling_allowed && incremental_enabled && !bg_scroll_settling {
+                    self.subtree_cache.borrow().can_replay(
+                        crate::cache::subtree::BACKGROUND_LAYER_CACHE_ID,
+                        &bg_key,
+                        window,
+                    )
+                } else {
+                    None
+                };
+
+                let bg_built = if let Some((outer_style, raw_device_size, _)) = bg_replay {
+                    crate::cache::subtree::CachedSubtreeElement::replaying(
+                        crate::cache::subtree::BACKGROUND_LAYER_CACHE_ID,
+                        bg_key,
+                        self.subtree_cache.clone(),
+                        gpuix_view_id,
+                        outer_style,
+                        raw_device_size,
+                        weak_view.clone(),
+                        crate::cache::subtree::SubtreeFallbackSpec {
+                            element_id: root_id,
+                            is_background_layer: true,
+                            hoist_portals,
+                            inherited: root_inherited.clone(),
+                        },
+                    )
+                    .into_any_element()
+                } else {
+                    let mut ctx = BuildCtx {
+                        tree: &tree,
+                        host_styles: &mut self.host_styles,
+                        viewport: &mut self.viewport,
+                        pinned_ancestors: &pinned_ancestors,
+                        viewport_clip: None,
+                        ancestor_own_hash: 0,
+                        culling_allowed,
+                        event_callback: &callback,
+                        focus_handles: &self.focus_handles,
+                        scroll_handles: &mut self.scroll_handles,
+                        custom_registry: &mut self.custom_registry,
+                        virtual_lists: &mut self.virtual_lists,
+                        motion_states: &mut self.motion_states,
+                        now,
+                        time_secs,
+                        selection: self.selection.clone(),
+                        inherited: root_inherited.clone(),
+                        highlights: &mut self.highlights,
+                        paint_reports: &self.paint_reports,
+                        click_press: &self.click_press,
+                        highlight_events: &mut highlight_events,
+                        keyboard_focus: keyboard_focus.clone(),
+                        has_animated_shader: false,
+                        active_motion_ids: &active_motion_ids,
+                        has_built_active_motion: false,
+                        built_elements: 0,
+                        subtree_cache: &self.subtree_cache,
+                        gpuix_view_id,
+                        weak_view: weak_view.clone(),
+                        hoist_portals,
+                        interior_cache_allowed: culling_allowed
+                            && incremental_enabled
+                            && root_layout_clean
+                            && !bg_scroll_settling,
+                        bg_scroll_settling,
+                        bg_scroll_hash,
+                        focus_hash,
+                        motion_epoch,
+                        bg_pointer_hash,
+                        pointer_branch: &pointer_branch,
+                        has_blocked_cache_feature: false,
+                        fallback_root_size: None,
+                    };
+                    let inner = build_element_uncached(root_id, &mut ctx, window, cx);
+                    has_animated_shader |= ctx.has_animated_shader;
+                    has_built_active_motion |= ctx.has_built_active_motion;
+                    built_elements = built_elements.saturating_add(ctx.built_elements);
+                    let base_style = outer_layout_style_for(root_el.and_then(|e| e.style.as_deref()));
+                    if culling_allowed && incremental_enabled {
+                        crate::cache::subtree::CachedSubtreeElement::recording(
+                            crate::cache::subtree::BACKGROUND_LAYER_CACHE_ID,
+                            bg_key,
+                            self.subtree_cache.clone(),
+                            gpuix_view_id,
+                            inner,
+                            base_style,
+                            ctx.has_blocked_cache_feature || !culling_allowed,
+                            ctx.built_elements as u64,
+                        )
+                        .into_any_element()
+                    } else {
+                        inner
+                    }
+                };
+
+                {
+                    let mut cache = self.subtree_cache.borrow_mut();
+                    cache.last_root_layout_revision = Some(root_layout_rev);
+                    cache.last_viewport_bits = Some(vp_bits);
+                }
+
+                for portal in hoisted_portals {
+                    let mut ctx = BuildCtx {
+                        tree: &tree,
+                        host_styles: &mut self.host_styles,
+                        viewport: &mut self.viewport,
+                        pinned_ancestors: &pinned_ancestors,
+                        viewport_clip: None,
+                        ancestor_own_hash: 0,
+                        culling_allowed,
+                        event_callback: &callback,
+                        focus_handles: &self.focus_handles,
+                        scroll_handles: &mut self.scroll_handles,
+                        custom_registry: &mut self.custom_registry,
+                        virtual_lists: &mut self.virtual_lists,
+                        motion_states: &mut self.motion_states,
+                        now,
+                        time_secs,
+                        selection: self.selection.clone(),
+                        inherited: portal.inherited,
+                        highlights: &mut self.highlights,
+                        paint_reports: &self.paint_reports,
+                        click_press: &self.click_press,
+                        highlight_events: &mut highlight_events,
+                        keyboard_focus: keyboard_focus.clone(),
+                        has_animated_shader: false,
+                        active_motion_ids: &active_motion_ids,
+                        has_built_active_motion: false,
+                        built_elements: 0,
+                        subtree_cache: &self.subtree_cache,
+                        gpuix_view_id,
+                        weak_view: weak_view.clone(),
+                        hoist_portals: false,
+                        interior_cache_allowed: false,
+                        bg_scroll_settling: false,
+                        bg_scroll_hash: 0,
+                        focus_hash,
+                        motion_epoch,
+                        bg_pointer_hash: 0,
+                        pointer_branch: &pointer_branch,
+                        has_blocked_cache_feature: false,
+                        fallback_root_size: None,
+                    };
+                    let built_portal = build_element_uncached(portal.portal_id, &mut ctx, window, cx);
+                    has_animated_shader |= ctx.has_animated_shader;
+                    has_built_active_motion |= ctx.has_built_active_motion;
+                    built_elements = built_elements.saturating_add(ctx.built_elements);
+                    portal_elements.push(wrap_portal_typography(built_portal, &portal.ancestor_styles));
+                }
+
+                bg_built
             }
-            None => gpui::Empty.into_any_element(),
+            None => {
+                self.subtree_cache.borrow_mut().clear();
+                gpui::Empty.into_any_element()
+            }
         };
+        crate::perf::add_frame_built_elements(built_elements as u64);
         // Flushed after the root build so a `setState` in the handler cannot
         // re-enter this build.
         emit_highlight_events(&callback, &highlight_events);
@@ -5964,6 +6223,7 @@ impl gpui::Render for GpuixView {
                 ))
                 .child(crate::automation::bounds_frame_reset())
                 .child(result)
+                .children(portal_elements)
                 .children(
                     self.painted_frame
                         .clone()
@@ -6001,9 +6261,432 @@ impl gpui::Render for GpuixView {
     }
 }
 
+// ── Subtree / Portal Hoisting Helpers ────────────────────────────────
+
+struct HoistedPortalSpec {
+    portal_id: u64,
+    inherited: Inherited,
+    ancestor_styles: Vec<Arc<StyleDesc>>,
+}
+
+fn is_inside_any_portal(tree: &RetainedTree, id: u64) -> bool {
+    if tree.portal_ids.is_empty() {
+        return false;
+    }
+    let mut curr = Some(id);
+    while let Some(cid) = curr {
+        if tree.portal_ids.contains(&cid) {
+            return true;
+        }
+        curr = tree.elements.get(&cid).and_then(|e| e.parent);
+    }
+    false
+}
+
+fn compute_bg_pointer_state(
+    tree: &crate::retained_tree::RetainedTree,
+    hoisted_portals: &[HoistedPortalSpec],
+    mouse_pos: gpui::Point<gpui::Pixels>,
+    click_press: &SharedClickPress,
+) -> (u64, rustc_hash::FxHashSet<u64>) {
+    use std::hash::{Hash, Hasher};
+    let mx = f32::from(mouse_pos.x) as f64;
+    let my = f32::from(mouse_pos.y) as f64;
+    for portal in hoisted_portals {
+        let Some(pel) = tree.elements.get(&portal.portal_id) else {
+            continue;
+        };
+        let occludes = pel
+            .custom_props()
+            .get("occlude")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        if !occludes {
+            continue;
+        }
+        if pel.custom_props().get("fill").and_then(|v| v.as_str()) == Some("window") {
+            return (0, rustc_hash::FxHashSet::default());
+        }
+        if crate::automation::get_bounds(portal.portal_id).is_some_and(|b| {
+            mx >= b.x && mx <= b.x + b.width && my >= b.y && my <= b.y + b.height
+        }) {
+            return (0, rustc_hash::FxHashSet::default());
+        }
+    }
+
+    let hits = tree.elements_at(mx, my, &crate::automation::get_bounds);
+    let mut pressed: Vec<u64> = click_press
+        .borrow()
+        .pressed
+        .iter()
+        .copied()
+        .filter(|&pid| !is_inside_any_portal(tree, pid))
+        .collect();
+    pressed.sort_unstable();
+
+    let mut hasher = rustc_hash::FxHasher::default();
+    let mut branch = rustc_hash::FxHashSet::default();
+    let mut any = false;
+    for id in hits {
+        if is_inside_any_portal(tree, id) {
+            continue;
+        }
+        any = true;
+        id.hash(&mut hasher);
+        let mut cur = Some(id);
+        while let Some(cid) = cur {
+            if !branch.insert(cid) {
+                break;
+            }
+            cur = tree.elements.get(&cid).and_then(|e| e.parent);
+        }
+    }
+    0x5052_4553_u32.hash(&mut hasher);
+    for id in pressed {
+        any = true;
+        id.hash(&mut hasher);
+        let mut cur = Some(id);
+        while let Some(cid) = cur {
+            if !branch.insert(cid) {
+                break;
+            }
+            cur = tree.elements.get(&cid).and_then(|e| e.parent);
+        }
+    }
+    if !any {
+        return (0, branch);
+    }
+    (hasher.finish().max(1), branch)
+}
+
+fn outer_layout_style_for(style: Option<&StyleDesc>) -> gpui::Style {
+    let mut resolved = gpui::Style::default();
+    if let Some(style_desc) = style {
+        let refinement = apply_styles(gpui::StyleRefinement::default(), style_desc);
+        gpui::Refineable::refine(&mut resolved, &refinement);
+    }
+    if style.and_then(|s| s.position.as_deref()).is_none() {
+        resolved.position = gpui::Position::Relative;
+    }
+    resolved
+}
+
+fn wrap_portal_typography(
+    portal: gpui::AnyElement,
+    ancestor_styles: &[Arc<StyleDesc>],
+) -> gpui::AnyElement {
+    use gpui::prelude::*;
+    let mut wrapper = gpui::div().absolute().top_0().left_0().size_0();
+    for style in ancestor_styles {
+        if let Some(ref color) = style.color {
+            if let Some(parsed) = crate::color::parse_color_rgba(color) {
+                wrapper = wrapper.text_color(parsed);
+            }
+        }
+        if let Some(size) = style.font_size {
+            wrapper = wrapper.text_size(gpui::px(size as f32));
+        }
+        if let Some(ref family) = style.font_family {
+            wrapper = wrapper.font_family(family.clone());
+        }
+        if let Some(ref weight) = style.font_weight {
+            wrapper = wrapper.font_weight(parse_font_weight(weight));
+        }
+        if let Some(lh) = style.line_height {
+            if lh > 0.0 {
+                wrapper = wrapper.line_height(gpui::px(lh as f32));
+            }
+        }
+        match style.text_align.as_deref() {
+            Some("center") => wrapper = wrapper.text_center(),
+            Some("right") => wrapper = wrapper.text_right(),
+            Some("left") | Some("start") => wrapper = wrapper.text_left(),
+            _ => {}
+        }
+        match style.white_space.as_deref() {
+            Some("nowrap") => wrapper = wrapper.whitespace_nowrap(),
+            Some("normal") => wrapper = wrapper.whitespace_normal(),
+            _ => {}
+        }
+    }
+    wrapper.child(portal).into_any_element()
+}
+
+fn collect_hoisted_portals(
+    tree: &RetainedTree,
+    root_id: u64,
+    root_inherited: &Inherited,
+    theme: &Theme,
+    highlights: &mut HashMap<u64, HighlightCacheEntry>,
+    highlight_events: &mut Vec<(u64, usize)>,
+) -> (Vec<HoistedPortalSpec>, u64) {
+    use std::hash::{Hash, Hasher};
+    if tree.portal_ids.is_empty() {
+        return (Vec::new(), 0);
+    }
+    let mut specs = Vec::new();
+    let mut hasher = rustc_hash::FxHasher::default();
+    let mut ancestors = Vec::new();
+
+    'portal_loop: for &portal_id in &tree.portal_ids {
+        if portal_id == root_id {
+            continue;
+        }
+        ancestors.clear();
+        let mut curr = tree.elements.get(&portal_id).and_then(|e| e.parent);
+        let mut reached_root = false;
+        while let Some(cid) = curr {
+            if tree.portal_ids.contains(&cid) {
+                // Nested inside an outer hoisted portal; let the outer portal build it naturally.
+                continue 'portal_loop;
+            }
+            let Some(el) = tree.elements.get(&cid) else {
+                break;
+            };
+            if let Some(style) = el.style.as_deref() {
+                if style.display.as_deref() == Some("none")
+                    || style.visibility.as_deref() == Some("hidden")
+                {
+                    continue 'portal_loop;
+                }
+            }
+            ancestors.push(cid);
+            if cid == root_id {
+                reached_root = true;
+                break;
+            }
+            curr = el.parent;
+        }
+        if !reached_root {
+            continue;
+        }
+
+        ancestors.reverse();
+        let mut inherited = root_inherited.clone();
+        let mut ancestor_styles = Vec::with_capacity(ancestors.len());
+        for &aid in &ancestors {
+            if let Some(ael) = tree.elements.get(&aid) {
+                if let Some(ref st) = ael.style {
+                    ancestor_styles.push(st.clone());
+                }
+                inherited = inherited.descend(ael.style.as_deref());
+                if let Some(value) = ael.custom_props().get("highlight") {
+                    let has_listener = ael.events().contains("highlight");
+                    let resolved =
+                        resolve_highlight(highlights, tree, aid, value, theme, has_listener);
+                    if let Some((_, Some(total))) = &resolved {
+                        highlight_events.push((aid, *total));
+                    }
+                    inherited.highlight = resolved.map(|(context, _)| context);
+                }
+            }
+        }
+        portal_id.hash(&mut hasher);
+        specs.push(HoistedPortalSpec {
+            portal_id,
+            inherited,
+            ancestor_styles,
+        });
+    }
+
+    (specs, hasher.finish())
+}
+
+impl GpuixView {
+    pub(crate) fn build_fallback_subtree(
+        &mut self,
+        spec: &crate::cache::subtree::SubtreeFallbackSpec,
+        bounds_size: gpui::Size<gpui::Pixels>,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> (gpui::AnyElement, gpui::Style, bool, u64) {
+        let tree_arc = self.tree.clone();
+        let tree = tree_arc.lock().unwrap();
+        let callback = self.event_callback.clone();
+        let now = self.clock.now();
+        let time_secs = (self.clock.now_ms() / 1000.0) as f32;
+        let mv_active = crate::motion_values::has_active_motion_values();
+        let motion_sync = sync_motion_states(&tree, &mut self.motion_states, now);
+        let active_motion_ids = motion_sync.active_ids;
+        let keyboard_focus = self.keyboard_focus_path(&tree, window, cx);
+        let pinned_ancestors = tree.collect_pinned_ancestors(self.focused_element_id_fast(window, cx));
+        let mut highlight_events = Vec::new();
+        let focus_hash = crate::cache::subtree::hash_focus(
+            keyboard_focus.as_deref(),
+            tree.keyboard_focus_dim(),
+        );
+        let gpuix_view_id = cx.entity_id();
+        let weak_view = cx.weak_entity();
+
+        let empty_pointer_branch = rustc_hash::FxHashSet::default();
+        let mut ctx = BuildCtx {
+            tree: &tree,
+            host_styles: &mut self.host_styles,
+            viewport: &mut self.viewport,
+            pinned_ancestors: &pinned_ancestors,
+            viewport_clip: None,
+            ancestor_own_hash: 0,
+            culling_allowed: true,
+            event_callback: &callback,
+            focus_handles: &self.focus_handles,
+            scroll_handles: &mut self.scroll_handles,
+            custom_registry: &mut self.custom_registry,
+            virtual_lists: &mut self.virtual_lists,
+            motion_states: &mut self.motion_states,
+            now,
+            time_secs,
+            selection: self.selection.clone(),
+            inherited: spec.inherited.clone(),
+            highlights: &mut self.highlights,
+            paint_reports: &self.paint_reports,
+            click_press: &self.click_press,
+            highlight_events: &mut highlight_events,
+            keyboard_focus,
+            has_animated_shader: false,
+            active_motion_ids: &active_motion_ids,
+            has_built_active_motion: false,
+            built_elements: 0,
+            subtree_cache: &self.subtree_cache,
+            gpuix_view_id,
+            weak_view,
+            hoist_portals: spec.hoist_portals,
+            interior_cache_allowed: false,
+            bg_scroll_settling: false,
+            bg_scroll_hash: 0,
+            focus_hash,
+            motion_epoch: crate::motion_values::motion_values_epoch(),
+            bg_pointer_hash: 0,
+            pointer_branch: &empty_pointer_branch,
+            has_blocked_cache_feature: false,
+            fallback_root_size: (!spec.is_background_layer)
+                .then_some((spec.element_id, bounds_size)),
+        };
+        let element = build_element_uncached(spec.element_id, &mut ctx, window, cx);
+        let base_style = outer_layout_style_for(
+            tree.elements
+                .get(&spec.element_id)
+                .and_then(|e| e.style.as_deref()),
+        );
+        let blocked = ctx.has_blocked_cache_feature;
+        let count = ctx.built_elements as u64;
+        let need_anim = ctx.has_built_active_motion || ctx.has_animated_shader || mv_active;
+        drop(ctx);
+        emit_highlight_events(&callback, &highlight_events);
+        emit_motion_settled(&callback, &tree, &motion_sync.settled);
+        crate::perf::add_frame_built_elements(count);
+        if need_anim {
+            window.request_animation_frame();
+        }
+        (element, base_style, blocked, count)
+    }
+}
+
 // ── Element builders ─────────────────────────────────────────────────
 
 pub(crate) fn build_element(
+    id: u64,
+    ctx: &mut BuildCtx,
+    window: &mut gpui::Window,
+    cx: &mut gpui::Context<GpuixView>,
+) -> gpui::AnyElement {
+    use gpui::IntoElement;
+
+    if ctx.hoist_portals && ctx.tree.is_deferred_portal(id) {
+        use gpui::Styled as _;
+        // Leave an inert 0×0 flex/block placeholder matching `gpui::deferred`'s footprint;
+        // the portal itself is rendered as a top-level sibling layer.
+        return gpui::div().size_0().into_any_element();
+    }
+
+    let can_wrap_interior = ctx.culling_allowed
+        && gpui::incremental_rendering_enabled()
+        && !(ctx.bg_scroll_settling && ctx.viewport_clip.is_some())
+        && ctx.tree.root_id != Some(id)
+        && ctx.tree.elements.get(&id).is_some_and(|el| {
+            el.element_type == "div"
+                && el.subtree_size >= crate::cache::subtree::MIN_INTERIOR_SUBTREE_ELEMENTS
+                && !el.custom_props().contains_key("motion")
+                && el.style.as_deref().is_none_or(|s| {
+                    s.position.as_deref() != Some("sticky")
+                        && s.display.as_deref() != Some("none")
+                        && s.overflow.as_deref() != Some("scroll")
+                        && s.overflow_x.as_deref() != Some("scroll")
+                        && s.overflow_y.as_deref() != Some("scroll")
+                        && s.scroll_bind.is_none()
+                })
+        });
+
+    if can_wrap_interior {
+        let element = ctx.tree.elements.get(&id).expect("checked above");
+        let sub_inherited = ctx.inherited.clone().descend(element.style.as_deref());
+        let sub_pointer_hash = if ctx.pointer_branch.contains(&id) {
+            ctx.bg_pointer_hash
+        } else {
+            0
+        };
+        let sub_key = crate::cache::subtree::SubtreeCacheKey {
+            revision: element.portal_free_revision,
+            scroll_hash: ctx.bg_scroll_hash,
+            inherited_hash: crate::cache::subtree::hash_inherited(&sub_inherited),
+            focus_hash: ctx.focus_hash,
+            portals_hash: 0,
+            motion_epoch: ctx.motion_epoch,
+            pointer_hash: sub_pointer_hash,
+        };
+        if ctx.interior_cache_allowed {
+            if let Some((outer_style, raw_device_size, _)) =
+                ctx.subtree_cache.borrow().can_replay(id, &sub_key, window)
+            {
+                return crate::cache::subtree::CachedSubtreeElement::replaying(
+                    id,
+                    sub_key,
+                    ctx.subtree_cache.clone(),
+                    ctx.gpuix_view_id,
+                    outer_style,
+                    raw_device_size,
+                    ctx.weak_view.clone(),
+                    crate::cache::subtree::SubtreeFallbackSpec {
+                        element_id: id,
+                        is_background_layer: false,
+                        hoist_portals: ctx.hoist_portals,
+                        inherited: ctx.inherited.clone(),
+                    },
+                )
+                .into_any_element();
+            }
+        }
+
+        let prev_blocked = ctx.has_blocked_cache_feature;
+        let prev_built = ctx.built_elements;
+        ctx.has_blocked_cache_feature = false;
+        let inner = build_element_uncached(id, ctx, window, cx);
+        let sub_blocked = ctx.has_blocked_cache_feature;
+        let sub_count = ctx.built_elements.saturating_sub(prev_built) as u64;
+        ctx.has_blocked_cache_feature = prev_blocked || sub_blocked;
+
+        let base_style = outer_layout_style_for(
+            ctx.tree
+                .elements
+                .get(&id)
+                .and_then(|el| el.style.as_deref()),
+        );
+        return crate::cache::subtree::CachedSubtreeElement::recording(
+            id,
+            sub_key,
+            ctx.subtree_cache.clone(),
+            ctx.gpuix_view_id,
+            inner,
+            base_style,
+            sub_blocked,
+            sub_count,
+        )
+        .into_any_element();
+    }
+
+    build_element_uncached(id, ctx, window, cx)
+}
+
+fn build_element_uncached(
     id: u64,
     ctx: &mut BuildCtx,
     window: &mut gpui::Window,
@@ -6017,6 +6700,7 @@ pub(crate) fn build_element(
     let Some(element) = tree.elements.get(&id) else {
         return gpui::Empty.into_any_element();
     };
+    ctx.built_elements = ctx.built_elements.saturating_add(1);
 
     let base_style = element.style.as_deref();
     let has_motion = element.custom_props().contains_key("motion");
@@ -6024,6 +6708,21 @@ pub(crate) fn build_element(
     let has_motion_bind = base_style.is_some_and(|s| s.motion_bind.is_some());
     if has_motion && ctx.active_motion_ids.contains(&id) {
         ctx.has_built_active_motion = true;
+        ctx.has_blocked_cache_feature = true;
+    }
+    if has_motion_bind
+        && base_style
+            .and_then(|s| s.motion_bind.as_ref())
+            .is_some_and(|b| crate::motion_values::are_motion_bindings_active(b.as_slice()))
+    {
+        ctx.has_blocked_cache_feature = true;
+    }
+    if base_style
+        .and_then(|s| s.shader.as_ref())
+        .is_some_and(|sh| sh.animated)
+        || element.element_type == "virtual-list"
+    {
+        ctx.has_blocked_cache_feature = true;
     }
     let motion_style = if has_motion {
         ctx.motion_states
@@ -6032,21 +6731,53 @@ pub(crate) fn build_element(
     } else {
         None
     };
-    let animated_style = if motion_style.is_some() || has_scroll_bind || has_motion_bind {
-        let mut resolved = base_style.cloned().unwrap_or_default();
-        if let Some(motion_style) = motion_style {
-            motion_style.apply_to(&mut resolved);
-        }
-        if let Some(ref bindings) = resolved.scroll_bind.clone() {
-            crate::scroll_state::apply_scroll_bindings_to_style(&mut resolved, bindings.as_slice());
-        }
-        if let Some(ref bindings) = resolved.motion_bind.clone() {
-            crate::motion_values::apply_motion_bindings_to_style(&mut resolved, bindings.as_slice());
-        }
-        Some(resolved)
-    } else {
-        None
-    };
+    let fallback_size = ctx
+        .fallback_root_size
+        .and_then(|(fid, sz)| (fid == id).then_some(sz));
+    let animated_style =
+        if motion_style.is_some() || has_scroll_bind || has_motion_bind || fallback_size.is_some()
+        {
+            let mut resolved = base_style.cloned().unwrap_or_default();
+            if let Some(motion_style) = motion_style {
+                motion_style.apply_to(&mut resolved);
+            }
+            if let Some(ref bindings) = resolved.scroll_bind.clone() {
+                crate::scroll_state::apply_scroll_bindings_to_style(
+                    &mut resolved,
+                    bindings.as_slice(),
+                );
+            }
+            if let Some(ref bindings) = resolved.motion_bind.clone() {
+                crate::motion_values::apply_motion_bindings_to_style(
+                    &mut resolved,
+                    bindings.as_slice(),
+                );
+            }
+            if let Some(sz) = fallback_size {
+                resolved.width = Some(crate::style::DimensionValue::Pixels(
+                    f32::from(sz.width) as f64,
+                ));
+                resolved.height = Some(crate::style::DimensionValue::Pixels(
+                    f32::from(sz.height) as f64,
+                ));
+                resolved.min_width = None;
+                resolved.max_width = None;
+                resolved.min_height = None;
+                resolved.max_height = None;
+                resolved.margin = Some(0.0);
+                resolved.margin_top = Some(0.0);
+                resolved.margin_right = Some(0.0);
+                resolved.margin_bottom = Some(0.0);
+                resolved.margin_left = Some(0.0);
+                resolved.top = None;
+                resolved.right = None;
+                resolved.bottom = None;
+                resolved.left = None;
+            }
+            Some(resolved)
+        } else {
+            None
+        };
     let style = animated_style.as_ref().or(base_style);
 
     // Inheritable style resolves once here so both built-ins and custom

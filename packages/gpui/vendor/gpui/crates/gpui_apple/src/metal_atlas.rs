@@ -4,15 +4,19 @@ use derive_more::{Deref, DerefMut};
 use etagere::BucketedAtlasAllocator;
 use gpui::{
     AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTextureList, AtlasTile, Bounds, DevicePixels,
-    PlatformAtlas, Point, Size,
+    PlatformAtlas, Point, Size, TileId,
 };
 use metal::Device;
 use parking_lot::Mutex;
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 pub struct MetalAtlas {
     state: Mutex<MetalAtlasState>,
     last_submission: Mutex<Option<AssertSend<metal::CommandBuffer>>>,
+    has_tile_mutations: AtomicBool,
 }
 
 impl MetalAtlas {
@@ -24,9 +28,21 @@ impl MetalAtlas {
                 monochrome_textures: Default::default(),
                 polychrome_textures: Default::default(),
                 tiles_by_key: Default::default(),
+                tile_generations: Default::default(),
+                next_tile_generation: 1,
             }),
             last_submission: Mutex::new(None),
+            has_tile_mutations: AtomicBool::new(false),
         }
+    }
+
+    pub(crate) fn snapshot_tile_generations(
+        &self,
+    ) -> Option<FxHashMap<(AtlasTextureId, TileId), u64>> {
+        if !self.has_tile_mutations.load(Ordering::Relaxed) {
+            return None;
+        }
+        Some(self.state.lock().tile_generations.clone())
     }
 
     pub(crate) fn track_submission(&self, command_buffer: &metal::CommandBufferRef) {
@@ -53,6 +69,17 @@ struct MetalAtlasState {
     monochrome_textures: AtlasTextureList<MetalAtlasTexture>,
     polychrome_textures: AtlasTextureList<MetalAtlasTexture>,
     tiles_by_key: FxHashMap<AtlasKey, AtlasTile>,
+    tile_generations: FxHashMap<(AtlasTextureId, TileId), u64>,
+    next_tile_generation: u64,
+}
+
+impl MetalAtlasState {
+    fn bump_tile_generation(&mut self, texture_id: AtlasTextureId, tile_id: TileId) {
+        let generation = self.next_tile_generation;
+        self.next_tile_generation = self.next_tile_generation.wrapping_add(1).max(1);
+        self.tile_generations
+            .insert((texture_id, tile_id), generation);
+    }
 }
 
 impl PlatformAtlas for MetalAtlas {
@@ -88,10 +115,12 @@ impl PlatformAtlas for MetalAtlas {
         bytes: &[u8],
     ) -> Result<Option<AtlasTile>> {
         self.wait_for_pending_submissions();
-        let lock = self.state.lock();
+        let mut lock = self.state.lock();
         if let Some(tile) = lock.tiles_by_key.get(key).copied() {
             if tile.bounds.size == size {
                 lock.texture(tile.texture_id).upload(tile.bounds, bytes);
+                lock.bump_tile_generation(tile.texture_id, tile.tile_id);
+                self.has_tile_mutations.store(true, Ordering::Relaxed);
                 return Ok(Some(tile));
             }
         }
@@ -106,6 +135,8 @@ impl PlatformAtlas for MetalAtlas {
             return;
         };
         let id = tile.texture_id;
+        lock.bump_tile_generation(id, tile.tile_id);
+        self.has_tile_mutations.store(true, Ordering::Relaxed);
 
         let textures = match id.kind {
             AtlasTextureKind::Monochrome => &mut lock.monochrome_textures,

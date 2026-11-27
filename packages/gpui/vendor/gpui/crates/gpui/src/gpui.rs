@@ -344,3 +344,85 @@ pub struct GpuSpecs {
     /// Further information about the driver, as reported by Vulkan.
     pub driver_info: String,
 }
+
+mod incremental_state {
+    use std::sync::{
+        LazyLock,
+        atomic::{AtomicU8, AtomicU64, Ordering},
+    };
+
+    static ENV_DEFAULT: LazyLock<bool> =
+        LazyLock::new(|| std::env::var_os("GPUI_INCREMENTAL").is_none_or(|value| value != "0"));
+    /// `0` = use `GPUI_INCREMENTAL` env default, `1` = force disabled, `2` = force enabled.
+    static OVERRIDE: AtomicU8 = AtomicU8::new(0);
+    static BACKDROP_PASSES: AtomicU64 = AtomicU64::new(0);
+    static BACKDROP_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+
+    #[inline]
+    pub fn enabled() -> bool {
+        match OVERRIDE.load(Ordering::Relaxed) {
+            1 => false,
+            2 => true,
+            _ => *ENV_DEFAULT,
+        }
+    }
+
+    pub fn set_enabled(override_value: Option<bool>) {
+        let code = match override_value {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 2,
+        };
+        OVERRIDE.store(code, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn record_backdrop_pass() {
+        BACKDROP_PASSES.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn record_backdrop_cache_hit() {
+        BACKDROP_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn take_backdrop_stats() -> (u64, u64) {
+        (
+            BACKDROP_PASSES.swap(0, Ordering::Relaxed),
+            BACKDROP_CACHE_HITS.swap(0, Ordering::Relaxed),
+        )
+    }
+}
+
+/// Returns whether incremental layout, subtree replay, and backdrop caching are enabled.
+///
+/// Defaults to `true` unless `GPUI_INCREMENTAL=0` is set or overridden via
+/// [`set_incremental_rendering_enabled`].
+#[inline]
+pub fn incremental_rendering_enabled() -> bool {
+    incremental_state::enabled()
+}
+
+/// Overrides [`incremental_rendering_enabled`] at runtime (`None` restores `GPUI_INCREMENTAL`).
+pub fn set_incremental_rendering_enabled(enabled: Option<bool>) {
+    incremental_state::set_enabled(enabled);
+}
+
+/// Records an executed GPU backdrop capture / blur pass during scene presentation.
+#[inline]
+pub fn record_backdrop_pass() {
+    incremental_state::record_backdrop_pass();
+}
+
+/// Records a reused GPU backdrop texture hit that skipped backdrop capture / blur passes.
+#[inline]
+pub fn record_backdrop_cache_hit() {
+    incremental_state::record_backdrop_cache_hit();
+}
+
+/// Drains `(backdrop_passes, backdrop_cache_hits)` accumulated since the previous call.
+#[inline]
+pub fn take_backdrop_stats() -> (u64, u64) {
+    incremental_state::take_backdrop_stats()
+}

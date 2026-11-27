@@ -3,9 +3,22 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Deserialize;
 use web_time::Instant;
+
+static MOTION_VALUES_EPOCH: AtomicU64 = AtomicU64::new(1);
+
+#[inline]
+fn bump_motion_epoch() {
+    MOTION_VALUES_EPOCH.fetch_add(1, Ordering::Relaxed);
+}
+
+#[inline]
+pub(crate) fn motion_values_epoch() -> u64 {
+    MOTION_VALUES_EPOCH.load(Ordering::Relaxed)
+}
 
 use crate::motion::{
     apply_scalar_property, solve_spring, validate_transition, MotionTargetValue, MotionTransition,
@@ -43,6 +56,44 @@ enum MotionValueEntry {
 thread_local! {
     static MOTION_VALUES: RefCell<HashMap<String, MotionValueEntry>> =
         RefCell::new(HashMap::new());
+}
+
+pub(crate) fn has_active_motion_values() -> bool {
+    MOTION_VALUES.with(|cell| {
+        cell.borrow().values().any(|entry| match entry {
+            MotionValueEntry::Direct { animation, .. } => animation.is_some(),
+            MotionValueEntry::SpringFollow { active, .. } => *active,
+            MotionValueEntry::Transform { .. } => false,
+        })
+    })
+}
+
+fn is_entry_active(map: &HashMap<String, MotionValueEntry>, id: &str, depth: usize) -> bool {
+    if depth > 16 {
+        return false;
+    }
+    let Some(entry) = map.get(id) else {
+        return false;
+    };
+    match entry {
+        MotionValueEntry::Direct { animation, .. } => animation.is_some(),
+        MotionValueEntry::SpringFollow {
+            source_id, active, ..
+        } => *active || is_entry_active(map, source_id, depth + 1),
+        MotionValueEntry::Transform { source_id, .. } => is_entry_active(map, source_id, depth + 1),
+    }
+}
+
+pub(crate) fn are_motion_bindings_active(bindings: &[MotionBindDesc]) -> bool {
+    if bindings.is_empty() {
+        return false;
+    }
+    MOTION_VALUES.with(|cell| {
+        let map = cell.borrow();
+        bindings
+            .iter()
+            .any(|binding| is_entry_active(&map, &binding.source_id, 0))
+    })
 }
 
 #[derive(Deserialize)]
@@ -155,6 +206,18 @@ pub(crate) fn set_motion_value(id: &str, value: f64, now: Instant) {
     }
     MOTION_VALUES.with(|cell| {
         let mut map = cell.borrow_mut();
+        let unchanged = matches!(
+            map.get(id),
+            Some(MotionValueEntry::Direct {
+                value: prev,
+                animation: None,
+                ..
+            }) if prev.to_bits() == value.to_bits()
+        );
+        if unchanged {
+            return;
+        }
+        bump_motion_epoch();
         map.insert(
             id.to_string(),
             MotionValueEntry::Direct {
@@ -214,6 +277,7 @@ pub(crate) fn animate_motion_value(id: &str, spec_json: &str, now: Instant) -> R
         };
 
         let track = ScalarTrack::from_transition(keyframes, &spec.transition, current_vel);
+        bump_motion_epoch();
         map.insert(
             id.to_string(),
             MotionValueEntry::Direct {
@@ -236,12 +300,18 @@ pub(crate) fn configure_motion_value(id: &str, config_json: &str, now: Instant) 
                 if !initial.is_finite() {
                     return Err("motion initial value must be finite".to_string());
                 }
-                map.entry(id.to_string()).or_insert(MotionValueEntry::Direct {
-                    value: initial,
-                    velocity: 0.0,
-                    started: now,
-                    animation: None,
-                });
+                if !map.contains_key(id) {
+                    bump_motion_epoch();
+                    map.insert(
+                        id.to_string(),
+                        MotionValueEntry::Direct {
+                            value: initial,
+                            velocity: 0.0,
+                            started: now,
+                            animation: None,
+                        },
+                    );
+                }
             }
             ConfigureSpec::Spring {
                 source_id,
@@ -260,6 +330,9 @@ pub(crate) fn configure_motion_value(id: &str, config_json: &str, now: Instant) 
                 let (cur_val, cur_vel) = existing.unwrap_or((initial.unwrap_or(source_val), 0.0));
                 let active = (cur_val - source_val).abs() > spring.rest_delta
                     || cur_vel.abs() > spring.rest_speed;
+                if existing.is_none() || active {
+                    bump_motion_epoch();
+                }
                 map.insert(
                     id.to_string(),
                     MotionValueEntry::SpringFollow {
@@ -287,6 +360,7 @@ pub(crate) fn configure_motion_value(id: &str, config_json: &str, now: Instant) 
                             .to_string(),
                     );
                 }
+                bump_motion_epoch();
                 map.insert(
                     id.to_string(),
                     MotionValueEntry::Transform {
@@ -298,7 +372,9 @@ pub(crate) fn configure_motion_value(id: &str, config_json: &str, now: Instant) 
                 );
             }
             ConfigureSpec::Remove => {
-                map.remove(id);
+                if map.remove(id).is_some() {
+                    bump_motion_epoch();
+                }
             }
         }
         Ok(())
@@ -309,6 +385,7 @@ pub(crate) fn tick_motion_values(now: Instant) -> bool {
     MOTION_VALUES.with(|cell| {
         let mut map = cell.borrow_mut();
         let mut any_active = false;
+        let mut any_changed = false;
 
         // 1. Advance direct imperative tracks.
         for entry in map.values_mut() {
@@ -323,6 +400,7 @@ pub(crate) fn tick_motion_values(now: Instant) -> bool {
                     let (pos, vel, active) = track.sample(now.saturating_duration_since(*started));
                     *value = pos;
                     *velocity = vel;
+                    any_changed = true;
                     if active {
                         any_active = true;
                     } else {
@@ -376,6 +454,7 @@ pub(crate) fn tick_motion_values(now: Instant) -> bool {
                     (anchor_from, anchor_v0, anchor_target, started, cur_pos, cur_vel)
                 };
 
+            any_changed = true;
             any_active |= active;
             map.insert(
                 id,
@@ -393,6 +472,9 @@ pub(crate) fn tick_motion_values(now: Instant) -> bool {
             );
         }
 
+        if any_changed {
+            bump_motion_epoch();
+        }
         any_active
     })
 }

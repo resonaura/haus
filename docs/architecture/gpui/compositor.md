@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. -->
 
-# GPUI Compositor, Analytical Liquid Glass, and Native Motion
+# GPUI Compositor, Analytical Liquid Glass, Native Motion, and Incremental Rendering
 
-Architecture reference for `@haus/gpui` (`packages/gpui`), GPUIX native compositor extensions, analytical Liquid Glass WGSL shading, `@haus/ui/gpui` style lowering, and verification boundaries.
+Architecture reference for `@haus/gpui` (`packages/gpui`), GPUIX native compositor extensions, analytical Liquid Glass WGSL shading, incremental GPU rendering (`P29a`–`P29d`), `@haus/ui/gpui` style lowering, and verification boundaries.
 
 ## Minimized Standalone Runtime and Direct Vendoring
 
@@ -57,33 +57,48 @@ Standard GPUI custom shaders in `crates/gpui/src/shader.rs` prepend `SHADER_PREL
 - **Analytical Physics & Easings**: `solve_spring` evaluates closed-form underdamped, critically damped, and overdamped damped harmonic oscillators (supporting both `stiffness`/`damping`/`mass` and `bounce`/`duration`) and preserves velocity on mid-flight retargeting; `MotionTargetValue` supports keyframe arrays with `times`, `repeat`/`repeatType`/`repeatDelay`, plus `linear`, `ease*`, `circ*`, and `back*` cubic-bezier curves.
 - **Imperative Graph (`MOTION_VALUES`)**: `useMotionValue`, `useSpring` (re-anchoring `SpringFollow`), `useTransform` (piecewise clamped/unclamped interpolation with cycle detection), `animate`, and `stagger` exported from `@gpuix/react` / `@haus/gpui` bind directly via `style.motionBind` and advance on `tick_motion_values(now)`.
 
+## Incremental GPU Rendering, Subtree Replay, and Backdrop Blur Caching
+
+The incremental pipeline eliminates full-window CPU layout/paint rebuilds and redundant GPU Kawase/Gaussian blur passes when foreground layers (modals, popovers, inputs, hover highlights) update over clean background trees:
+
+- **Differential Fallback (`GPUI_INCREMENTAL`)**: `gpui::incremental_rendering_enabled()` / `set_incremental_rendering_enabled(Option<bool>)` (`gpui/src/gpui.rs`, exposed via `renderer.setIncrementalRendering(...)`) switches atomically between incremental caches and a full-render reference path (`TaffyLayoutEngine`, `ViewElement::cached`, `SubtreeCache`, portal hoisting, and `BackdropBlurCache`).
+- **Fine-Grained Dirty Propagation & Refresh Discipline**: `DirtyFlags` (`HIT_TEST | COMPOSITE | PAINT | BACKDROP | LAYOUT | STRUCTURE`, `src/cache/dirty.rs`) classifies mutations in `RetainedTree` (`portal_free_revision` isolates ancestor revisions from mutations inside `<anchored>` portals; `layout_revision` isolates paint-only updates). Empty/no-op batches skip GPUI draws (`noop_batch_count`), post-frame-0 `window.refresh()` calls are replaced with targeted `cx.notify()`, and `Div` `clear_cross` scroll arbitration (`elements/div.rs`) consumes only the dominant wheel axis on single-axis scrollers so perpendicular wheel gestures bubble cleanly.
+- **Portal Hoisting & `O(1)` Subtree Replay (`src/cache/{subtree,element}.rs`, `taffy.rs`, `window.rs`)**:
+  - Top-level hoisting of `<anchored>` portals (`collect_hoisted_portals` + `wrap_portal_typography` in `renderer.rs`) renders modals/popovers as sibling layers above `BACKGROUND_LAYER_CACHE_ID`.
+  - `CachedSubtreeElement` records `Window` `prepaint`/`paint` ranges (`Window::replay_prepaint` / `Window::replay_paint`), double-buffered `BOUNDS` (`automation.rs`) and `TextPaint` (`text/paint.rs`) slices, and unrounded Taffy `(raw_origin_bits, raw_device_size)` (`Window::raw_layout_geometry` / `Window::request_replayed_layout`) so replayed subtrees preserve bit-exact IEEE-754 subpixel edge accumulation.
+  - `SubtreeCacheKey` hashes `(portal_free_revision, scroll_hash, inherited_hash, focus_hash, portals_hash, motion_epoch, pointer_hash)`. Idle FLIP springs (`are_motion_bindings_active`) remain cacheable until `motion_values_epoch()` advances, and `compute_bg_pointer_state` scopes `:hover`/`:active` invalidations to the hovered branch (`0` background invalidations while occluded by a modal). During active scroll settling, interior subtree recording inside scrollports is bypassed so scroll frames incur zero cache-recording or `LayoutKeys` overhead.
+- **Scene Underneath Digest & GPU `BackdropBlurCache` (`scene.rs`, `gpui_apple`, `gpui_wgpu`)**:
+  - `Scene::backdrop_underneath_digest_for_backdrops` and `_for_shaders` hash all lower `(order, PrimitiveKind)` primitives intersecting `effective_clip` (expanded across earlier transformed/blurred `LayerEffect`s, incorporating `PlatformAtlas` `tile_generations` and returning `None` over live hardware `PaintSurface` video textures).
+  - `MetalRenderer` (`gpui_apple/src/metal_renderer.rs`) and `WgpuRenderer` (`gpui_wgpu/src/wgpu_renderer.rs`) maintain a 32-slot LRU `BackdropBlurCache` with `MAX_FRAMES_IN_FLIGHT` frame-sequence hazard protection and `IDLE_RELEASE` eviction. When all backdrop batches in a frame hit cache (`all_backdrops_cached`), the renderer sets `mirrored = false`, drawing directly into the swapchain drawable without `FilterTarget::Frame` offscreen mirroring, mid-frame encoder breaks, or end-of-frame blits.
+
 ## `@haus/ui/gpui` Integration
 
 `packages/ui/src/gpui/style.ts` (`styleFor`) lowers `@haus/ui` `UiStyleSpec` trees directly to native GPUIX `StyleDesc` props (preserving hover/pressed/focus state overlays in `packages/ui/src/gpui/host.tsx`):
 
 - Lowers `TransformSpec` (`translateX/Y`, `scale`, `scaleX/Y`, `rotateDeg`, `skewXDeg/Y`, `matrix`, `originX/Y`) and `corners` (`superellipse` smoothing).
 - Converts all `shadows` (including `inset`), `MaterialIR` `blur` / `backdrop` / multi-stop `linear` / `radial` gradients (clearing flat `backgroundColor` when shader gradients apply), `LiquidGlassMaterial` (`id === 'haus.liquid-glass.v1'`) into `LiquidGlassDesc`, and custom WGSL `ShaderMaterial` passes into `CustomShaderDesc`.
-
-`ProgressiveBlur` describes a top-to-bottom backdrop blur ramp shared by camera surfaces. React DOM composes masked backdrop filters. GPUIX uses the compositor's prefiltered backdrop and a smooth opacity ramp. The primitive honors reduced transparency. Its authored shader is `packages/ui/src/shaders/progressive-blur.wgsl`. Keep shader source, including shared backdrop declarations and GPU test fixtures, in dedicated shader files. Use `include_str!` for Rust and run `pnpm ui:compile` to regenerate the TypeScript asset bundle.
+- `ProgressiveBlur` (`packages/ui/src/shaders/progressive-blur.wgsl`) describes an edge backdrop blur ramp shared by camera and dock surfaces, honoring reduced transparency.
 
 ## Verification & Observed Benchmarks (`darwin` `arm64`, Metal `runtime_shaders`)
 
-Measured on macOS `arm64` via `bun --conditions=development apps/desktop/scripts/gpui/bench.ts apps/desktop/artifacts/gpui-bench-slice-b.json` after releasing `@haus/gpui` (`fork:build`):
+Measured on Apple M1 Metal (`NODE_ENV=production`) after `pnpm --filter @haus/gpui fork:build`:
 
-| Benchmark                                   | Samples | p50 (ms) | p95 (ms) | Avg (ms) | Extra                                       |
-| ------------------------------------------- | ------- | -------- | -------- | -------- | ------------------------------------------- |
-| `compositor_liquid_glass_panel`             | 20      | 0.466    | 0.589    | 0.499    | `rssMb`: 228.80, `commits`: n/a (0 batches) |
-| `native_motion_spring_transforms_0_commits` | 30      | 0.258    | 0.274    | 0.261    | `commits`: 0, `rssMb`: 229.89               |
-| `preview_home_vertical_scroll`              | 40      | 10.286   | 12.019   | 10.369   | `drawMs`: 2.90, `retainedElements`: 639     |
-| `synthetic_hover_120_cards_native`          | 24      | 5.254    | 5.740    | 5.385    | `commits`: 0, `drawMs`: 1.26                |
+| Benchmark / Check                           | Samples | p50 (ms) | Draw (ms) | Key Telemetry                                                         |
+| ------------------------------------------- | ------- | -------- | --------- | --------------------------------------------------------------------- |
+| `compositor_liquid_glass_panel`             | 20      | 0.340    | 0.118     | `replayedElements`: 50, `taffyWrites`: 0, `backdropPasses`: 0         |
+| `native_motion_spring_transforms_0_commits` | 30      | 0.300    | 0.336     | `commits`: 0, `taffyWrites`: 0, `rssMb`: 235.38                       |
+| `synthetic_hover_120_cards_native`          | 24      | 0.844    | 0.098     | `commits`: 0, `replayedSubtrees`: 1, `taffyWrites`: 0                 |
+| `preview_home_vertical_scroll`              | 40      | 27.336   | 4.637     | `commits`: 0, `taffyWrites`: 0, `rssMb`: 179.56                       |
+| `scroll_long_list_1000`                     | 30      | 12.112   | 1.744     | `builtElements`: 91 / 2001, `taffyWrites`: 0                          |
+| `incremental-rendering` (Modal over Home)   | diff    | —        | 0.920     | vs `26.53 ms` full (`28.8x`), `replayedElements`: 912, `pixelDiff`: 0 |
 
 Verified on this host:
 
-- `gpui` (`shader` tests, 5/5), `gpui_apple` (Metal GPU tests, 7/7), `gpui_wgpu` (35/35), and `gpuix-native` (293/293) with `--features gpui_platform/runtime_shaders` (`metal` CLI absent on host, so Metal shaders compile at runtime via `naga`).
-- `apps/desktop/scripts/gpui/check-compositor.ts`: offscreen Metal Liquid Glass refraction/rim luminance pixel assertions via `sharp`, 2D transformed inverse click hit-testing, 0-commit spring/keyframe/`MotionValue` progression, and multi-stop/radial/conic/mask/glow rendering.
-- `apps/desktop/scripts/gpui/check-scroll.ts` (8/8), `check:gpui`, and `check:gpui:sidebar`.
+- `gpui` (`backdrop_underneath_digest`), `gpui_apple` (`runtime_shaders`), `gpui_wgpu`, and `gpuix-native` (`312/312`) Rust test suites.
+- `apps/desktop/scripts/gpui/checks/incremental-rendering.ts` (`5/5`: no-op batch suppression, modal caret/search/hover over `HomeWorkspace` with `0` GPU backdrop passes, background mutation + animated aurora selective invalidation, non-modal hover, diagonal scroll arbitration, and `0 / 3,891,200` Retina pixel diff across all screenshot pairs).
+- `check-compositor.ts`, `check-scroll.ts` (`8/8`), `modal-backdrop-occlusion.ts` (`4/4`), `topbar-and-sticky-dock.ts`, `@gpuix/react` Vitest (`63/63`), and `check:gpui:packed`.
 
 Not verified on this macOS `arm64` host:
 
-- Native Windows DX11 FXC shader compilation and runtime presentation (`to_hlsl` IR generation is covered by `gpui` `shader::tests`, but FXC bytecode compilation and DX11 rendering require Windows).
-- `gpui_web` WASM shader runtime compilation and canvas presentation.
+- Native Windows DX11 FXC shader compilation and runtime presentation.
+- Linux hardware Vulkan/GL WGPU presentation, Intel macOS (`x86_64`), ProMotion 120 Hz display pacing, and `gpui_web` WASM presentation.

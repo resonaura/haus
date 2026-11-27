@@ -197,6 +197,8 @@ export declare class GpuixRenderer {
   scrollToId(scrollId: string, x: number, y: number): boolean
   getPerfMetrics(): PerfMetrics
   resetPerfMetrics(): void
+  setIncrementalRendering(enabled?: boolean | undefined | null): boolean
+  isIncrementalRenderingEnabled(): boolean
   setMotionValue(id: string, value: number): void
   getMotionValue(id: string): number | null
   animateMotionValue(id: string, specJson: string): void
@@ -461,10 +463,18 @@ export declare class TestGpuixRenderer {
   scrollToId(scrollId: string, x: number, y: number): boolean
   getPerfMetrics(): PerfMetrics
   resetPerfMetrics(): void
+  setIncrementalRendering(enabled?: boolean | undefined | null): boolean
+  isIncrementalRenderingEnabled(): boolean
   setMotionValue(id: string, value: number): void
   getMotionValue(id: string): number | null
   animateMotionValue(id: string, specJson: string): void
   configureMotionValue(id: string, configJson: string): void
+  /**
+   * Present the most recently drawn scene through the platform GPU renderer
+   * (Metal/DirectX) if a new frame is pending, updating `presentMs`,
+   * `backdropPasses`, and `backdropCacheHits` in `getPerfMetrics()`.
+   */
+  presentFrame(): void
   /**
    * Capture a screenshot of the current rendered state and save as PNG.
    * Supported on macOS through Metal and Windows through DirectX.
@@ -487,7 +497,7 @@ export declare class TestGpuixRenderer {
   getTreeJson(): string
   /**
    * GPUI accessibility dump from the last painted frame.
-   * Empty until a11y is active; the test renderer turns that on at construct.
+   * Lazily activates test a11y on first request so normal frames keep subtree caching enabled.
    */
   getA11yTree(): string
   /** Tree JSON with last-paint bounds. Used by the automation locators. */
@@ -874,7 +884,15 @@ export interface PerfMetrics {
   presentCount: number
   applyBatchCount: number
   applyBatchMs: number
+  noopBatchCount: number
   retainedElements: number
+  builtElements: number
+  replayedSubtrees: number
+  replayedElements: number
+  taffyWrites: number
+  scenePrimitives: number
+  backdropPasses: number
+  backdropCacheHits: number
 }
 
 /**

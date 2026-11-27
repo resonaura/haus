@@ -107,8 +107,7 @@ pub struct TaffyLayoutEngine {
     uprooted: FxHashSet<LayoutId>,
     retain: bool,
     /// How many nodes the frame being drawn made or wrote to, which is what lays a tree out
-    /// again. Tests read it to check that an unchanged frame leaves every node alone.
-    #[cfg(test)]
+    /// again. Tests and perf telemetry read it to check how many layout nodes were mutated.
     pub(crate) writes: usize,
     absolute_layout_bounds: FxHashMap<LayoutId, Bounds<Pixels>>,
     /// Unrounded absolute border-box top-left per-node coordinate in device pixels.
@@ -131,7 +130,6 @@ impl TaffyLayoutEngine {
             stretched: FxHashMap::default(),
             uprooted: FxHashSet::default(),
             retain: *RETAIN,
-            #[cfg(test)]
             writes: 0,
             absolute_layout_bounds: FxHashMap::default(),
             absolute_outer_origins: FxHashMap::default(),
@@ -140,11 +138,27 @@ impl TaffyLayoutEngine {
         }
     }
 
+    pub(crate) fn take_writes(&mut self) -> usize {
+        std::mem::take(&mut self.writes)
+    }
+
+    #[inline]
+    fn retain_active(&self) -> bool {
+        self.retain && crate::incremental_rendering_enabled()
+    }
+
     pub fn clear(&mut self) {
-        match self.retain {
+        match self.retain_active() {
             true => self.release_unclaimed(),
-            false => self.taffy.clear(),
+            false => {
+                self.taffy.clear();
+                self.retained.clear();
+                self.transient.clear();
+                self.stretched.clear();
+                self.uprooted.clear();
+            }
         }
+        self.writes = 0;
         self.absolute_layout_bounds.clear();
         self.absolute_outer_origins.clear();
         self.computed_layouts.clear();
@@ -344,12 +358,7 @@ impl TaffyLayoutEngine {
             None => {}
         }
 
-        #[cfg(test)]
-        {
-            self.writes += writes;
-        }
-        #[cfg(not(test))]
-        let _ = writes;
+        self.writes += writes;
         id
     }
 
@@ -362,7 +371,7 @@ impl TaffyLayoutEngine {
         scale_factor: f32,
         children: &[LayoutId],
     ) -> LayoutId {
-        if self.retain {
+        if self.retain_active() {
             let fingerprint = layout_fingerprint(&style, rem_size, scale_factor);
             return self.retained_layout(
                 key,
@@ -373,6 +382,7 @@ impl TaffyLayoutEngine {
             );
         }
 
+        self.writes += 1;
         let taffy_style = style.to_taffy(rem_size, scale_factor);
 
         if children.is_empty() {
@@ -389,6 +399,44 @@ impl TaffyLayoutEngine {
         }
     }
 
+    /// Requests a leaf layout node pinned to an exact unrounded device-pixel border-box size
+    /// recorded from an earlier in-tree Taffy pass, preserving subpixel edge accumulation.
+    pub fn request_replayed_layout(
+        &mut self,
+        key: Option<u64>,
+        style: Style,
+        raw_device_size: Size<f32>,
+        rem_size: Pixels,
+        scale_factor: f32,
+    ) -> LayoutId {
+        let make_style = || {
+            let mut taffy_style = style.to_taffy(rem_size, scale_factor);
+            taffy_style.size.width = taffy::style::Dimension::length(raw_device_size.width);
+            taffy_style.size.height = taffy::style::Dimension::length(raw_device_size.height);
+            taffy_style.min_size = taffy::geometry::Size::auto();
+            taffy_style.max_size = taffy::geometry::Size::auto();
+            taffy_style.flex_basis = taffy::style::Dimension::auto();
+            taffy_style.flex_grow = 0.0;
+            taffy_style.flex_shrink = 0.0;
+            taffy_style
+        };
+        if self.retain_active() {
+            use std::hash::Hasher as _;
+            let mut hasher = collections::FxHasher::default();
+            hasher.write_u64(layout_fingerprint(&style, rem_size, scale_factor));
+            hasher.write_u32(raw_device_size.width.to_bits());
+            hasher.write_u32(raw_device_size.height.to_bits());
+            let fingerprint = hasher.finish();
+            return self.retained_layout(key, fingerprint, make_style, &[], None);
+        }
+
+        self.writes += 1;
+        self.taffy
+            .new_leaf(make_style())
+            .expect(EXPECT_MESSAGE)
+            .into()
+    }
+
     /// `key` names the place the request comes from, see [`crate::window::LayoutKeys`].
     pub(crate) fn request_measured_layout(
         &mut self,
@@ -398,7 +446,7 @@ impl TaffyLayoutEngine {
         scale_factor: f32,
         measured: Measured,
     ) -> LayoutId {
-        if self.retain {
+        if self.retain_active() {
             let fingerprint = layout_fingerprint(&style, rem_size, scale_factor);
             return self.retained_layout(
                 key,
@@ -409,6 +457,7 @@ impl TaffyLayoutEngine {
             );
         }
 
+        self.writes += 1;
         let taffy_style = style.to_taffy(rem_size, scale_factor);
         #[cfg(feature = "stacker")]
         let measure = StackSafe::new(measured.measure);
@@ -453,12 +502,9 @@ impl TaffyLayoutEngine {
         }
         if style != *current {
             self.taffy.set_style(id.0, style).expect(EXPECT_MESSAGE);
-            #[cfg(test)]
-            {
-                self.writes += 1;
-            }
+            self.writes += 1;
         }
-        if self.retain {
+        if self.retain_active() {
             self.stretched.insert(id, axes);
         }
     }
@@ -712,6 +758,17 @@ impl TaffyLayoutEngine {
         let bounds = (snapped_bounds / scale_factor).map(Pixels);
         self.absolute_layout_bounds.insert(id, bounds);
         bounds
+    }
+
+    pub fn raw_layout_geometry(&mut self, id: LayoutId, scale_factor: f32) -> (Point<f32>, Size<f32>) {
+        self.layout_bounds(id, scale_factor);
+        let origin = self
+            .absolute_outer_origins
+            .get(&id)
+            .copied()
+            .unwrap_or_default();
+        let layout = self.taffy.layout(id.into()).expect(EXPECT_MESSAGE);
+        (origin, Size::from(layout.size))
     }
 }
 

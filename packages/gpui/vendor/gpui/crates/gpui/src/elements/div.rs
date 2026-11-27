@@ -3398,43 +3398,46 @@ impl Interactivity {
                 );
             }
 
-            // We unconditionally bind both the mouse up and mouse down active state handlers
-            // Because we might not get a chance to render a frame before the mouse up event arrives.
-            let active_state = element_state
-                .clicked_state
-                .get_or_insert_with(Default::default)
-                .clone();
+            // Bind both the mouse up and mouse down active state handlers when active styles
+            // are configured, notifying `current_view` rather than forcing a full `window.refresh()`.
+            if self.active_style.is_some() || self.group_active_style.is_some() {
+                let active_state = element_state
+                    .clicked_state
+                    .get_or_insert_with(Default::default)
+                    .clone();
+                let current_view = window.current_view();
 
-            {
-                let active_state = active_state.clone();
-                window.on_mouse_event(move |_: &MouseUpEvent, phase, window, _cx| {
-                    if phase == DispatchPhase::Capture && active_state.borrow().is_clicked() {
-                        *active_state.borrow_mut() = ElementClickedState::default();
-                        window.refresh();
-                    }
-                });
-            }
-
-            {
-                let active_group_hitbox = self
-                    .group_active_style
-                    .as_ref()
-                    .and_then(|group_active| GroupHitboxes::get(&group_active.group, cx));
-                let hitbox = hitbox.clone();
-                window.on_mouse_event(move |_: &MouseDownEvent, phase, window, _cx| {
-                    if phase == DispatchPhase::Bubble && !window.default_prevented() {
-                        let group_hovered = active_group_hitbox
-                            .is_some_and(|group_hitbox_id| group_hitbox_id.is_hovered(window));
-                        let element_hovered = hitbox.is_hovered(window);
-                        if group_hovered || element_hovered {
-                            *active_state.borrow_mut() = ElementClickedState {
-                                group: group_hovered,
-                                element: element_hovered,
-                            };
-                            window.refresh();
+                {
+                    let active_state = active_state.clone();
+                    window.on_mouse_event(move |_: &MouseUpEvent, phase, _window, cx| {
+                        if phase == DispatchPhase::Capture && active_state.borrow().is_clicked() {
+                            *active_state.borrow_mut() = ElementClickedState::default();
+                            cx.notify(current_view);
                         }
-                    }
-                });
+                    });
+                }
+
+                {
+                    let active_group_hitbox = self
+                        .group_active_style
+                        .as_ref()
+                        .and_then(|group_active| GroupHitboxes::get(&group_active.group, cx));
+                    let hitbox = hitbox.clone();
+                    window.on_mouse_event(move |_: &MouseDownEvent, phase, window, cx| {
+                        if phase == DispatchPhase::Bubble && !window.default_prevented() {
+                            let group_hovered = active_group_hitbox
+                                .is_some_and(|group_hitbox_id| group_hitbox_id.is_hovered(window));
+                            let element_hovered = hitbox.is_hovered(window);
+                            if group_hovered || element_hovered {
+                                *active_state.borrow_mut() = ElementClickedState {
+                                    group: group_hovered,
+                                    element: element_hovered,
+                                };
+                                cx.notify(current_view);
+                            }
+                        }
+                    });
+                }
             }
         }
     }
@@ -3609,16 +3612,22 @@ impl Interactivity {
                         actual_y
                     };
 
+                    let dominant_x = window_axis == Some(Axis::Horizontal)
+                        || (!concurrent && delta.x.abs() >= delta.y.abs());
+                    let dominant_y = window_axis == Some(Axis::Vertical)
+                        || (!concurrent && delta.y.abs() >= delta.x.abs());
                     let clear_cross = if allow_x
                         && !allow_y
-                        && window_axis == Some(Axis::Horizontal)
-                        && (!consumed_x.is_zero() || overscroll_behavior.x != OverscrollBehavior::Auto)
+                        && dominant_x
+                        && (!consumed_x.is_zero()
+                            || overscroll_behavior.x != OverscrollBehavior::Auto)
                     {
                         Some(Axis::Horizontal)
                     } else if allow_y
                         && !allow_x
-                        && window_axis == Some(Axis::Vertical)
-                        && (!consumed_y.is_zero() || overscroll_behavior.y != OverscrollBehavior::Auto)
+                        && dominant_y
+                        && (!consumed_y.is_zero()
+                            || overscroll_behavior.y != OverscrollBehavior::Auto)
                     {
                         Some(Axis::Vertical)
                     } else {
