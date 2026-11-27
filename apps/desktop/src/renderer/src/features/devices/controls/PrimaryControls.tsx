@@ -5,30 +5,49 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useState, type ReactNode } from 'react';
-import { Box, HausButton, HausSwitch, Heading, pct, SelectInput, Text } from '@haus/ui';
+import {
+  LIGHT_COLOUR_PRESETS,
+  friendlyEntityLabel,
+  hsvToRgb,
+  rgbToHsv,
+} from '@haus/core/transport';
+import {
+  lightActiveEffect,
+  lightColor,
+  lightDisableEffect,
+  lightEffectOptions,
+  lightProfile,
+  lightStateDescription,
+  lightTemperature,
+} from '@haus/core/optimistic';
+import {
+  ClimateModalPanel,
+  CoverModalPanel,
+  DEVICE_ICONS,
+  FanModalPanel,
+  LightModalPanel,
+  LockModalPanel,
+  MediaModalPanel,
+  SensorValueModalPanel,
+  SwitchActionModalPanel,
+  type DeviceMetricPill,
+  type UiIconName,
+} from '@haus/ui/components';
 import {
   buildAction,
-  entityCategory,
   resolveCapabilities,
   type HausAccessory,
   type HassEntity,
   type Snapshot,
 } from '../../../model';
-import { AccessoryIcon } from '../../../components/icons/Icon';
-import {
-  binaryStateDescription,
-  deviceAppearance,
-  deviceSurfaceVars,
-} from '../../../model/device-appearance';
+import { binaryStateDescription } from '../../../model/device-appearance';
 import { formatTemperature } from '../../../model/format-temperature';
-import { ControlRange } from './ControlRange';
-import { LightColour } from './LightColour';
 import { WaterHeaterControls } from './WaterHeaterControls';
-import { Glyph } from './ControlGlyph';
-import { numeric, strings, humanize, clamp } from './control-values';
+import { numeric, strings, humanize } from './control-values';
+
 type Intent = Parameters<typeof buildAction>[1];
 type Value = Parameters<typeof buildAction>[2];
+
 type Props = {
   accessory: HausAccessory;
   entity: HassEntity;
@@ -37,6 +56,50 @@ type Props = {
   act: (intent: Intent, value?: Value) => void;
   explicitService: (service: string, data?: Record<string, unknown>) => void;
 };
+
+function resolveLightRgb(entity: HassEntity): [number, number, number] {
+  const css = lightColor(entity);
+  if (css) {
+    const match = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/.exec(css);
+    if (match) return [Number(match[1]), Number(match[2]), Number(match[3])];
+  }
+  const raw = entity.attributes.rgb_color;
+  if (Array.isArray(raw) && raw.length >= 3 && raw.every((c) => typeof c === 'number')) {
+    return [Math.round(raw[0]), Math.round(raw[1]), Math.round(raw[2])];
+  }
+  return [255, 224, 178];
+}
+
+function collectMetrics(
+  primary: HassEntity,
+  secondaries: readonly HassEntity[],
+  deviceName: string,
+): DeviceMetricPill[] {
+  const out: DeviceMetricPill[] = [];
+  for (const item of secondaries) {
+    if (['unavailable', 'unknown'].includes(item.state)) continue;
+    const d = item.entity_id.split('.')[0];
+    if (d !== 'sensor' && d !== 'binary_sensor') continue;
+    const unit =
+      typeof item.attributes.unit_of_measurement === 'string'
+        ? ` ${item.attributes.unit_of_measurement}`
+        : '';
+    out.push({ label: friendlyEntityLabel(item, deviceName), value: `${item.state}${unit}` });
+    if (out.length >= 4) break;
+  }
+  if (out.length === 0) {
+    for (const [key, value] of Object.entries(primary.attributes)) {
+      if (['friendly_name', 'icon', 'supported_features', 'unit_of_measurement'].includes(key))
+        continue;
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        out.push({ label: humanize(key), value: String(value) });
+        if (out.length >= 4) break;
+      }
+    }
+  }
+  return out;
+}
+
 export function PrimaryControls({
   accessory,
   entity,
@@ -47,214 +110,137 @@ export function PrimaryControls({
 }: Props) {
   const attrs = entity.attributes;
   const domain = entity.entity_id.split('.')[0];
-  const appearance = deviceAppearance(entity);
+  const idPrefix = `electron-control-${entity.entity_id}`;
   const capabilities = resolveCapabilities(entity, snapshot.services);
   const has = (capability: string) => capabilities.includes(capability);
   const availableServices = Object.keys(snapshot.services[domain] ?? {});
   const active = !['off', 'closed', 'locked', 'idle', 'unavailable', 'unknown'].includes(
     entity.state,
   );
-  const icon =
-    domain === 'media_player'
-      ? 'media'
-      : domain === 'switch' || domain === 'input_boolean'
-        ? 'power'
-        : domain;
-  const [confirmation, setConfirmation] = useState<'lock' | 'unlock' | null>(null);
-  const temperatureUnit = snapshot.config.unit_system?.temperature ?? '°C';
-  const targetTemperature = numeric(attrs.temperature, numeric(attrs.current_temperature, 20));
-  const tempStep = numeric(attrs.target_temp_step, 0.5);
-  const minTemp = numeric(attrs.min_temp, 7);
-  const maxTemp = numeric(attrs.max_temp, 35);
-  const rangedClimate = entity.state === 'heat_cool';
-  const lowTarget = numeric(attrs.target_temp_low, minTemp);
-  const highTarget = numeric(attrs.target_temp_high, maxTemp);
+  const categoryIcon: UiIconName =
+    accessory.category && accessory.category in DEVICE_ICONS
+      ? DEVICE_ICONS[accessory.category as keyof typeof DEVICE_ICONS]
+      : 'activity';
 
-  let primary: ReactNode;
-  if (domain === 'light' || ['switch', 'input_boolean'].includes(domain)) {
-    primary = (
-      <Box
-        className="haus-light-controller"
-        dataAttrs={{ 'data-light-effect': appearance.effect?.motion }}
-        surfaceTokens={deviceSurfaceVars(appearance.accent, appearance.effect, true)}
-      >
-        {has('brightness') ? (
-          <ControlRange
-            label="Brightness"
-            value={entity.state === 'off' ? 0 : Math.round(numeric(attrs.brightness, 0) / 2.55)}
-            disabled={disabled}
-            vertical
-            onCommit={(next) => act('brightness', next)}
-          />
-        ) : (
-          <HausButton
-            className={`haus-power-surface ${active ? 'is-on' : ''}`}
-            isDisabled={disabled || !has('toggle')}
-            aria-label={`${active ? 'Turn off' : 'Turn on'} ${accessory.name}`}
-            aria-pressed={active}
-            onPress={() => act('toggle')}
-          >
-            <Text className="haus-power-fill" />
-            {entityCategory(entity) === 'security' ? (
-              <AccessoryIcon
-                accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
-                size={27}
-              />
-            ) : (
-              <Glyph name={icon} />
-            )}
-            <Text>{active ? 'On' : 'Off'}</Text>
-          </HausButton>
-        )}
-        {has('brightness') && has('toggle') && (
-          <HausSwitch
-            className="haus-color-switch haus-light-power"
-            isSelected={active}
-            label={active ? 'On' : 'Off'}
-            aria-label={`${active ? 'Turn off' : 'Turn on'} ${accessory.name}`}
-            isDisabled={disabled}
-            onChange={() => act('toggle')}
-          />
-        )}
-        {domain === 'light' && (
-          <LightColour entity={entity} capabilities={capabilities} disabled={disabled} act={act} />
-        )}
-        <Text semantic="p" className="haus-control-hint">
-          {has('brightness')
-            ? 'Drag to adjust · Arrow keys · Scroll when focused'
-            : 'Press to change power'}
-        </Text>
-      </Box>
+  if (domain === 'light') {
+    const profile = lightProfile(entity);
+    const rgb = resolveLightRgb(entity);
+    const hs = Array.isArray(attrs.hs_color) ? attrs.hs_color : undefined;
+    const [hsvH, hsvS] =
+      hs && hs.length >= 2 && typeof hs[0] === 'number' && typeof hs[1] === 'number'
+        ? [Math.round(hs[0]), Math.round(hs[1])]
+        : rgbToHsv(rgb[0], rgb[1], rgb[2]);
+    const effects = lightEffectOptions(entity);
+    return (
+      <LightModalPanel
+        idPrefix={idPrefix}
+        deviceName={accessory.name}
+        active={entity.state === 'on'}
+        stateSubtitle={lightStateDescription(entity)}
+        brightnessPct={entity.state === 'off' ? 0 : Math.round(numeric(attrs.brightness, 0) / 2.55)}
+        rgb={rgb}
+        hue={hsvH}
+        saturation={hsvS}
+        kelvin={lightTemperature(entity)}
+        minKelvin={numeric(attrs.min_color_temp_kelvin, 2000)}
+        maxKelvin={numeric(attrs.max_color_temp_kelvin, 6500)}
+        canToggle={has('toggle')}
+        canBrightness={has('brightness')}
+        canColor={profile.color && has('color')}
+        canTemperature={profile.temperature && has('temperature')}
+        effects={has('effect') ? effects : []}
+        activeEffect={lightActiveEffect(entity)}
+        stopEffect={lightDisableEffect(entity)}
+        disabled={disabled}
+        presets={LIGHT_COLOUR_PRESETS}
+        onToggle={() => act('toggle')}
+        onBrightness={(next) => act('brightness', next)}
+        onColorRgb={(nextRgb) => act('color', nextRgb)}
+        onColorHsv={(nextHue, nextSat) => act('color', hsvToRgb(nextHue, nextSat))}
+        onTemperature={(nextKelvin) => act('temperature', nextKelvin)}
+        onSelectEffect={(effect) => act('effect', effect)}
+      />
     );
-  } else if (domain === 'climate') {
-    primary = (
-      <Box className="haus-climate-controller">
-        <Box className={`haus-thermostat ${entity.state !== 'off' ? 'is-on' : ''}`}>
-          <Text>Set to</Text>
-          <Text semantic="strong" className={rangedClimate ? 'is-range' : ''}>
-            {rangedClimate ? `${lowTarget}–${highTarget}` : targetTemperature}
-            <Text semantic="small">{temperatureUnit}</Text>
-          </Text>
-          <Text>
-            Currently{' '}
-            {formatTemperature(attrs.current_temperature, attrs.suggested_display_precision) ?? '—'}
-            {temperatureUnit}
-          </Text>
-        </Box>
-        {has('climate-temperature') && rangedClimate && (
-          <>
-            <ControlRange
-              label="Heat below"
-              value={lowTarget}
-              min={minTemp}
-              max={highTarget}
-              step={tempStep}
-              unit={temperatureUnit}
-              disabled={disabled}
-              onCommit={(next) =>
-                act('climate-temperature', { target_temp_low: next, target_temp_high: highTarget })
-              }
-            />
-            <ControlRange
-              label="Cool above"
-              value={highTarget}
-              min={lowTarget}
-              max={maxTemp}
-              step={tempStep}
-              unit={temperatureUnit}
-              disabled={disabled}
-              onCommit={(next) =>
-                act('climate-temperature', { target_temp_low: lowTarget, target_temp_high: next })
-              }
-            />
-          </>
-        )}
-        {has('climate-temperature') && !rangedClimate && (
-          <>
-            <Box className="haus-temperature-buttons">
-              <HausButton
-                isIconOnly
-                aria-label="Decrease target temperature"
-                isDisabled={disabled || targetTemperature <= minTemp}
-                onPress={() =>
-                  act('climate-temperature', clamp(targetTemperature - tempStep, minTemp, maxTemp))
-                }
-              >
-                <Glyph name="minus" />
-              </HausButton>
-              <Text>Target temperature</Text>
-              <HausButton
-                isIconOnly
-                aria-label="Increase target temperature"
-                isDisabled={disabled || targetTemperature >= maxTemp}
-                onPress={() =>
-                  act('climate-temperature', clamp(targetTemperature + tempStep, minTemp, maxTemp))
-                }
-              >
-                <Glyph name="plus" />
-              </HausButton>
-            </Box>
-            <ControlRange
-              label="Temperature"
-              value={targetTemperature}
-              min={minTemp}
-              max={maxTemp}
-              step={tempStep}
-              unit={temperatureUnit}
-              disabled={disabled}
-              onCommit={(next) => act('climate-temperature', next)}
-            />
-          </>
-        )}
-        {has('hvac-mode') && (
-          <Text semantic="label" className="haus-field">
-            Mode
-            <SelectInput
-              value={entity.state}
-              disabled={disabled}
-              options={strings(attrs.hvac_modes).map((mode) => ({
-                value: mode,
-                label: humanize(mode),
-              }))}
-              onChange={(next) => act('hvac-mode', next)}
-            />
-          </Text>
-        )}
-      </Box>
+  }
+
+  if (['switch', 'input_boolean', 'humidifier', 'automation'].includes(domain)) {
+    return (
+      <SwitchActionModalPanel
+        idPrefix={idPrefix}
+        kind="toggle"
+        active={active}
+        stateLabel={active ? 'On' : 'Off'}
+        iconName="power"
+        metrics={collectMetrics(entity, accessory.secondaryEntities, accessory.name)}
+        disabled={disabled}
+        onActivate={has('toggle') ? () => act('toggle') : undefined}
+      />
     );
-  } else if (domain === 'cover') {
-    const coverH = 100 - numeric(attrs.current_position, entity.state === 'closed' ? 0 : 100);
-    primary = (
-      <Box className="haus-cover-controller">
-        <Box className="haus-cover-illustration" ariaHidden>
-          <Box style={{ layout: { height: pct(coverH) } }} />
-          <Text />
-        </Box>
-        <Box className="haus-action-row">
-          {(['open', 'stop', 'close'] as const).filter(has).map((intent) => (
-            <HausButton
-              key={intent}
-              className="haus-secondary-action"
-              variant="secondary"
-              isDisabled={disabled}
-              onPress={() => act(intent)}
-            >
-              {humanize(intent)}
-            </HausButton>
-          ))}
-        </Box>
-        {has('position') && (
-          <ControlRange
-            label="Open position"
-            value={numeric(attrs.current_position, 0)}
-            disabled={disabled}
-            onCommit={(next) => act('position', next)}
-          />
-        )}
-      </Box>
+  }
+
+  if (domain === 'climate') {
+    const unit = snapshot.config.unit_system?.temperature ?? '°C';
+    const currentFormatted = formatTemperature(
+      attrs.current_temperature,
+      attrs.suggested_display_precision,
     );
-  } else if (domain === 'water_heater') {
-    primary = (
+    const minTemp = numeric(attrs.min_temp, 7);
+    const maxTemp = numeric(attrs.max_temp, 35);
+    const step = numeric(attrs.target_temp_step, 0.5);
+    const targetTemp = numeric(attrs.temperature, numeric(attrs.current_temperature, 20));
+    const ranged = entity.state === 'heat_cool';
+    const lowTarget = numeric(attrs.target_temp_low, minTemp);
+    const highTarget = numeric(attrs.target_temp_high, maxTemp);
+
+    return (
+      <ClimateModalPanel
+        idPrefix={idPrefix}
+        mode={entity.state}
+        modes={strings(attrs.hvac_modes).map((m) => ({ value: m, label: humanize(m) }))}
+        currentTempLabel={currentFormatted ? `${currentFormatted}${unit}` : undefined}
+        targetTemp={targetTemp}
+        lowTarget={lowTarget}
+        highTarget={highTarget}
+        ranged={ranged}
+        minTemp={minTemp}
+        maxTemp={maxTemp}
+        step={step}
+        unit={unit}
+        canSetTemperature={has('climate-temperature')}
+        canSetMode={has('hvac-mode')}
+        disabled={disabled}
+        onTargetTemp={(next) => act('climate-temperature', next)}
+        onTargetRange={(low, high) =>
+          act('climate-temperature', { target_temp_low: low, target_temp_high: high })
+        }
+        onModeChange={(next) => act('hvac-mode', next)}
+      />
+    );
+  }
+
+  if (domain === 'cover' || domain === 'valve') {
+    const pos = numeric(attrs.current_position, entity.state === 'closed' ? 0 : 100);
+    return (
+      <CoverModalPanel
+        idPrefix={idPrefix}
+        position={pos}
+        stateLabel={humanize(entity.state)}
+        isValve={domain === 'valve'}
+        canPosition={has('position')}
+        canOpen={has('open')}
+        canStop={has('stop')}
+        canClose={has('close')}
+        disabled={disabled}
+        onPosition={(next) => act('position', next)}
+        onOpen={() => act('open')}
+        onStop={() => act('stop')}
+        onClose={() => act('close')}
+      />
+    );
+  }
+
+  if (domain === 'water_heater') {
+    return (
       <WaterHeaterControls
         accessory={accessory}
         entity={entity}
@@ -263,226 +249,133 @@ export function PrimaryControls({
         act={act}
       />
     );
-  } else if (domain === 'media_player') {
-    primary = (
-      <Box className="haus-media-controller">
-        <Box className="haus-media-art">
-          <AccessoryIcon accessory={accessory} size={56} />
-          <Text>{typeof attrs.app_name === 'string' ? attrs.app_name : 'Now playing'}</Text>
-        </Box>
-        <Heading level={3}>
-          {typeof attrs.media_title === 'string' ? attrs.media_title : accessory.name}
-        </Heading>
-        <Text semantic="p">
-          {typeof attrs.media_artist === 'string' ? attrs.media_artist : humanize(entity.state)}
-        </Text>
-        <Box className="haus-transport">
-          {availableServices.includes('media_previous_track') && (
-            <HausButton
-              isIconOnly
-              variant="ghost"
-              aria-label="Previous track"
-              isDisabled={disabled}
-              onPress={() => explicitService('media_previous_track')}
-            >
-              <Glyph name="previous" />
-            </HausButton>
-          )}
-          {has('play-pause') && (
-            <HausButton
-              className="haus-play-button"
-              isIconOnly
-              aria-label={entity.state === 'playing' ? 'Pause' : 'Play'}
-              isDisabled={disabled}
-              onPress={() => act('play-pause')}
-            >
-              <Glyph name={entity.state === 'playing' ? 'pause' : 'play'} />
-            </HausButton>
-          )}
-          {availableServices.includes('media_next_track') && (
-            <HausButton
-              isIconOnly
-              variant="ghost"
-              aria-label="Next track"
-              isDisabled={disabled}
-              onPress={() => explicitService('media_next_track')}
-            >
-              <Glyph name="next" />
-            </HausButton>
-          )}
-        </Box>
-        {has('volume') && (
-          <ControlRange
-            label="Volume"
-            value={Math.round(numeric(attrs.volume_level, 0) * 100)}
-            disabled={disabled}
-            onCommit={(next) => act('volume', next / 100)}
-          />
-        )}
-        {has('toggle') && (
-          <HausButton variant="secondary" isDisabled={disabled} onPress={() => act('toggle')}>
-            <Glyph name="power" />
-            Power
-          </HausButton>
-        )}
-      </Box>
-    );
-  } else if (domain === 'fan') {
-    primary = (
-      <Box className="haus-fan-controller">
-        <Box className={`haus-fan-orb ${active ? 'is-on' : ''}`}>
-          <Glyph name="fan" />
-        </Box>
-        {has('toggle') && (
-          <HausButton
-            className="haus-primary-action"
-            isDisabled={disabled}
-            onPress={() => act('toggle')}
-          >
-            Turn {active ? 'off' : 'on'}
-          </HausButton>
-        )}
-        {has('percentage') && (
-          <ControlRange
-            label="Fan speed"
-            value={numeric(attrs.percentage, 0)}
-            step={numeric(attrs.percentage_step, 1)}
-            disabled={disabled}
-            onCommit={(next) => act('percentage', next)}
-          />
-        )}
-      </Box>
-    );
-  } else if (domain === 'lock') {
-    const intent = entity.state === 'locked' ? 'unlock' : 'lock';
-    primary = (
-      <Box className="haus-lock-controller">
-        <Box className={`haus-lock-orb ${entity.state === 'locked' ? 'is-locked' : ''}`}>
-          <Glyph name="lock" />
-        </Box>
-        <Text semantic="p">
-          {['locking', 'unlocking'].includes(entity.state)
-            ? 'Updating lock…'
-            : entity.state === 'locked'
-              ? 'Your door is secured.'
-              : 'Your door is not locked.'}
-        </Text>
-        {confirmation ? (
-          <Box className="haus-lock-confirm">
-            <Text semantic="p">
-              Confirm {confirmation} for {accessory.name}?
-            </Text>
-            <Box className="haus-action-row">
-              <HausButton variant="secondary" onPress={() => setConfirmation(null)}>
-                Cancel
-              </HausButton>
-              <HausButton
-                className="haus-primary-action"
-                isDisabled={disabled}
-                onPress={() => {
-                  act(confirmation);
-                  setConfirmation(null);
-                }}
-              >
-                Confirm {confirmation}
-              </HausButton>
-            </Box>
-          </Box>
-        ) : (
-          has(intent) && (
-            <HausButton
-              className="haus-primary-action"
-              isDisabled={disabled}
-              onPress={() => setConfirmation(intent)}
-            >
-              {humanize(intent)} door
-            </HausButton>
-          )
-        )}
-      </Box>
-    );
-  } else if (has('run') || has('press')) {
-    primary = (
-      <Box className="haus-scene-controller">
-        <Box className="haus-fan-orb">
-          <Glyph name="star" />
-        </Box>
-        <Text semantic="p">
-          {domain === 'scene' ? 'Set the atmosphere with one action.' : 'Run this device action.'}
-        </Text>
-        <HausButton
-          className="haus-primary-action"
-          isDisabled={disabled}
-          onPress={() => act(has('run') ? 'run' : 'press')}
-        >
-          {domain === 'scene' ? 'Activate scene' : 'Run action'}
-        </HausButton>
-      </Box>
-    );
-  } else if (has('select')) {
-    primary = (
-      <Text semantic="label" className="haus-field">
-        Selection
-        <SelectInput
-          value={entity.state}
-          disabled={disabled}
-          options={strings(attrs.options).map((option) => ({ value: option, label: option }))}
-          onChange={(next) => act('select', next)}
-        />
-      </Text>
-    );
-  } else if (has('value')) {
-    primary = (
-      <ControlRange
-        label="Value"
-        value={numeric(entity.state, numeric(attrs.min, 0))}
-        min={numeric(attrs.min, 0)}
-        max={numeric(attrs.max, 100)}
-        step={numeric(attrs.step, 1)}
-        unit={typeof attrs.unit_of_measurement === 'string' ? ` ${attrs.unit_of_measurement}` : ''}
+  }
+
+  if (domain === 'media_player') {
+    return (
+      <MediaModalPanel
+        idPrefix={idPrefix}
+        title={typeof attrs.media_title === 'string' ? attrs.media_title : accessory.name}
+        subtitle={typeof attrs.media_artist === 'string' ? attrs.media_artist : humanize(entity.state)}
+        appName={typeof attrs.app_name === 'string' ? attrs.app_name : undefined}
+        playing={entity.state === 'playing'}
+        poweredOn={entity.state !== 'off' && entity.state !== 'standby'}
+        volumePct={Math.round(numeric(attrs.volume_level, 0) * 100)}
+        canPrevious={availableServices.includes('media_previous_track')}
+        canPlayPause={has('play-pause')}
+        canNext={availableServices.includes('media_next_track')}
+        canPower={has('toggle')}
+        canVolume={has('volume')}
+        canRemote={false}
         disabled={disabled}
-        unknown={['unavailable', 'unknown'].includes(entity.state)}
-        onCommit={(next) => act('value', next)}
+        onPrevious={() => explicitService('media_previous_track')}
+        onPlayPause={() => act('play-pause')}
+        onNext={() => explicitService('media_next_track')}
+        onPower={() => act('toggle')}
+        onVolume={(next) => act('volume', next / 100)}
       />
     );
-  } else {
-    primary = (
-      <Box className="haus-sensor-controller">
-        <Box className="haus-sensor-glyph">
-          {entityCategory(entity) === 'security' ? (
-            <AccessoryIcon
-              accessory={{ ...accessory, state: entity, primaryEntityId: entity.entity_id }}
-              size={27}
-            />
-          ) : (
-            <Glyph name={icon} />
-          )}
-        </Box>
-        <Text semantic="strong">
-          {binaryStateDescription(entity) ?? humanize(entity.state)}
-          <Text semantic="small">
-            {typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : ''}
-          </Text>
-        </Text>
-        <Text semantic="p">Live device state</Text>
-        <Box className="haus-sensor-metrics">
-          {Object.entries(attrs)
-            .filter(
-              ([key, value]) =>
-                !['friendly_name', 'icon', 'supported_features', 'unit_of_measurement'].includes(
-                  key,
-                ) && ['string', 'number', 'boolean'].includes(typeof value),
-            )
-            .slice(0, 6)
-            .map(([key, value]) => (
-              <Box key={key}>
-                <Text>{humanize(key)}</Text>
-                <Text semantic="bold">{String(value)}</Text>
-              </Box>
-            ))}
-        </Box>
-      </Box>
+  }
+
+  if (domain === 'fan') {
+    return (
+      <FanModalPanel
+        idPrefix={idPrefix}
+        active={active}
+        percentage={numeric(attrs.percentage, 0)}
+        step={numeric(attrs.percentage_step, 1)}
+        canToggle={has('toggle')}
+        canPercentage={has('percentage')}
+        disabled={disabled}
+        onToggle={() => act('toggle')}
+        onPercentage={(next) => act('percentage', next)}
+      />
     );
   }
-  return primary;
+
+  if (domain === 'lock') {
+    const locked = entity.state === 'locked';
+    const nextIntent = locked ? 'unlock' : 'lock';
+    return (
+      <LockModalPanel
+        idPrefix={idPrefix}
+        deviceName={accessory.name}
+        locked={locked}
+        transitioning={['locking', 'unlocking'].includes(entity.state)}
+        canToggle={has(nextIntent)}
+        disabled={disabled}
+        onConfirmAction={(intent) => act(intent)}
+      />
+    );
+  }
+
+  if (has('run') || has('press')) {
+    const intent = has('run') ? 'run' : 'press';
+    return (
+      <SwitchActionModalPanel
+        idPrefix={idPrefix}
+        kind={intent}
+        active={false}
+        stateLabel="Ready"
+        iconName={domain === 'scene' ? 'sparkles' : categoryIcon}
+        disabled={disabled}
+        onActivate={() => act(intent)}
+      />
+    );
+  }
+
+  if (has('select')) {
+    return (
+      <SensorValueModalPanel
+        idPrefix={idPrefix}
+        reading={humanize(entity.state)}
+        subtitle="Active selection"
+        iconName={categoryIcon}
+        disabled={disabled}
+        select={{
+          label: 'Selection',
+          value: entity.state,
+          options: strings(attrs.options),
+          onChange: (next) => act('select', next),
+        }}
+      />
+    );
+  }
+
+  if (has('value')) {
+    const min = numeric(attrs.min, 0);
+    const max = numeric(attrs.max, 100);
+    const step = numeric(attrs.step, 1);
+    const val = numeric(entity.state, min);
+    const unit = typeof attrs.unit_of_measurement === 'string' ? ` ${attrs.unit_of_measurement}` : '';
+    return (
+      <SensorValueModalPanel
+        idPrefix={idPrefix}
+        reading={['unavailable', 'unknown'].includes(entity.state) ? '—' : `${val}${unit}`}
+        subtitle={accessory.name}
+        iconName={categoryIcon}
+        disabled={disabled}
+        slider={{
+          label: 'Value',
+          value: val,
+          min,
+          max,
+          step,
+          unit,
+          onCommit: (next) => act('value', next),
+        }}
+      />
+    );
+  }
+
+  const unit = typeof attrs.unit_of_measurement === 'string' ? ` ${attrs.unit_of_measurement}` : '';
+  return (
+    <SensorValueModalPanel
+      idPrefix={idPrefix}
+      reading={`${binaryStateDescription(entity) ?? humanize(entity.state)}${unit}`}
+      subtitle="Live device state"
+      iconName={categoryIcon}
+      metrics={collectMetrics(entity, accessory.secondaryEntities, accessory.name)}
+    />
+  );
 }

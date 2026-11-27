@@ -7,7 +7,13 @@
 
 import type { buildAction, Snapshot } from '../model';
 import type { NativeEvent, NativeSession } from '../../../shared/native';
-import type { EntityActionQueue, OptimisticState } from '../model/optimistic';
+import {
+  dispatchQueuedHausAction,
+  executeQueuedHausAction,
+  isStatelessAction,
+  type EntityActionQueue,
+  type OptimisticState,
+} from '../model/optimistic';
 
 type Action = ReturnType<typeof buildAction>;
 
@@ -25,60 +31,11 @@ export function shouldReloadHomeForLiveEvent(
     : HA_RELOAD_TOPICS.has(event.topic);
 }
 
-function isCoalesceableLightAction(action: Action): boolean {
-  if (action.domain !== 'light') return false;
-  if (action.service !== 'turn_on' && action.service !== 'turn_off') return false;
-  if (typeof action.target.entity_id !== 'string' || !action.target.entity_id) return false;
-  const data = action.service_data;
-  if (
-    data &&
-    (data.brightness_step !== undefined ||
-      data.brightness_step_pct !== undefined ||
-      data.flash !== undefined)
-  ) {
-    return false;
-  }
-  return true;
-}
+export const isStatelessRemoteAction = isStatelessAction;
 
-function mergeLightActions(previous: Action, next: Action): Action {
-  if (next.service === 'turn_off' || previous.service === 'turn_off') {
-    return next;
-  }
-  const mergedData: Record<string, unknown> = {
-    ...previous.service_data,
-    ...next.service_data,
-  };
-  const nextData = next.service_data ?? {};
-  const setsColor = 'rgb_color' in nextData || 'hs_color' in nextData || 'xy_color' in nextData;
-  const setsTemp =
-    'color_temp' in nextData || 'color_temp_kelvin' in nextData || 'kelvin' in nextData;
-  if (setsColor) {
-    delete mergedData.color_temp;
-    delete mergedData.color_temp_kelvin;
-    delete mergedData.kelvin;
-  } else if (setsTemp) {
-    delete mergedData.rgb_color;
-    delete mergedData.hs_color;
-    delete mergedData.xy_color;
-  }
-  if ((setsColor || setsTemp) && !('effect' in nextData)) {
-    delete mergedData.effect;
-  } else if ('effect' in nextData && !setsColor && !setsTemp) {
-    delete mergedData.rgb_color;
-    delete mergedData.hs_color;
-    delete mergedData.xy_color;
-    delete mergedData.color_temp;
-    delete mergedData.color_temp_kelvin;
-    delete mergedData.kelvin;
-  }
-  return {
-    ...next,
-    service_data: mergedData,
-  };
-}
+export const dispatchQueuedAction = dispatchQueuedHausAction;
 
-export async function executeQueuedHomeAction(params: {
+export function executeQueuedHomeAction(params: {
   readonly action: Action;
   readonly queue: EntityActionQueue;
   readonly optimistic: OptimisticState;
@@ -88,59 +45,5 @@ export async function executeQueuedHomeAction(params: {
   readonly reportFailures: () => void;
   readonly send: (active: Action) => Promise<{ context?: { id?: string } }>;
 }): Promise<void> {
-  const {
-    action,
-    queue,
-    optimistic,
-    getSnapshot,
-    getGeneration,
-    invalidate,
-    reportFailures,
-    send,
-  } = params;
-  const generation = getGeneration();
-  const run = (active: Action) => {
-    if (generation !== getGeneration())
-      throw new Error('The home connection changed before this command could be sent.');
-    return send(active);
-  };
-  if (isStatelessRemoteAction(action)) {
-    await dispatchQueuedAction(queue, action, run);
-    return;
-  }
-  const transaction = optimistic.begin(getSnapshot(), action);
-  invalidate();
-  try {
-    const result = await dispatchQueuedAction(queue, action, run);
-    if (generation !== getGeneration()) return;
-    optimistic.acknowledge(transaction, result?.context?.id, getSnapshot());
-    reportFailures();
-    invalidate();
-  } catch (error) {
-    if (generation === getGeneration()) {
-      optimistic.reject(transaction);
-      invalidate();
-    }
-    throw error;
-  }
-}
-
-export function isStatelessRemoteAction(action: Action): boolean {
-  return action.domain === 'remote' && action.service === 'send_command';
-}
-
-/**
- * Dispatches renderer entity actions through EntityActionQueue, coalescing rapid waiting
- * absolute light commands (brightness/color/temp) while keeping toggles/scenes strictly FIFO.
- */
-export function dispatchQueuedAction<TResult>(
-  queue: EntityActionQueue,
-  action: Action,
-  execute: (active: Action) => Promise<TResult>,
-): Promise<TResult> {
-  const key = action.domain === 'scene' ? 'scene:home' : action.target.entity_id;
-  if (isCoalesceableLightAction(action)) {
-    return queue.runCoalesced(key, action, mergeLightActions, execute);
-  }
-  return queue.run(key, () => execute(action));
+  return executeQueuedHausAction(params);
 }

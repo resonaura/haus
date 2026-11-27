@@ -3,6 +3,7 @@ import type {
   ClientIdentity,
   ClientRole,
   HubIdentity,
+  HubIdentityClusterInfo,
   PairingGrant,
   PairingOffer,
 } from '@haus/core/pairing';
@@ -60,6 +61,11 @@ export class HubAuthService {
   private readonly hubName: string;
   private readonly hubUrl: string;
   private transactions?: Transactions;
+  private clusterTopologyProvider?: () => {
+    readonly homeName?: string;
+    readonly publicCluster: HubIdentityClusterInfo;
+    readonly authenticated: unknown;
+  };
   public readonly pairing = new HubPairing();
 
   constructor(private readonly config: HubAuthConfig = {}) {
@@ -129,12 +135,37 @@ export class HubAuthService {
     return false;
   }
 
-  getIdentity(): HubIdentity {
+  setClusterTopologyProvider(
+    provider?: () => {
+      readonly homeName?: string;
+      readonly publicCluster: HubIdentityClusterInfo;
+      readonly authenticated: unknown;
+    },
+  ): void {
+    this.clusterTopologyProvider = provider;
+  }
+
+  getAuthenticatedClusterInfo(): unknown {
+    return this.clusterTopologyProvider?.().authenticated;
+  }
+
+  getIdentitySummary(): HubIdentity {
     return {
       hubId: this.hubId,
       homeId: this.homeId,
       name: this.hubName,
       onboarded: this.hasAdminSessions(),
+    };
+  }
+
+  getIdentity(): HubIdentity {
+    const base = this.getIdentitySummary();
+    const topo = this.clusterTopologyProvider?.();
+    if (!topo) return base;
+    return {
+      ...base,
+      ...(topo.homeName ? { homeName: topo.homeName } : {}),
+      cluster: topo.publicCluster,
     };
   }
 
@@ -412,12 +443,10 @@ export class HubAuthService {
   async logout(sessionId: string, token?: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
-
     if (token) {
       const check = verifySessionToken(session, hashSessionSecret(token), this.now());
       if (check === 'invalid_token') return false;
     }
-
     const revoked = revokeClientSession(session);
     this.sessions.set(sessionId, revoked);
     this.tokens.delete(session.token);
@@ -432,10 +461,8 @@ export class HubAuthService {
     if (!sessionId) return undefined;
     const session = this.sessions.get(sessionId);
     if (!session) return undefined;
-
     const check = verifySessionToken(session, tokenHash, now ?? this.now());
     if (check !== 'valid') return undefined;
-
     return session;
   }
 

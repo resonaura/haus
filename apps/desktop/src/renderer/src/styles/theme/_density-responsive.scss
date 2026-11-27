@@ -323,7 +323,6 @@
     background-color 150ms ease;
 }
 .statistics-category-card:hover {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
   background: var(--soft);
 }

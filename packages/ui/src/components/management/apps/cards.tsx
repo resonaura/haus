@@ -96,7 +96,7 @@ export function InstalledAppGlassCard({
         <BrandIcon
           kind={app.iconKind ?? 'app'}
           id={app.iconId || app.externalId || app.id}
-          size={44}
+          size={46}
           hint={{
             name: app.name,
             ...(app.vendorId ? { supportedBy: app.vendorId } : {}),
@@ -196,7 +196,7 @@ export function CatalogAppGlassCard({
         <BrandIcon
           kind={resolveCatalogIconKind(entry)}
           id={entry.iconId || entry.packageName || entry.id}
-          size={44}
+          size={46}
           hint={{
             name: entry.name,
             category: entry.category,

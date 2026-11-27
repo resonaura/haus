@@ -6,14 +6,16 @@
  */
 
 import { readFile, readdir, statfs } from 'node:fs/promises';
+import type { HostTelemetrySnapshot } from '@haus/core/servers';
 import { parseHostCpuModel, parseHostProc } from '@haus/servers/os';
 
 import { homeAssistantDisks } from './host-disks.js';
 import { homeAssistantGraphics, type HostGraphicsReport } from './host-gpus.js';
 import { linuxInstalledMemory } from './host-memory.js';
 import { homeAssistantServices } from './host-services.js';
-import { HostServiceCounters, type HostServiceSnapshot } from './host-service-counters.js';
+import { HostServiceCounters } from './host-service-counters.js';
 
+export type { HostTelemetrySnapshot };
 export { parseHostCpuModel, parseHostProc } from '@haus/servers/os';
 export type { HostProcParsed } from '@haus/servers/os';
 
@@ -48,36 +50,6 @@ export interface HostTelemetryConfig {
   standalone?: boolean;
   token?: string;
   media: string;
-}
-
-export interface HostTelemetrySnapshot {
-  sampledAt: string;
-  scope: string;
-  source: string;
-  hostname: string | null;
-  platform: string | null;
-  osName: string | null;
-  gpus?: HostGraphicsReport;
-  release: string | null;
-  arch: string | null;
-  uptimeSeconds: number | null;
-  cpu: {
-    model: string | null;
-    logicalCores: number | null;
-    usage: number | null;
-    loadAverage: number[];
-  };
-  memory: {
-    totalBytes: number | null;
-    availableBytes: number | null;
-    usedBytes: number | null;
-    installedBytes: number | null;
-  };
-  swap: { supported: boolean; totalBytes: number | null; usedBytes: number | null };
-  disks: Array<Record<string, unknown>>;
-  docker: Record<string, unknown>;
-  pm2: { available: false; source: 'unavailable'; processes: never[] };
-  systemServices: HostServiceSnapshot;
 }
 
 type FilesystemStat = {
@@ -190,6 +162,7 @@ export class HostTelemetry {
 
   async collect(at: number, inventory = false): Promise<HostTelemetrySnapshot> {
     if (this.value && !this.config.standalone && !inventory) {
+      const previousValue = this.value;
       if (!this.inventoryRefresh && at - this.inventoryAt >= 10000)
         this.inventoryRefresh = this.collect(at, true)
           .then(() => undefined)
@@ -202,7 +175,7 @@ export class HostTelemetry {
           this.read(`/proc/${name}`, 'utf8').catch(() => null),
         ),
       );
-      if (typeof stat !== 'string' || typeof meminfo !== 'string') return this.value;
+      if (typeof stat !== 'string' || typeof meminfo !== 'string') return previousValue;
       const proc = parseHostProc(stat, meminfo, typeof uptime === 'string' ? uptime : '');
       let usage: number | null = null;
       if (this.previousCpu && proc.cpuTimes && proc.cpuTimes.total > this.previousCpu.total)
@@ -217,12 +190,12 @@ export class HostTelemetry {
         );
       this.previousCpu = proc.cpuTimes;
       this.latestProcAt = at;
-      this.value = {
-        ...this.value,
+      const nextValue: HostTelemetrySnapshot = {
+        ...previousValue,
         sampledAt: new Date(at).toISOString(),
         uptimeSeconds: proc.uptimeSeconds,
         cpu: {
-          ...this.value.cpu,
+          ...previousValue.cpu,
           usage,
           logicalCores: proc.logicalCores,
           loadAverage:
@@ -230,11 +203,12 @@ export class HostTelemetry {
               ? loadavg.trim().split(/\s+/).slice(0, 3).map(Number).filter(Number.isFinite)
               : [],
         },
-        memory: { ...proc.memory, installedBytes: this.value.memory.installedBytes },
+        memory: { ...proc.memory, installedBytes: previousValue.memory.installedBytes },
         swap: proc.swap,
-        systemServices: this.serviceCounters?.snapshot() ?? this.value.systemServices,
+        systemServices: this.serviceCounters?.snapshot() ?? previousValue.systemServices,
       };
-      return this.value;
+      this.value = nextValue;
+      return nextValue;
     }
     this.inventoryAt = at;
     this.deadline = Date.now() + 2500;

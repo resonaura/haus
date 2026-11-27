@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { setAccessoryFavorite } from '@haus/ha/view/settings/shared';
+import { setAccessoryFavorite } from '@haus/core/preferences';
 import {
   resolveVisibilityTarget,
   restoreFromAppPatch,
@@ -112,9 +112,7 @@ export function createDeviceActions({
   };
   const toggleAppVisibility = (target: string | HausAccessory) => {
     const isCurrentlyHidden =
-      typeof target !== 'string'
-        ? appHidden(target)
-        : hiddenAppIds.has(target);
+      typeof target !== 'string' ? appHidden(target) : hiddenAppIds.has(target);
     const { hidden, patch } = toggleAppVisibilityPatch(
       target,
       model.accessories,

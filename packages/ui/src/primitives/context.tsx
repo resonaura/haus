@@ -10,7 +10,8 @@ import { createHausUiTheme } from '../generated/index.js';
 import type { ViewportMetrics } from '../ir/geometry.js';
 import { createDefaultShaderRegistry, type ShaderPassDescriptor } from '../ir/materials.js';
 import type { ThemeMode, UiNode } from '../ir/node.js';
-import type { RenderContext } from '../renderers/contract.js';
+import { Theme } from '../ir/theme.js';
+import { resolveThemeCssVariables, type RenderContext } from '../renderers/contract.js';
 import { DOM_HOST_ADAPTER } from '../renderers/dom-host.js';
 import { ensureDomResetStyle } from '../renderers/dom-reset.js';
 import type { UiContentHost, UiHostAdapter } from '../renderers/host.js';
@@ -55,6 +56,7 @@ function readViewportMetrics(): ViewportMetrics {
 }
 
 export interface HausUiContextValue extends RenderContext {
+  readonly themeDefinition: Theme;
   readonly host: UiHostAdapter;
   readonly contentHost: UiContentHost;
   readonly portal?: (node: React.ReactNode) => React.ReactNode;
@@ -96,6 +98,7 @@ export function useHausUi(): HausUiContextValue {
     };
     return {
       ...ctx,
+      themeDefinition: Theme.default,
       host: DOM_HOST_ADAPTER,
       contentHost: DOM_HOST_ADAPTER,
       domRenderer: DOM_RENDERER,
@@ -118,28 +121,38 @@ export function useHausStyles<TSlots extends StyleSlotMap, TProps = void>(
 
 export function HausUiThemeScope({
   mode,
+  theme: themeOverride,
   children,
 }: {
   readonly mode: ThemeMode;
+  readonly theme?: Theme;
   readonly children: React.ReactNode;
 }): React.ReactElement {
   const parent = useHausUi();
   const value = React.useMemo(() => {
-    if (parent.theme.mode === mode) return parent;
-    const theme = mode === 'light' ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
+    const activeDefinition = themeOverride ?? parent.themeDefinition;
+    if (parent.theme.mode === mode && activeDefinition === parent.themeDefinition) return parent;
+    const theme =
+      activeDefinition === Theme.default
+        ? mode === 'light'
+          ? DEFAULT_LIGHT_THEME
+          : DEFAULT_DARK_THEME
+        : createHausUiTheme(mode, activeDefinition);
     const context = { theme, viewport: parent.viewport, shaderRegistry: parent.shaderRegistry };
     return {
       ...parent,
       ...context,
+      themeDefinition: activeDefinition,
       compileToNativeIR: (node: UiNode) => parent.nativeRenderer.render(node, context),
       compileToReactNative: (node: UiNode) => parent.reactNativeRenderer.render(node, context),
     };
-  }, [parent, mode]);
+  }, [parent, mode, themeOverride]);
   return <HausUiContext.Provider value={value}>{children}</HausUiContext.Provider>;
 }
 
 export interface HausUiProviderProps {
   readonly mode?: ThemeMode | 'auto';
+  readonly theme?: Theme;
   readonly reducedTransparency?: boolean;
   readonly viewport?: Partial<ViewportMetrics>;
   readonly viewportWidth?: number;
@@ -154,6 +167,7 @@ export interface HausUiProviderProps {
 
 export function HausUiProvider({
   mode = 'auto',
+  theme: themeDefinition = Theme.default,
   reducedTransparency,
   viewport: viewportOverride,
   viewportWidth,
@@ -207,6 +221,17 @@ export function HausUiProvider({
   }, [customShaders]);
 
   const resolvedMode: ThemeMode = mode === 'auto' ? autoMode : mode;
+
+  React.useEffect(() => {
+    if (!readDom || typeof document === 'undefined') return undefined;
+    const vars = resolveThemeCssVariables(themeDefinition, resolvedMode);
+    const root = document.documentElement;
+    for (const [key, val] of Object.entries(vars)) {
+      root.style.setProperty(key, val);
+    }
+    return undefined;
+  }, [readDom, themeDefinition, resolvedMode]);
+
   const effectiveViewport = React.useMemo<ViewportMetrics>(
     () => ({
       ...viewport,
@@ -219,10 +244,16 @@ export function HausUiProvider({
   );
 
   const value = React.useMemo<HausUiContextValue>(() => {
-    const theme = resolvedMode === 'light' ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
+    const theme =
+      themeDefinition === Theme.default
+        ? resolvedMode === 'light'
+          ? DEFAULT_LIGHT_THEME
+          : DEFAULT_DARK_THEME
+        : createHausUiTheme(resolvedMode, themeDefinition);
     const ctx: RenderContext = { theme, viewport: effectiveViewport, shaderRegistry };
     return {
       ...ctx,
+      themeDefinition,
       host,
       contentHost,
       portal,
@@ -233,7 +264,16 @@ export function HausUiProvider({
       compileToNativeIR: (node: UiNode) => NATIVE_RENDERER.render(node, ctx),
       compileToReactNative: (node: UiNode) => RN_RENDERER.render(node, ctx),
     };
-  }, [resolvedMode, effectiveViewport, shaderRegistry, host, contentHost, portal, brandIcons]);
+  }, [
+    themeDefinition,
+    resolvedMode,
+    effectiveViewport,
+    shaderRegistry,
+    host,
+    contentHost,
+    portal,
+    brandIcons,
+  ]);
 
   return (
     <HausUiContext.Provider value={value}>

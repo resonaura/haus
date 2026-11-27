@@ -31,10 +31,6 @@
 :root .accessory-tile:not([data-haus-device-tile='shared']):hover {
   border-color: color-mix(in srgb, var(--ink) 24%, var(--line));
   box-shadow: 0 5px 18px rgb(0 0 0 / 5%);
-  transform: translateY(-1px);
-}
-:root .accessory-tile[data-haus-device-tile='shared']:hover {
-  transform: translateY(-1px);
 }
 :root .accessory-tile[data-haus-device-tile='shared'] .accessory-icon {
   background: transparent;

@@ -155,7 +155,7 @@ export function SystemSummaryCardsView({
                     <BrandIcon
                       kind="integration"
                       id={issue.domain}
-                      size={34}
+                      size={38}
                       hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
                     />
                     <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
@@ -263,24 +263,24 @@ export function SystemSummaryCardsView({
                       <Box
                         style={{
                           layout: {
-                            width: px(34),
-                            height: px(34),
+                            width: px(38),
+                            height: px(38),
                             alignItems: 'center',
                             justifyContent: 'center',
                             flexShrink: 0,
                           },
                           material: new SolidMaterial(colorToken('card')),
                           border: { width: 1, color: colorToken('border') },
-                          corners: corners(10),
+                          corners: corners(11),
                         }}
                       >
-                        <UiIcon name="arrow-up-circle" size={18} />
+                        <UiIcon name="arrow-up-circle" size={19} />
                       </Box>
                     ) : (
                       <BrandIcon
                         kind={brandKindForUpdate(item.category)}
                         id={item.domain}
-                        size={34}
+                        size={38}
                         hint={{ name: item.title, category: item.category }}
                       />
                     )}

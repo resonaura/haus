@@ -2,10 +2,12 @@
 
 import type { EditableKind, ManagementPort, PendingPairingRequest } from '@haus/core/transport';
 import type { HassEntity, Snapshot } from '@haus/ha/types';
+import type { RegistryController } from '@haus/ha/ui/registry';
 import type { Preferences } from '@haus/ha/view/preferences';
 import type { HausAccessory } from '@haus/ha/view/types';
 import {
   ActionMenuDialog,
+  HausComponentStoryboard,
   PortablePairingRequestDialog,
   SpotlightDialog,
   type SpotlightResultItem,
@@ -19,7 +21,28 @@ import type { GpuiRpcRequest } from '../management/integrations.js';
 import { GpuiScenePreviewModal } from '../management/scenes.js';
 import type { GpuiPlatform } from '../platform.js';
 import type { DeviceControl } from './cards.js';
+import { DeviceDetailsModal } from './device-modal.js';
+import type { StatisticsRequest } from './history.js';
 import type { ActiveFallbackMenu } from './menus.js';
+import type { HomeDevice } from './model.js';
+
+export interface DeviceModalOverlayProps {
+  readonly device: HomeDevice;
+  readonly snapshot: Snapshot;
+  readonly preferences?: Preferences;
+  readonly allAccessories?: readonly HausAccessory[];
+  readonly demo?: boolean;
+  readonly disabled: boolean;
+  readonly canFavorite: boolean;
+  readonly statistics?: StatisticsRequest;
+  readonly registry?: Pick<RegistryController, 'saveRoom' | 'updateEntity'>;
+  readonly onClose: () => void;
+  readonly onSelectDevice: (id: string) => void;
+  readonly onControl: DeviceControl;
+  readonly onFavorite: (id: string, favorite: boolean) => void;
+  readonly onPreferencesPatch?: (patch: Partial<Preferences>) => void;
+  readonly onManage?: (url: string) => void;
+}
 
 export interface CameraModalOverlayProps {
   readonly cameraId: string;
@@ -60,9 +83,11 @@ export interface ConfigEditorOverlayProps {
 export interface AddDeviceOverlayProps {
   readonly snapshot: Snapshot;
   readonly demo?: boolean;
+  readonly sessionKind?: 'haus-hub' | 'home-assistant';
   readonly management?: ManagementPort;
   readonly requestRpc?: GpuiRpcRequest;
   readonly openExternal?: (url: string) => Promise<void>;
+  readonly onCopyText?: (text: string) => void;
   readonly initialRequest: GpuiAddDeviceRequest;
   readonly onOpenApps: () => void;
   readonly onClose: () => void;
@@ -80,10 +105,13 @@ export function WorkspaceOverlays({
   activePairing,
   platform,
   onDismissPairing,
+  deviceModal,
   cameraModal,
   scenePreview,
   configEditor,
   addDevice,
+  storyboardOpen,
+  onCloseStoryboard,
 }: {
   readonly search: boolean;
   readonly query: string;
@@ -95,13 +123,20 @@ export function WorkspaceOverlays({
   readonly activePairing: PendingPairingRequest | null;
   readonly platform?: Pick<GpuiPlatform, 'clipboard'>;
   readonly onDismissPairing: (sessionId: string) => void;
+  readonly deviceModal?: DeviceModalOverlayProps;
   readonly cameraModal?: CameraModalOverlayProps;
   readonly scenePreview?: ScenePreviewOverlayProps;
   readonly configEditor?: ConfigEditorOverlayProps;
   readonly addDevice?: AddDeviceOverlayProps;
+  readonly storyboardOpen?: boolean;
+  readonly onCloseStoryboard?: () => void;
 }) {
   return (
     <>
+      {storyboardOpen && onCloseStoryboard && (
+        <HausComponentStoryboard rendererName="GPUIX Native" onClose={onCloseStoryboard} />
+      )}
+      {deviceModal && <DeviceDetailsModal key={deviceModal.device.id} {...deviceModal} />}
       {cameraModal && <GpuiCameraModal key={cameraModal.cameraId} {...cameraModal} />}
       {scenePreview && <GpuiScenePreviewModal {...scenePreview} />}
       {configEditor && <GpuiConfigEditor {...configEditor} />}

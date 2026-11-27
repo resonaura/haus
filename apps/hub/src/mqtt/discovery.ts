@@ -32,6 +32,8 @@ import { MqttRecovery, type MqttRecoveryOptions } from './recovery.js';
 import {
   deduplicateMqttDeviceForExternalId,
   pruneSyntheticVideoEndpoints,
+  restoreStashedMqttAssignments,
+  stashAndRemoveMqttDevice,
   withoutSyntheticHashSourceRef,
 } from './pruning.js';
 import { aggregateEndpointAvailability, MqttAvailability } from './availability.js';
@@ -196,13 +198,11 @@ export class MqttDiscovery {
     descriptor: DiscoveryTopic,
   ): Promise<void> {
     const { component, objectId } = descriptor;
-
     const { uniqueId, rawDeviceId: rawDevId } = singleDiscoveryIdentity(descriptor, payload);
     const deviceId = await this.identities.device(rawDevId, payload.device, [
       { component, uniqueId },
     ]);
     const preferredEndpointId = `ep_mqtt_${sanitizeMqttId(uniqueId)}`;
-
     const existing = this.homeService?.getDevice(deviceId);
     const model = payload.device?.model ?? existing?.model;
     if (this.suppressGoveeOutlet({ rawDevId, model, payload, topic, existing, uniqueId })) return;
@@ -406,7 +406,7 @@ export class MqttDiscovery {
         existingRoomId: existing?.roomId,
         candidateLabels: [deviceName, ...endpoints.map((ep) => ep.name)],
       });
-    return {
+    return restoreStashedMqttAssignments(this.homeService, rawDevId, {
       id: deviceId,
       source: { instanceId: 'haus-mqtt', externalId: rawDevId },
       name: deviceName,
@@ -428,7 +428,7 @@ export class MqttDiscovery {
       ),
       relationships: existing?.relationships,
       endpoints,
-    };
+    });
   }
 
   private pruneEndpoints(removed: readonly MqttEndpointBinding[]): void {
@@ -471,7 +471,7 @@ export class MqttDiscovery {
         )
       ) {
         for (const endpoint of device.endpoints) this.syntheticVideoEndpoints.delete(endpoint.id);
-        this.homeService?.removeDevice(deviceId);
+        stashAndRemoveMqttDevice(this.homeService, device);
       } else {
         this.homeService?.registerDevice({
           ...device,

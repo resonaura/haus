@@ -166,7 +166,7 @@ export function DiscoveredIntegrationsPanel({
                 <BrandIcon
                   kind="integration"
                   id={item.handler}
-                  size={44}
+                  size={46}
                   hint={{ name: item.integrationTitle }}
                 />
                 <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>

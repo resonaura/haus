@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import {
   AlertsMonitor,
   type AlertsTransport,
   type HomeNotice,
   type TransportEntityState,
 } from '@haus/core/transport';
+
+const EMPTY_NOTICES: readonly HomeNotice[] = [];
 
 export function useGpuiAlerts({
   transport,
@@ -30,14 +32,26 @@ export function useGpuiAlerts({
     return monitor.start(4000);
   }, [demo, monitor, transport]);
 
-  const notices: HomeNotice[] = demo ? [] : monitor.noticesFor(states, demo);
+  const notices = useMemo<readonly HomeNotice[]>(
+    () => (demo ? EMPTY_NOTICES : monitor.noticesFor(states, demo)),
+    [demo, monitor, states, state],
+  );
+  const dismissNotice = useCallback(
+    (notificationId: string) => monitor.dismissNotice(notificationId),
+    [monitor],
+  );
+  const dismissPairing = useCallback(
+    (sessionId: string) => monitor.dismissPairing(sessionId),
+    [monitor],
+  );
+  const refresh = useCallback(() => monitor.refresh(), [monitor]);
 
   return {
     notices,
     error: state.error,
     activePairing: demo ? null : state.activePairing,
-    dismissNotice: (notificationId: string) => monitor.dismissNotice(notificationId),
-    dismissPairing: (sessionId: string) => monitor.dismissPairing(sessionId),
-    refresh: () => monitor.refresh(),
+    dismissNotice,
+    dismissPairing,
+    refresh,
   };
 }

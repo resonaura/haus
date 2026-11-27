@@ -171,6 +171,16 @@ export class GradientMaterial implements SurfaceMaterial {
     readonly radial?: RadialGradientGeometry,
   ) {}
 
+  withBlur(radius: number, quality: BlurQuality = 'medium'): GradientMaterial {
+    return new GradientMaterial(
+      this.stops,
+      this.angleDeg,
+      this.gradientType,
+      { radius, quality },
+      this.radial,
+    );
+  }
+
   toIR(): GradientMaterialIR {
     return {
       kind: 'gradient',

@@ -16,6 +16,7 @@ import { insets, pct } from '../../ir/geometry.js';
 import { Text } from '../../primitives/elements.js';
 import { DeviceTile, type DeviceTileBatteryData } from '../devices/device.js';
 import type { UiIconName } from '../icons.js';
+import { ServerDistroIcon } from './server-icons.js';
 
 export function resolveServerGlyphName(server: {
   readonly kind: ServerSummaryRecord['kind'];
@@ -106,7 +107,7 @@ export function ServerCardTile({
       favorite={server.favorite}
       battery={battery}
       showStatusDot={false}
-      icon={iconSlot}
+      icon={iconSlot ?? <ServerDistroIcon server={server} size={22} />}
       iconName={resolveServerGlyphName(server)}
       quickLabel={`Open ${server.name}`}
       quickDisabled={false}

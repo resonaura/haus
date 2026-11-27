@@ -31,6 +31,7 @@ export interface ClientSessionView {
 
 export interface ClientSessionCredentials {
   readonly hubUrl: string;
+  readonly clusterUrls?: readonly string[];
   readonly sessionId: string;
   readonly sessionToken: string;
   readonly refreshToken?: string;

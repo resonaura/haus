@@ -1,115 +1,210 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
 
 import { useState } from 'react';
-import type { FlowFormFieldRecord, FlowStepRecord } from '@haus/core/transport';
+import type {
+  FlowFormFieldRecord,
+  FlowLocalizationHelpers,
+  FlowStepRecord,
+} from '@haus/core/transport';
 import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import {
   HausButton,
+  HausDisclosure,
   HausSwitch,
-  Pressable,
+  HausTextArea,
   Row,
   Stack,
   Text,
   TextInput,
 } from '../../primitives/index.js';
+import { ManagementGlassCard } from '../brand/index.js';
 import { UiIcon } from '../icon.js';
+import {
+  asFieldRec,
+  DurationFlowField,
+  extractFlowSelectOptions,
+  FLOW_FIELD_INPUT_STYLE,
+  LocationFlowField,
+  QrCodeFlowField,
+  SelectFlowField,
+  StructuredJsonFlowField,
+  type FlowFieldSnapshotContext,
+} from './flow/field-selectors.js';
+
+export type { FlowFieldSnapshotContext } from './flow/field-selectors.js';
 
 export function humanizeFlowSlug(name: string): string {
   return name.replaceAll('_', ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
-function extractSelectOptions(
-  field: FlowFormFieldRecord,
-): readonly { readonly value: string; readonly label: string }[] {
-  const selectCfg =
-    field.selector && typeof field.selector.select === 'object' && field.selector.select !== null
-      ? (field.selector.select as Readonly<Record<string, unknown>>)
-      : undefined;
-  const raw = field.options ?? (selectCfg?.options as FlowFormFieldRecord['options']);
-  if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw.flatMap((entry) => {
-      if (typeof entry === 'string' || typeof entry === 'number') {
-        const val = String(entry);
-        return [{ value: val, label: val }];
-      }
-      if (Array.isArray(entry) && entry.length >= 2) {
-        return [{ value: String(entry[0]), label: String(entry[1]) }];
-      }
-      if (entry && typeof entry === 'object' && 'value' in entry) {
-        const rec = entry as Readonly<Record<string, unknown>>;
-        const value = String(rec.value);
-        return [{ value, label: typeof rec.label === 'string' ? rec.label : value }];
-      }
-      return [];
-    });
-  }
-  return Object.entries(raw).map(([value, label]) => ({ value, label: String(label) }));
-}
-
+/**
+ * Rich Home Assistant schema field renderer for GPUIX and React DOM, supporting
+ * localized labels/options, switches, radio cards, native `<HausSelect />` dropdowns,
+ * multi-select pills, entity/device/area pickers, duration/location/JSON/QR,
+ * password reveal, and collapsible sections.
+ */
 export function FlowFieldInput({
   field,
   step,
   value,
   error,
+  fieldErrors,
+  keyPrefix = '',
   disabled,
+  localization,
+  snapshot,
+  onCopyText,
   onChange,
 }: {
   readonly field: FlowFormFieldRecord;
   readonly step: FlowStepRecord;
   readonly value: unknown;
   readonly error?: string;
+  readonly fieldErrors?: Readonly<Record<string, string>>;
+  readonly keyPrefix?: string;
   readonly disabled: boolean;
+  readonly localization?: FlowLocalizationHelpers;
+  readonly snapshot?: FlowFieldSnapshotContext;
+  readonly onCopyText?: (text: string) => void;
   readonly onChange: (next: unknown) => void;
 }) {
   const [revealed, setRevealed] = useState(false);
-  const label = step.field_labels?.[field.name] ?? field.label ?? humanizeFlowSlug(field.name);
-  const description =
-    step.data_descriptions?.[field.name] ??
-    (typeof field.description === 'string' ? field.description : undefined);
+
+  const fullKey = keyPrefix ? `${keyPrefix}.${field.name}` : field.name;
+  const label = localization
+    ? localization.fieldLabel(fullKey, field)
+    : (step.field_labels?.[fullKey] ?? field.label ?? humanizeFlowSlug(field.name));
+  const description = localization
+    ? localization.fieldDescription(fullKey, field)
+    : (step.data_descriptions?.[fullKey] ??
+      (typeof field.description === 'string' ? field.description : undefined));
+  const required = field.required === true && field.optional !== true;
+  const displayLabel = required ? `${label} *` : label;
+
+  const selector = field.selector ?? {};
+  const selectorType = Object.keys(selector)[0] ?? field.type ?? 'string';
+  const config = asFieldRec(selector[selectorType]) ?? {};
 
   if (field.schema) {
-    const nested =
-      value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Readonly<Record<string, unknown>>)
-        : {};
+    const nested = asFieldRec(value) ?? {};
+    const content = (
+      <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
+        {description && (
+          <Text size={11.5} tone="muted">
+            {description}
+          </Text>
+        )}
+        {field.schema.map((child) => {
+          const childFullKey = `${fullKey}.${child.name}`;
+          const rawErr = fieldErrors?.[childFullKey] ?? step.errors?.[childFullKey];
+          const childError = rawErr && localization ? localization.errorText(rawErr) : rawErr;
+          return (
+            <FlowFieldInput
+              key={child.name}
+              field={child}
+              step={step}
+              value={nested[child.name]}
+              error={childError}
+              fieldErrors={fieldErrors}
+              keyPrefix={fullKey}
+              disabled={disabled}
+              localization={localization}
+              snapshot={snapshot}
+              onCopyText={onCopyText}
+              onChange={(childVal) => onChange({ ...nested, [child.name]: childVal })}
+            />
+          );
+        })}
+      </Stack>
+    );
+
+    if (selectorType === 'expandable' || field.type === 'expandable') {
+      return (
+        <HausDisclosure
+          defaultOpen={Boolean(field.expanded)}
+          summary={label}
+          style={{ layout: { width: pct(100) } }}
+        >
+          {content}
+        </HausDisclosure>
+      );
+    }
+
     return (
-      <Stack
-        gapPx={10}
-        style={{
-          layout: { width: pct(100), padding: insets(12) },
-          material: new SolidMaterial(colorToken('surfaceSecondary')),
-          border: { width: 1, color: colorToken('border') },
-          corners: corners(12),
-        }}
+      <ManagementGlassCard
+        radius={16}
+        padding={insets(12, 14)}
+        style={{ layout: { width: pct(100), gap: px(10) } }}
       >
         <Text size={12.5} weight={600}>
           {label}
         </Text>
-        {field.schema.map((child) => (
-          <FlowFieldInput
-            key={child.name}
-            field={child}
-            step={step}
-            value={nested[child.name]}
-            disabled={disabled}
-            onChange={(childVal) => onChange({ ...nested, [child.name]: childVal })}
-          />
-        ))}
-      </Stack>
+        {content}
+      </ManagementGlassCard>
     );
   }
 
-  const isBoolean = field.type === 'boolean' || Boolean(field.selector && 'boolean' in field.selector);
-  if (isBoolean) {
+  if (selectorType === 'qr_code' || field.type === 'qr_code') {
     return (
-      <Stack gapPx={4}>
-        <Row justify="between" align="center" gapPx={12}>
+      <QrCodeFlowField
+        label={label}
+        qrData={String(config.data ?? value ?? field.default ?? '')}
+        description={description}
+        onCopyText={onCopyText}
+      />
+    );
+  }
+
+  if (selectorType === 'constant') {
+    return (
+      <ManagementGlassCard
+        radius={14}
+        padding={insets(10, 12)}
+        style={{ layout: { width: pct(100), gap: px(4) } }}
+      >
+        <Text size={11.5} weight={600} tone="muted">
+          {label}
+        </Text>
+        <Text size={13} weight={500}>
+          {String(config.label ?? config.value ?? value ?? '')}
+        </Text>
+      </ManagementGlassCard>
+    );
+  }
+
+  if (selectorType === 'boolean' || selectorType === 'bool') {
+    return (
+      <Stack gapPx={4} style={{ layout: { width: pct(100) } }}>
+        <Row
+          justify="between"
+          align="center"
+          gapPx={12}
+          style={{
+            layout: { width: pct(100), padding: insets(10, 12) },
+            material: new SolidMaterial(colorToken('surface')),
+            border: {
+              width: 1,
+              color: error ? colorToken('critical') : colorToken('borderSubtle'),
+            },
+            corners: corners(12),
+          }}
+        >
           <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-            <Text size={13}>{label}</Text>
+            <Text size={13} weight={500}>
+              {label}
+            </Text>
             {description && (
-              <Text size={11.5} tone="muted">
+              <Text
+                size={11.5}
+                tone="muted"
+                style={{ typography: { size: 11.5, lineHeight: 1.35 } }}
+              >
                 {description}
               </Text>
             )}
@@ -122,69 +217,165 @@ export function FlowFieldInput({
             onChange={(checked) => onChange(checked)}
           />
         </Row>
-        {error && <Text size={11.5} tone="critical">{error}</Text>}
+        {error && (
+          <Text size={11.5} tone="critical">
+            {error}
+          </Text>
+        )}
       </Stack>
     );
   }
 
-  const selectOptions = extractSelectOptions(field);
-  if (selectOptions.length > 0 && selectOptions.length <= 8) {
-    const activeVal = value === undefined ? '' : String(value);
+  if (selectorType === 'location') {
     return (
-      <Stack gapPx={6}>
+      <LocationFlowField
+        label={label}
+        displayLabel={displayLabel}
+        value={value}
+        enableRadius={Boolean(config.radius)}
+        description={description}
+        error={error}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (
+    selectorType === 'duration' &&
+    (field.selector?.duration !== undefined || Boolean(asFieldRec(value)))
+  ) {
+    return (
+      <DurationFlowField
+        label={label}
+        displayLabel={displayLabel}
+        value={value}
+        enableDay={Boolean(config.enable_day)}
+        description={description}
+        error={error}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+
+  const translatedOpts = localization?.selectorOptions(fullKey, field);
+  const selectOptions = extractFlowSelectOptions(
+    field,
+    selectorType,
+    config,
+    snapshot,
+    translatedOpts,
+  );
+  const multiple = Boolean(config.multiple || field.multiple || selectorType === 'multi_select');
+
+  if (selectOptions.length > 0 && !config.custom_value) {
+    return (
+      <SelectFlowField
+        fieldName={field.name}
+        label={label}
+        displayLabel={displayLabel}
+        options={selectOptions}
+        value={value}
+        multiple={multiple}
+        listMode={config.mode === 'list'}
+        required={required}
+        description={description}
+        error={error}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (
+    ['object', 'dict', 'list', 'target', 'action', 'condition', 'trigger'].includes(selectorType)
+  ) {
+    return (
+      <StructuredJsonFlowField
+        id={`flow-field-${field.name}`}
+        label={displayLabel}
+        value={value ?? (selectorType === 'list' ? [] : {})}
+        description={description}
+        error={error}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (selectorType === 'template' || Boolean(config.multiline)) {
+    const textValue = value === undefined || value === null ? '' : String(value);
+    return (
+      <Stack gapPx={5} style={{ layout: { width: pct(100) } }}>
         <Text size={12} weight={600}>
-          {label}
+          {displayLabel}
         </Text>
-        <Row gapPx={8} wrap>
-          {selectOptions.map((opt) => {
-            const selected = activeVal === opt.value;
-            return (
-              <Pressable
-                key={opt.value}
-                id={`flow-field-${field.name}-${opt.value}`}
-                ariaPressed={selected}
-                disabled={disabled}
-                onActivate={() => onChange(opt.value)}
-                style={{
-                  layout: { padding: insets(6, 12) },
-                  material: new SolidMaterial(
-                    selected ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                  ),
-                  border: { width: 1, color: selected ? colorToken('accent') : colorToken('border') },
-                  corners: corners(999),
-                }}
-              >
-                <Text size={12} weight={selected ? 600 : 500}>
-                  {opt.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </Row>
-        {description && <Text size={11.5} tone="muted">{description}</Text>}
-        {error && <Text size={11.5} tone="critical">{error}</Text>}
+        <HausTextArea
+          id={`flow-field-${field.name}`}
+          ariaLabel={label}
+          rows={3}
+          value={textValue}
+          disabled={disabled}
+          onChange={onChange}
+          style={{
+            layout: { width: pct(100), padding: insets(8, 12) },
+            material: new SolidMaterial(colorToken('surface')),
+            border: { width: 1, color: error ? colorToken('critical') : colorToken('border') },
+            corners: corners(11),
+            typography: { size: 12.5, color: colorToken('textPrimary') },
+          }}
+        />
+        {description && (
+          <Text size={11.5} tone="muted">
+            {description}
+          </Text>
+        )}
+        {error && (
+          <Text size={11.5} tone="critical">
+            {error}
+          </Text>
+        )}
       </Stack>
     );
   }
 
   const isPassword =
-    field.type === 'password' ||
-    Boolean(field.selector && 'password' in field.selector) ||
+    selectorType === 'password' ||
+    config.type === 'password' ||
     /password|token|secret|api_key|local_key/i.test(field.name);
   const textValue = value === undefined || value === null ? '' : String(value);
+  const isInteger =
+    selectorType === 'integer' || selectorType === 'positive_int' || field.type === 'integer';
+  const isNumber =
+    isInteger ||
+    selectorType === 'float' ||
+    selectorType === 'number' ||
+    field.type === 'float' ||
+    field.type === 'number';
+  const minVal = typeof config.min === 'number' ? config.min : field.value_min;
+  const maxVal = typeof config.max === 'number' ? config.max : field.value_max;
+  const rangeHint =
+    isNumber && (minVal !== undefined || maxVal !== undefined)
+      ? `${minVal ?? ''}–${maxVal ?? ''}`
+      : undefined;
 
   return (
-    <Stack gapPx={5}>
+    <Stack gapPx={5} style={{ layout: { width: pct(100) } }}>
       <Row justify="between" align="center">
         <Text size={12} weight={600}>
-          {field.required && field.optional !== true ? `${label} *` : label}
+          {displayLabel}
         </Text>
-        {isPassword && (
+        {isPassword ? (
           <HausButton variant="ghost" size="sm" onPress={() => setRevealed((prev) => !prev)}>
             <UiIcon name={revealed ? 'eye-off' : 'eye'} size={13} />
             <Text size={11}>{revealed ? 'Hide' : 'Show'}</Text>
           </HausButton>
-        )}
+        ) : rangeHint ? (
+          <Text size={11} mono tone="muted">
+            {rangeHint}
+          </Text>
+        ) : null}
       </Row>
       <TextInput
         id={`flow-field-${field.name}`}
@@ -194,10 +385,10 @@ export function FlowFieldInput({
         placeholder={field.placeholder ?? ''}
         disabled={disabled}
         onChange={(next) => {
-          if (field.type === 'integer') {
+          if (isInteger) {
             if (!next.trim()) onChange('');
             else onChange(/^-?\d+$/.test(next.trim()) ? Number.parseInt(next.trim(), 10) : next);
-          } else if (field.type === 'float' || field.type === 'number') {
+          } else if (isNumber) {
             if (!next.trim()) onChange('');
             else {
               const parsed = Number(next);
@@ -208,15 +399,20 @@ export function FlowFieldInput({
           }
         }}
         style={{
-          layout: { width: pct(100), minHeight: px(38), padding: insets(8, 12) },
-          material: new SolidMaterial(colorToken('surfaceSecondary')),
+          ...FLOW_FIELD_INPUT_STYLE,
           border: { width: 1, color: error ? colorToken('critical') : colorToken('border') },
-          corners: corners(10),
-          typography: { size: 13, color: colorToken('textPrimary') },
         }}
       />
-      {description && <Text size={11.5} tone="muted">{description}</Text>}
-      {error && <Text size={11.5} tone="critical">{error}</Text>}
+      {description && !error && (
+        <Text size={11.5} tone="muted" style={{ typography: { size: 11.5, lineHeight: 1.35 } }}>
+          {description}
+        </Text>
+      )}
+      {error && (
+        <Text size={11.5} tone="critical">
+          {error}
+        </Text>
+      )}
     </Stack>
   );
 }

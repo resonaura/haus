@@ -6,18 +6,25 @@
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_ICON_STYLE, resolveIconStyle, type ResolvedIconStyle } from '@haus/icons';
-import { insets, pct, px } from '../../ir/geometry.js';
+import {
+  APP_ICON_METRICS,
+  DEFAULT_ICON_STYLE,
+  resolveIconStyle,
+  type ResolvedIconStyle,
+} from '@haus/icons';
+import { pct, px } from '../../ir/geometry.js';
 import { useHausUi } from '../../primitives/context.js';
 import { Box } from '../../primitives/elements.js';
 import { Image } from '../../primitives/media.js';
 import type { HostImageDropShadow } from '../../renderers/host-media.js';
 import {
   buildMonogramBadgeSvgUri,
+  computeBrandIconShadowLayout,
   getBrandIconCacheEpoch,
   getBrandPlaceholderUri,
   inflightBrandTiles,
   invalidateBrandIconCache,
+  padPlaceholderSvgForShadowLayout,
   placeholderGlyphKindForBrand,
   reconcileHubBrandIconRevision,
   rememberResolvedBrandTile,
@@ -42,7 +49,9 @@ const DARK_TILE_SHADOW: HostImageDropShadow = {
   color: 'rgba(0, 0, 0, 0.42)',
 };
 
-const DEFAULT_GPUI_SHADOW_BLEED = 0.22;
+const TILE_COMPENSATION_SCALE = 1 / APP_ICON_METRICS.tileFraction;
+const DOM_TILE_PCT = Number((TILE_COMPENSATION_SCALE * 100).toFixed(4));
+const DOM_TILE_INSET_PCT = Number((((TILE_COMPENSATION_SCALE - 1) * 100) / 2).toFixed(4));
 
 let sharedVisibilityObserver: IntersectionObserver | null = null;
 const visibilityCallbacks = new WeakMap<Element, () => void>();
@@ -86,42 +95,22 @@ function observeIfDomElement(node: unknown, onVisible: () => void): () => void {
   };
 }
 
-/**
- * Expands `@haus/icons`'s `0 0 1024 1024` placeholder SVG viewBox by the same
- * symmetrical bleed fraction used by GPUIX shadowed tiles so placeholder -> loaded
- * tile crossfades have zero geometry or scale jump.
- */
-function padPlaceholderSvgForBleed(svgDataUri: string, bleedFraction: number): string {
-  const prefix = 'data:image/svg+xml;charset=utf-8,';
-  if (!svgDataUri.startsWith(prefix)) return svgDataUri;
-  try {
-    const raw = decodeURIComponent(svgDataUri.slice(prefix.length));
-    const pad = Number((1024 * bleedFraction).toFixed(2));
-    const span = Number((1024 + pad * 2).toFixed(2));
-    const outDim = Math.round(256 * (1 + bleedFraction * 2));
-    const padded = raw
-      .replace('width="256" height="256"', `width="${outDim}" height="${outDim}"`)
-      .replace('viewBox="0 0 1024 1024"', `viewBox="${-pad} ${-pad} ${span} ${span}"`);
-    return `${prefix}${encodeURIComponent(padded)}`;
-  } catch {
-    return svgDataUri;
-  }
-}
-
 async function decorateTileIfNeeded(
   tile: RenderedBrandTile | null,
   size: number,
   themeDark: boolean,
+  dpr: number,
   port: BrandIconPort | undefined,
 ): Promise<RenderedBrandTile | null> {
   if (!tile) return null;
   if (!port?.applyTileShadow) return tile;
-  const decorated = await port.applyTileShadow(tile.dataUrl, size, themeDark);
+  const decorated = await port.applyTileShadow(tile.dataUrl, size, themeDark, dpr);
   if (!decorated) return tile;
   return {
     dataUrl: decorated.dataUrl,
     layout: tile.layout,
     shadowBleedFraction: decorated.bleedFraction,
+    shadowDisplaySizePt: decorated.displaySizePt,
   };
 }
 
@@ -132,6 +121,7 @@ async function resolveBrandTile(
   size: number,
   style: ResolvedIconStyle,
   themeDark: boolean,
+  dpr: number,
   hintPayload: BrandIconHint | undefined,
   port: BrandIconPort | undefined,
 ): Promise<RenderedBrandTile | null> {
@@ -166,7 +156,7 @@ async function resolveBrandTile(
             dataUrl: hubTile.dataUri,
             layout: hubTile.layout === 'fill' ? 'fill' : 'inset',
           };
-          const ready = await decorateTileIfNeeded(baseReady, size, themeDark, port);
+          const ready = await decorateTileIfNeeded(baseReady, size, themeDark, dpr, port);
           if (ready && !rolledOver) rememberResolvedBrandTile(styleCacheKey, ready, storeEpoch);
           return ready;
         }
@@ -174,7 +164,7 @@ async function resolveBrandTile(
         const baseRendered = port.renderLocalTile
           ? await port.renderLocalTile(rawSource, style, size)
           : { dataUrl: rawSource, layout: 'inset' as const };
-        const rendered = await decorateTileIfNeeded(baseRendered, size, themeDark, port);
+        const rendered = await decorateTileIfNeeded(baseRendered, size, themeDark, dpr, port);
         if (rendered && !rolledOver) rememberResolvedBrandTile(styleCacheKey, rendered, storeEpoch);
         return rendered;
       }
@@ -190,7 +180,7 @@ async function resolveBrandTile(
       const baseRendered = port?.renderLocalTile
         ? await port.renderLocalTile(rawSource, style, size)
         : { dataUrl: rawSource, layout: 'inset' as const };
-      const rendered = await decorateTileIfNeeded(baseRendered, size, themeDark, port);
+      const rendered = await decorateTileIfNeeded(baseRendered, size, themeDark, dpr, port);
       if (rendered) rememberResolvedBrandTile(styleCacheKey, rendered, startEpoch);
       return rendered;
     } catch {
@@ -265,12 +255,13 @@ export const BrandIcon = memo(function BrandIcon({
   size,
   className,
 }: BrandIconProps) {
-  const { theme, host, brandIcons } = useHausUi();
+  const { theme, viewport, host, contentHost, brandIcons } = useHausUi();
   const cacheVersion = useBrandIconCacheVersion();
   const rootRef = useRef<unknown>(null);
-  const isDom = host.target === 'react-dom';
+  const isDom = host === contentHost && host.target === 'react-dom';
   const themeDark = theme.mode === 'dark';
   const requestSize = size ?? 44;
+  const dpr = Math.max(2, Math.min(3, Math.round(viewport.dpr || 2)));
 
   useEffect(() => {
     ensurePortInvalidationSubscription(brandIcons);
@@ -291,7 +282,7 @@ export const BrandIcon = memo(function BrandIcon({
 
   const hasShadowCompositor = Boolean(!isDom && brandIcons?.applyTileShadow);
   const rendererTag = hasShadowCompositor
-    ? `gpui-shadow:${themeDark ? 'd' : 'l'}:${Math.round(requestSize)}`
+    ? `gpui-shadow-aa2:${themeDark ? 'd' : 'l'}:${Math.round(requestSize)}@${dpr}x`
     : brandIcons?.renderLocalTile || brandIcons?.resolveTile
       ? 'tile'
       : 'raw';
@@ -310,10 +301,15 @@ export const BrandIcon = memo(function BrandIcon({
       ? tileState.tile
       : (resolvedBrandTileCache.get(styleCacheKey) ?? null);
 
+  const shadowLayout = useMemo(
+    () => (hasShadowCompositor ? computeBrandIconShadowLayout(requestSize, dpr) : null),
+    [hasShadowCompositor, requestSize, dpr],
+  );
+
   const placeholderUri = useMemo(() => {
     const base = getBrandPlaceholderUri(placeholderGlyphKindForBrand(kind), style);
-    return hasShadowCompositor ? padPlaceholderSvgForBleed(base, DEFAULT_GPUI_SHADOW_BLEED) : base;
-  }, [hasShadowCompositor, kind, style]);
+    return shadowLayout ? padPlaceholderSvgForShadowLayout(base, shadowLayout) : base;
+  }, [shadowLayout, kind, style]);
 
   useEffect(() => {
     const cached = resolvedBrandTileCache.get(styleCacheKey);
@@ -360,6 +356,7 @@ export const BrandIcon = memo(function BrandIcon({
           requestSize,
           style,
           themeDark,
+          dpr,
           hintPayload,
           brandIcons,
         );
@@ -383,6 +380,7 @@ export const BrandIcon = memo(function BrandIcon({
     requestSize,
     style,
     themeDark,
+    dpr,
     brandIcons,
     hintName,
     hintRepoUrl,
@@ -403,10 +401,17 @@ export const BrandIcon = memo(function BrandIcon({
     .filter(Boolean)
     .join(' ');
 
-  const bleedFraction = hasShadowCompositor
-    ? (tile?.shadowBleedFraction ?? DEFAULT_GPUI_SHADOW_BLEED)
+  const tileVisualSize = requestSize * TILE_COMPENSATION_SCALE;
+  const gpuiTotalSize = !isDom
+    ? tile
+      ? (tile.shadowDisplaySizePt ??
+        (tile.shadowBleedFraction !== undefined
+          ? requestSize * (1 + tile.shadowBleedFraction * 2)
+          : tileVisualSize))
+      : (shadowLayout?.displaySizePt ?? tileVisualSize)
     : 0;
-  const bleedPx = bleedFraction > 0 ? requestSize * bleedFraction : 0;
+  const gpuiInsetOffset = gpuiTotalSize > 0 ? (gpuiTotalSize - requestSize) / 2 : 0;
+  const inheritDomBox = isDom && size === undefined;
 
   return (
     <Box
@@ -419,8 +424,16 @@ export const BrandIcon = memo(function BrandIcon({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: isDom && size === undefined ? pct(100) : px(requestSize),
-          height: isDom && size === undefined ? pct(100) : px(requestSize),
+          width: inheritDomBox ? pct(100) : px(requestSize),
+          height: inheritDomBox ? pct(100) : px(requestSize),
+          ...(inheritDomBox
+            ? {}
+            : {
+                minWidth: px(requestSize),
+                minHeight: px(requestSize),
+                maxWidth: px(requestSize),
+                maxHeight: px(requestSize),
+              }),
           flexShrink: 0,
           overflow: 'visible',
         },
@@ -435,13 +448,15 @@ export const BrandIcon = memo(function BrandIcon({
         transitionMs={140}
         dropShadow={isDom ? (themeDark ? DARK_TILE_SHADOW : LIGHT_TILE_SHADOW) : undefined}
         style={
-          bleedPx > 0
+          gpuiTotalSize > 0
             ? {
                 layout: {
                   position: 'absolute',
-                  inset: insets(-bleedPx),
-                  width: px(requestSize + bleedPx * 2),
-                  height: px(requestSize + bleedPx * 2),
+                  inset: { top: px(-gpuiInsetOffset), left: px(-gpuiInsetOffset) },
+                  width: px(gpuiTotalSize),
+                  height: px(gpuiTotalSize),
+                  maxWidth: px(gpuiTotalSize),
+                  maxHeight: px(gpuiTotalSize),
                   flexShrink: 0,
                 },
                 opacity: tile ? 1 : 0.92,
@@ -449,11 +464,16 @@ export const BrandIcon = memo(function BrandIcon({
               }
             : {
                 layout: {
-                  width: pct(100),
-                  height: pct(100),
+                  position: 'absolute',
+                  inset: { top: pct(-DOM_TILE_INSET_PCT), left: pct(-DOM_TILE_INSET_PCT) },
+                  width: pct(DOM_TILE_PCT),
+                  height: pct(DOM_TILE_PCT),
+                  maxWidth: pct(DOM_TILE_PCT),
+                  maxHeight: pct(DOM_TILE_PCT),
                   flexShrink: 0,
                 },
                 opacity: tile ? 1 : 0.92,
+                pointerEvents: 'none',
               }
         }
       />

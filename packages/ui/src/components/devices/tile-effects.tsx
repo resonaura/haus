@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { LightEffectMotion, LightEffectOption } from '@haus/core/device';
 import {
   corners,
@@ -18,10 +18,13 @@ import { useHausUi } from '../../primitives/context.js';
 import { Box, Pressable, Text } from '../../primitives/elements.js';
 import {
   buildTileIconOrbStyle,
+  buildWashTransitionMotion,
   effectMotionFor,
   getDeviceTileTokens,
   orbEffectMotion,
   parseCssColor,
+  WASH_ACTIVATE_MS,
+  WASH_DEACTIVATE_MS,
 } from './tile-theme.js';
 
 function effectRadialLayer(
@@ -156,6 +159,20 @@ function effectWashContent(
   }
 }
 
+type WashPhase = 'idle-off' | 'activating' | 'steady-on' | 'deactivating';
+
+const WASH_CLIP_STYLE: UiStyleSpec = {
+  layout: {
+    position: 'absolute',
+    inset: insets(0),
+    width: pct(100),
+    height: pct(100),
+    overflow: 'hidden',
+  },
+  corners: corners(25),
+  pointerEvents: 'none',
+};
+
 export function DeviceTileWash({
   active,
   deviceColor,
@@ -165,37 +182,74 @@ export function DeviceTileWash({
   readonly deviceColor: ColorValue;
   readonly effect?: LightEffectOption;
 }) {
-  const { theme } = useHausUi();
+  const { theme, viewport } = useHausUi();
   const tokens = getDeviceTileTokens(theme.mode);
+  const [prevActive, setPrevActive] = useState(active);
+  const [phase, setPhase] = useState<WashPhase>(() => (active ? 'steady-on' : 'idle-off'));
+  const [seq, setSeq] = useState(0);
   const [outputColor, setOutputColor] = useState(deviceColor);
   const currentKey = JSON.stringify(deviceColor);
   const retainedKey = JSON.stringify(outputColor);
   if (active && currentKey !== retainedKey) {
     setOutputColor(deviceColor);
   }
-  const activeColor = active ? deviceColor : outputColor;
-  const dynamicEffect = active && effect && !effect.isStatic && effect.motion !== 'none';
+  if (active !== prevActive) {
+    setPrevActive(active);
+    setSeq((n) => n + 1);
+    setPhase(
+      viewport.reducedMotion
+        ? active
+          ? 'steady-on'
+          : 'idle-off'
+        : active
+          ? 'activating'
+          : 'deactivating',
+    );
+  }
 
-  return (
-    <Box
-      ariaHidden
-      style={{
-        layout: {
-          position: 'absolute',
-          inset: insets(0),
-          width: pct(100),
-          height: pct(100),
-          overflow: 'hidden',
-        },
-        corners: corners(25),
-        pointerEvents: 'none',
-      }}
-    >
-      {dynamicEffect ? (
+  useEffect(() => {
+    if (phase !== 'activating' && phase !== 'deactivating') return;
+    const ms = (phase === 'activating' ? WASH_ACTIVATE_MS : WASH_DEACTIVATE_MS) + 24;
+    const timer = setTimeout(() => {
+      setPhase((current) => {
+        if (current === 'activating') return 'steady-on';
+        if (current === 'deactivating') return 'idle-off';
+        return current;
+      });
+    }, ms);
+    return () => clearTimeout(timer);
+  }, [phase, seq]);
+
+  const activeColor = active ? deviceColor : outputColor;
+  const washMaterial = useMemo(
+    () =>
+      new GradientMaterial(
+        [
+          { offset: 0, color: mixColor(transparentColor, activeColor, tokens.deviceWash) },
+          { offset: 0.58, color: mixColor(transparentColor, activeColor, 0.06) },
+          { offset: 1, color: transparentColor },
+        ],
+        0,
+        'radial',
+        undefined,
+        { centerX: 0, centerY: 0, shape: 'ellipse' },
+      ),
+    [activeColor, tokens.deviceWash],
+  );
+
+  // Idle OFF culling: zero scene-graph nodes, zero gradients, and zero GPU cost when off at rest.
+  if (phase === 'idle-off' && !active) {
+    return null;
+  }
+
+  const dynamicEffect = active && effect && !effect.isStatic && effect.motion !== 'none';
+  if (dynamicEffect) {
+    return (
+      <Box ariaHidden className="device-tile-wash" style={WASH_CLIP_STYLE}>
         <Box
           key={`fx-${effect.motion}`}
           ariaHidden
-          motion={effectMotionFor(effect.motion)}
+          motion={effectMotionFor(effect.motion, viewport.reducedTransparency)}
           style={{
             layout: {
               position: 'absolute',
@@ -209,47 +263,47 @@ export function DeviceTileWash({
         >
           {effectWashContent(effect, activeColor, tokens.deviceWash)}
         </Box>
-      ) : (
-        <Box
-          ariaHidden
-          motion={{
-            initial: false,
-            animate: {
-              opacity: active ? 1 : 0,
-              scale: active ? 1 : 0.82,
-            },
-            originX: 0.12,
-            originY: 0.19,
-            durationMs: 520,
-            propertyDurationsMs: { opacity: 480, transform: 580 },
-            propertyEases: {
-              opacity: [0.2, 0.7, 0.2, 1],
-              transform: [0.16, 1, 0.3, 1],
-            },
-          }}
-          style={{
-            layout: {
-              position: 'absolute',
-              inset: insets(0),
-              width: pct(100),
-              height: pct(100),
-            },
-            corners: corners(25),
-            pointerEvents: 'none',
-            material: new GradientMaterial(
-              [
-                { offset: 0, color: mixColor(transparentColor, activeColor, tokens.deviceWash) },
-                { offset: 0.58, color: mixColor(transparentColor, activeColor, 0.06) },
-                { offset: 1, color: transparentColor },
-              ],
-              0,
-              'radial',
-              undefined,
-              { centerX: 0, centerY: 0, shape: 'ellipse' },
-            ),
-          }}
-        />
-      )}
+      </Box>
+    );
+  }
+
+  // Steady ON fast-path: single unblurred node (blur: 0, no motion controller) during resting scroll.
+  if (phase === 'steady-on') {
+    return (
+      <Box
+        ariaHidden
+        className="device-tile-wash"
+        style={{
+          ...WASH_CLIP_STYLE,
+          material: washMaterial,
+        }}
+      />
+    );
+  }
+
+  const transitionMotion = buildWashTransitionMotion(
+    phase === 'activating',
+    viewport.reducedTransparency,
+  );
+
+  return (
+    <Box ariaHidden className="device-tile-wash" style={WASH_CLIP_STYLE}>
+      <Box
+        ariaHidden
+        className="device-tile-wash-inner"
+        motion={transitionMotion}
+        style={{
+          layout: {
+            position: 'absolute',
+            inset: insets(0),
+            width: pct(100),
+            height: pct(100),
+          },
+          corners: corners(25),
+          pointerEvents: 'none',
+          material: washMaterial,
+        }}
+      />
     </Box>
   );
 }

@@ -50,18 +50,23 @@ export interface DiscoveredFlowItem {
   readonly handler: string;
   readonly title: string;
   readonly source?: string;
+  readonly entry_id?: string;
 }
 
 export interface RepairIssueRecord {
   readonly domain: string;
   readonly issue_id: string;
+  readonly issue_domain?: string;
   readonly severity?: string;
   readonly translation_key?: string;
   readonly title?: string;
   readonly description?: string;
   readonly ignored?: boolean;
+  readonly is_fixable?: boolean;
+  readonly learn_more_url?: string;
   readonly created?: string;
   readonly sourceLabel?: string;
+  readonly entryId?: string;
 }
 
 export type UpdateCategory =
@@ -164,14 +169,63 @@ export function formatRelativeAge(iso?: string, nowMs = Date.now()): string | un
   return `${Math.floor(diffDays / 7)}w ago`;
 }
 
+export function findAttentionFlow(
+  entry: Pick<IntegrationEntryRecord, 'entry_id' | 'domain'>,
+  progress: readonly DiscoveredFlowItem[],
+): DiscoveredFlowItem | undefined {
+  return progress.find(
+    (flow) =>
+      flow.handler === entry.domain &&
+      flow.entry_id === entry.entry_id &&
+      (flow.source === 'reauth' || flow.source === 'reconfigure'),
+  );
+}
+
+export function entryNeedsAttention(
+  entry: IntegrationEntryRecord,
+  progress: readonly DiscoveredFlowItem[] = [],
+): boolean {
+  if (entry.disabled_by) return false;
+  return ERROR_STATES.has(entry.state) || Boolean(findAttentionFlow(entry, progress));
+}
+
+export function filterIssuesForDomain(
+  issues: readonly RepairIssueRecord[],
+  domain: string,
+): RepairIssueRecord[] {
+  const family = integrationFamilyKey(domain);
+  return issues.filter(
+    (issue) =>
+      integrationFamilyKey(issue.domain) === family ||
+      (issue.issue_domain ? integrationFamilyKey(issue.issue_domain) === family : false),
+  );
+}
+
+export function buildRepairFlowTarget(issue: RepairIssueRecord, title?: string) {
+  return {
+    domain: issue.domain,
+    title: title || issue.sourceLabel || humanizeIdentifier(issue.domain),
+    repair: {
+      domain: issue.domain,
+      issue_id: issue.issue_id,
+      ...(issue.translation_key ? { translation_key: issue.translation_key } : {}),
+    },
+  } as const;
+}
+
 export function isIntegrationEntryIssue(
   entry: IntegrationEntryRecord,
   issues: readonly RepairIssueRecord[],
+  progress: readonly DiscoveredFlowItem[] = [],
 ): boolean {
-  if (ERROR_STATES.has(entry.state)) return true;
+  if (entryNeedsAttention(entry, progress)) return true;
+  if (entry.disabled_by) return false;
   const entryFamily = integrationFamilyKey(entry.domain);
   return issues.some(
-    (issue) => !issue.ignored && integrationFamilyKey(issue.domain) === entryFamily,
+    (issue) =>
+      !issue.ignored &&
+      (integrationFamilyKey(issue.domain) === entryFamily ||
+        (issue.issue_domain ? integrationFamilyKey(issue.issue_domain) === entryFamily : false)),
   );
 }
 
@@ -230,13 +284,7 @@ export function countIntegrationFilters(
     if (entry.disabled_by) disabled += 1;
     if (isIntegrationEntryIssue(entry, issues)) issueCount += 1;
   }
-  return {
-    all: entries.length,
-    discovered: discoveredCount,
-    loaded,
-    issues: issueCount,
-    disabled,
-  };
+  return { all: entries.length, discovered: discoveredCount, loaded, issues: issueCount, disabled };
 }
 
 export function filterUpdates(
@@ -248,11 +296,10 @@ export function filterUpdates(
     if (filter === 'firmware') return item.category === 'firmware';
     if (filter === 'core_addon') return item.category === 'core' || item.category === 'addon';
     if (filter === 'hacs') return item.category === 'hacs' || item.category === 'integration';
-    if (filter === 'bridges') {
+    if (filter === 'bridges')
       return (
         item.category === 'homebridge' || item.category === 'scrypted' || item.category === 'plugin'
       );
-    }
     return true;
   });
 }
@@ -435,8 +482,11 @@ export function buildDemoIntegrationsState(): DemoIntegrationsState {
         severity: 'warning',
         title: 'Zigbee channel overlaps 2.4 GHz Wi-Fi',
         description: 'Moving the mesh to channel 25 reduces packet retries.',
+        is_fixable: true,
+        learn_more_url: 'https://www.home-assistant.io/integrations/zha',
         created: '2026-11-23T18:00:00Z',
         sourceLabel: 'Zigbee Home',
+        entryId: 'zigbee-main',
       },
     ],
     updates,

@@ -75,6 +75,10 @@ interface DockerImageInspectResponse {
 }
 
 interface DockerProgressResponse {
+  id?: string;
+  status?: string;
+  progress?: string;
+  stream?: string;
   error?: string;
   errorDetail?: { message?: string };
   progressDetail?: { current?: number; total?: number };
@@ -202,6 +206,7 @@ export class DockerSocket implements DockerPort, DockerImageEngine, DockerLogStr
       let settled = false;
       let pending = '';
       let bytes = 0;
+      const seenLayerStatus = new Map<string, string>();
       const fail = (error: Error) => {
         if (settled) return;
         settled = true;
@@ -211,7 +216,7 @@ export class DockerSocket implements DockerPort, DockerImageEngine, DockerLogStr
         if (settled) return;
         if (pending.trim()) {
           try {
-            this.readProgressLine(pending, operation, onProgress);
+            this.readProgressLine(pending, operation, onProgress, seenLayerStatus);
           } catch (error) {
             fail(error instanceof Error ? error : Error(errorCode));
             return;
@@ -254,7 +259,7 @@ export class DockerSocket implements DockerPort, DockerImageEngine, DockerLogStr
             pending = lines.pop() ?? '';
             for (const line of lines) {
               try {
-                this.readProgressLine(line, operation, onProgress);
+                this.readProgressLine(line, operation, onProgress, seenLayerStatus);
               } catch (error) {
                 fail(error instanceof Error ? error : Error(errorCode));
                 req.destroy();
@@ -279,6 +284,7 @@ export class DockerSocket implements DockerPort, DockerImageEngine, DockerLogStr
     line: string,
     operation: 'pull' | 'build',
     onProgress: (progress: DockerImageProgress) => void,
+    seenLayerStatus: Map<string, string>,
   ): void {
     if (!line.trim()) return;
     let event: DockerProgressResponse;
@@ -292,12 +298,39 @@ export class DockerSocket implements DockerPort, DockerImageEngine, DockerLogStr
     }
     const current = event.progressDetail?.current;
     const total = event.progressDetail?.total;
-    if (
+    const validNumbers =
       (current === undefined || (Number.isFinite(current) && current >= 0)) &&
       (total === undefined || (Number.isFinite(total) && total >= 0)) &&
-      (current !== undefined || total !== undefined)
-    ) {
-      onProgress({ current, total });
+      (current !== undefined || total !== undefined);
+
+    const statusText = typeof event.status === 'string' ? event.status.trim() : '';
+    const layerId = typeof event.id === 'string' ? event.id.trim() : '';
+    const streamText = typeof event.stream === 'string' ? event.stream.trim() : '';
+    let logLine: string | undefined;
+    let detail: string | undefined;
+
+    if (streamText) {
+      detail = streamText.slice(0, 140);
+      logLine = streamText;
+    } else if (statusText) {
+      detail = layerId ? `${layerId}: ${statusText}` : statusText;
+      const key = layerId || '__global__';
+      if (seenLayerStatus.get(key) !== statusText) {
+        seenLayerStatus.set(key, statusText);
+        if (!/^(?:Downloading|Extracting)$/i.test(statusText) || !layerId) {
+          logLine = detail;
+        } else {
+          logLine = `${layerId}: ${statusText}…`;
+        }
+      }
+    }
+
+    if (validNumbers || detail || logLine) {
+      onProgress({
+        ...(validNumbers ? { current, total } : {}),
+        ...(detail ? { detail } : {}),
+        ...(logLine ? { logLine } : {}),
+      });
     }
   }
 

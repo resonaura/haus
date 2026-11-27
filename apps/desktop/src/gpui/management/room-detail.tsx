@@ -36,7 +36,11 @@ export function GpuiRoomDetailView({
   readonly home: ReturnType<typeof homeDashboard>;
   readonly renderDevices: (devices: readonly HomeDevice[]) => ReactNode;
   readonly renderCameras: (cameras: typeof home.cameras) => ReactNode;
-  readonly renderScenes: (scenes: readonly HassEntity[], showAccessoryCount?: boolean) => ReactNode;
+  readonly renderScenes: (
+    scenes: readonly HassEntity[],
+    showAccessoryCount?: boolean,
+    horizontal?: boolean,
+  ) => ReactNode;
   readonly onGo: (route: HomeRoute) => void;
 }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -107,7 +111,7 @@ export function GpuiRoomDetailView({
               All scenes
             </HausButton>
           </Row>
-          {renderScenes(roomScenes)}
+          {renderScenes(roomScenes, true, true)}
         </Stack>
       )}
 

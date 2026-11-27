@@ -168,6 +168,7 @@ export class DefaultPreferencesService implements IPreferencesService, OnModuleD
     this.value = next.value;
     this.updatedAt = next.updatedAt;
     this.liveService?.setRevision(next.revision);
+    this.liveService?.publish('preferences');
     for (const listener of this.listeners) {
       try {
         listener();

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import type { DiscoveredHomeTargetType } from '@haus/core/pairing';
 import type { ScanResult } from '@dawidzawada/bonjour-zeroconf';
 import { normalizeHaBaseUrl } from '../storage/mobile-persistence.js';
 
@@ -10,6 +11,16 @@ export interface LocalHomeCandidate {
   host: string;
   port: number;
   kind?: 'haus-hub' | 'home-assistant';
+  targetType?: DiscoveredHomeTargetType;
+  hubId?: string;
+  homeId?: string;
+  homeName?: string;
+  onboarded?: boolean;
+  clusterRole?: 'standalone' | 'coordinator' | 'node' | 'fenced';
+  coordinatorHubId?: string;
+  hubCount?: number;
+  memberUrls?: readonly string[];
+  memberNames?: readonly string[];
 }
 
 function ipv4Parts(value: string): number[] | undefined {
@@ -100,7 +111,23 @@ export function parseLocalHausHubService(service: ScanResult): LocalHomeCandidat
         ? safeServiceName(service.name)
         : 'Haus Hub';
     const name = rawName || 'Haus Hub';
-    return { id: `haus-hub:${url}`, name, url, host, port, kind: 'haus-hub' };
+    const txt =
+      'txt' in service && service.txt && typeof service.txt === 'object'
+        ? (service.txt as Record<string, unknown>)
+        : undefined;
+    const hubId = typeof txt?.hubId === 'string' && txt.hubId.trim() ? txt.hubId.trim() : undefined;
+    const homeId =
+      typeof txt?.homeId === 'string' && txt.homeId.trim() ? txt.homeId.trim() : undefined;
+    return {
+      id: `haus-hub:${url}`,
+      name,
+      url,
+      host,
+      port,
+      kind: 'haus-hub',
+      ...(hubId ? { hubId } : {}),
+      ...(homeId ? { homeId } : {}),
+    };
   } catch {
     return undefined;
   }

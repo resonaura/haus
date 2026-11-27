@@ -39,14 +39,24 @@ const UPDATE_TABS: readonly { readonly id: UpdatesFilterId; readonly label: stri
 export function RepairsPanelView({
   issues,
   busy,
+  canManage = true,
+  formatDomain = humanizeIdentifier,
   onBack,
+  onFix,
+  onOpenExternal,
   onToggleIgnore,
 }: {
   readonly issues: readonly RepairIssueRecord[];
   readonly busy: boolean;
+  readonly canManage?: boolean;
+  readonly formatDomain?: (domain: string) => string;
   readonly onBack: () => void;
+  readonly onFix?: (issue: RepairIssueRecord) => void;
+  readonly onOpenExternal?: (url: string) => void;
   readonly onToggleIgnore: (issue: RepairIssueRecord, ignore: boolean) => void;
 }) {
+  const { theme } = useHausUi();
+  const primaryFg = theme.mode === 'dark' ? '#101010' : '#ffffff';
   const [showIgnored, setShowIgnored] = useState(false);
   const ignoredCount = issues.filter((item) => item.ignored).length;
   const visible = issues.filter((item) => (showIgnored ? true : !item.ignored));
@@ -90,13 +100,18 @@ export function RepairsPanelView({
             const age = formatRelativeAge(issue.created);
             const severity = humanizeIdentifier(issue.severity ?? 'warning');
             const isCritical = issue.severity === 'error' || issue.severity === 'critical';
+            const source = issue.sourceLabel || formatDomain(issue.domain);
+            const canFix = Boolean(
+              canManage && onFix && issue.is_fixable !== false && !issue.ignored,
+            );
             return (
               <ManagementGlassCard
                 key={`${issue.domain}:${issue.issue_id}`}
+                id={`repair-card-${issue.domain}-${issue.issue_id}`}
                 radius={20}
-                padding={insets(14, 16)}
+                padding={insets(16, 18)}
                 attention={!issue.ignored}
-                style={{ layout: { width: pct(100) } }}
+                style={{ layout: { width: pct(100) }, opacity: issue.ignored ? 0.68 : 1 }}
               >
                 <Row
                   align="center"
@@ -107,13 +122,13 @@ export function RepairsPanelView({
                 >
                   <Row
                     align="center"
-                    gapPx={12}
-                    style={{ layout: { flexGrow: 1, minWidth: px(220) } }}
+                    gapPx={14}
+                    style={{ layout: { flexGrow: 1, minWidth: px(240) } }}
                   >
                     <BrandIcon
                       kind="integration"
                       id={issue.domain}
-                      size={40}
+                      size={44}
                       hint={issue.sourceLabel ? { name: issue.sourceLabel } : undefined}
                     />
                     <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
@@ -124,28 +139,65 @@ export function RepairsPanelView({
                         <ManagementStatusPill
                           label={severity}
                           tone={isCritical ? 'danger' : 'warning'}
+                          showDot
                         />
-                        {age && (
-                          <Text size={11} tone="muted">
-                            {age}
-                          </Text>
-                        )}
+                        {issue.ignored && <ManagementStatusPill label="Ignored" tone="neutral" />}
                       </Row>
                       {issue.description && (
-                        <Text size={12} tone="muted">
+                        <Text
+                          size={12.5}
+                          tone="muted"
+                          style={{ typography: { size: 12.5, lineHeight: 1.4 } }}
+                        >
                           {issue.description}
                         </Text>
                       )}
+                      <Text size={11.5} tone="muted">
+                        {age ? `${source} · Reported ${age}` : source}
+                      </Text>
                     </Stack>
                   </Row>
-                  <HausButton
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onPress={() => onToggleIgnore(issue, !issue.ignored)}
-                  >
-                    <Text size={12}>{issue.ignored ? 'Restore' : 'Ignore'}</Text>
-                  </HausButton>
+                  <Row align="center" gapPx={8} wrap style={{ layout: { flexShrink: 0 } }}>
+                    {issue.learn_more_url && onOpenExternal && (
+                      <HausButton
+                        id={`repair-docs-${issue.issue_id}`}
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => onOpenExternal(issue.learn_more_url!)}
+                      >
+                        <Text size={12}>Docs</Text>
+                        <UiIcon name="external-link" size={13} />
+                      </HausButton>
+                    )}
+                    <HausButton
+                      id={`repair-ignore-${issue.issue_id}`}
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onPress={() => onToggleIgnore(issue, !issue.ignored)}
+                    >
+                      <Text size={12}>{issue.ignored ? 'Restore' : 'Ignore'}</Text>
+                    </HausButton>
+                    {canFix && (
+                      <HausButton
+                        id={`repair-fix-${issue.issue_id}`}
+                        variant="primary"
+                        size="sm"
+                        disabled={busy}
+                        onPress={() => onFix?.(issue)}
+                      >
+                        <UiIcon name="wrench" size={13} color={primaryFg} />
+                        <Text
+                          size={12}
+                          style={{
+                            typography: { color: colorToken('accentForeground'), weight: 600 },
+                          }}
+                        >
+                          Fix
+                        </Text>
+                      </HausButton>
+                    )}
+                  </Row>
                 </Row>
               </ManagementGlassCard>
             );
@@ -274,8 +326,8 @@ export function UpdatesPanelView({
                     <Box
                       style={{
                         layout: {
-                          width: px(40),
-                          height: px(40),
+                          width: px(42),
+                          height: px(42),
                           alignItems: 'center',
                           justifyContent: 'center',
                           flexShrink: 0,
@@ -285,13 +337,13 @@ export function UpdatesPanelView({
                         corners: corners(11),
                       }}
                     >
-                      <UiIcon name="arrow-up-circle" size={19} />
+                      <UiIcon name="arrow-up-circle" size={20} />
                     </Box>
                   ) : (
                     <BrandIcon
                       kind={item.category === 'firmware' ? 'integration' : item.category}
                       id={item.domain}
-                      size={40}
+                      size={42}
                       hint={{ name: item.title, category: item.category }}
                     />
                   )}

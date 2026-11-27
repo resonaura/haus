@@ -9,7 +9,13 @@ import { createDeviceActions } from '../features/devices/device-actions';
 import { useAccessoryContextMenu } from '../features/devices/useAccessoryContextMenu';
 import * as features from './deferred-features';
 import { usePairingRequests } from '../features/pairing';
-import { Deferred, Section, EmptyState as Empty } from '@haus/ui/components';
+import {
+  Deferred,
+  EmptyState as Empty,
+  HausComponentStoryboard,
+  isStoryboardToggleShortcut,
+  Section,
+} from '@haus/ui/components';
 import { AppNotifications } from '../components/ui/AppNotifications';
 import { AccessoryGrid } from '../features/devices/AccessoryGrid';
 import { DeviceGroups } from '../features/devices/DeviceGroups';
@@ -124,6 +130,7 @@ export function App() {
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [storyboardMode, setStoryboardMode] = useState<'closed' | 'pinned' | 'peek'>('closed');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useNativeSidebar(sidebarOpen);
   useModalMaterial();
@@ -237,21 +244,46 @@ export function App() {
     setRoomCategory(null);
   }, [route]);
   useEffect(() => {
-    const listener = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'u') {
+        event.preventDefault();
+        setStoryboardMode((prev) => (prev === 'closed' ? 'pinned' : 'closed'));
+        return;
+      }
+      if (event.altKey && (event.code === 'Backquote' || event.key === '`' || event.key === '~')) {
+        if (!event.repeat) {
+          event.preventDefault();
+          setStoryboardMode((prev) => (prev === 'closed' ? 'peek' : prev));
+        }
+        return;
+      }
+      if (isStoryboardToggleShortcut(event)) {
+        event.preventDefault();
+        setStoryboardMode((prev) => (prev === 'closed' ? 'pinned' : 'closed'));
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setSearchOpen((prev) => !prev);
         setTimeout(() => document.querySelector<HTMLInputElement>('.spotlight-input')?.focus(), 30);
       }
       if (event.key === 'Escape') {
+        setStoryboardMode('closed');
         closeContextMenu();
         setSearchOpen(false);
         setSearchQuery('');
       }
     };
-    window.addEventListener('keydown', listener);
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Backquote' || event.key === '`' || event.key === '~' || event.key === 'Alt') {
+        setStoryboardMode((prev) => (prev === 'peek' ? 'closed' : prev));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
     return () => {
-      window.removeEventListener('keydown', listener);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
     };
   }, [closeContextMenu]);
   const sourceAccessories = route.kind === 'hidden' ? hiddenAccessories : visibleAccessories;
@@ -1244,6 +1276,13 @@ export function App() {
         <Deferred overlay>
           <features.PairingRequestDialog request={activePairing} onDismiss={dismissPairing} />
         </Deferred>
+      )}
+      {storyboardMode !== 'closed' && (
+        <HausComponentStoryboard
+          rendererName="Electron React-DOM"
+          peekMode={storyboardMode === 'peek'}
+          onClose={() => setStoryboardMode('closed')}
+        />
       )}
       <AppNotifications notifications={haus.notifications} />
       {contextMenu && (

@@ -6,8 +6,7 @@
  */
 
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { PreferenceSync, type SharedDocument } from '@haus/ha/view/settings/sync';
-import { sharedPreferences } from '@haus/ha/view/settings/shared';
+import { PreferenceSync, sharedPreferences, type SharedDocument } from '@haus/core/preferences';
 import { sanitizePreferences, defaults, type Preferences } from '../model/preferences';
 export const readPreferences = (): Preferences => {
   try {

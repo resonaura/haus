@@ -12,3 +12,4 @@ export * from './liquid-glass-shader.js';
 export * from './materials.js';
 export * from './motion.js';
 export * from './node.js';
+export * from './theme.js';

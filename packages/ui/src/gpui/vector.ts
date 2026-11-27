@@ -16,9 +16,17 @@ function normalizePaint(paint: string | undefined, fallback: string): string {
  * into standalone SVG markup so GPUI's native `<svg>` element renders sparklines,
  * DuoBar gauges, and charts without falling back to empty boxes.
  */
+const RAW_SVG_CACHE = new Map<string, string>();
+const MAX_RAW_SVG_CACHE = 512;
+
 export function buildGpuiSvgSource(props: HostVectorProps): string | undefined {
   if (props.rawSvgMarkup) {
-    return props.rawSvgMarkup.replaceAll('="currentColor"', '="#000"');
+    const cached = RAW_SVG_CACHE.get(props.rawSvgMarkup);
+    if (cached !== undefined) return cached;
+    const normalized = props.rawSvgMarkup.replaceAll('="currentColor"', '="#000"');
+    if (RAW_SVG_CACHE.size >= MAX_RAW_SVG_CACHE) RAW_SVG_CACHE.clear();
+    RAW_SVG_CACHE.set(props.rawSvgMarkup, normalized);
+    return normalized;
   }
   const hasShapes =
     Boolean(props.paths?.length) ||
@@ -53,13 +61,21 @@ export function buildGpuiSvgSource(props: HostVectorProps): string | undefined {
   }
   for (const path of props.paths ?? []) {
     if (!path.d) continue;
+    const effectiveFill = path.fill ?? props.fill;
+    const hasFill = Boolean(effectiveFill && effectiveFill !== 'none');
+    const rawStroke = path.stroke ?? props.stroke;
+    const effectiveStroke = rawStroke ?? (hasFill ? 'none' : '#000');
     const attrs = [
       `d="${escapeAttr(path.d)}"`,
-      `fill="${escapeAttr(normalizePaint(path.fill, 'none'))}"`,
-      `stroke="${escapeAttr(normalizePaint(path.stroke ?? props.stroke, '#000'))}"`,
-      `stroke-width="${path.strokeWidth ?? props.strokeWidth ?? 1.5}"`,
-      `stroke-linecap="${path.strokeLinecap ?? 'round'}"`,
-      `stroke-linejoin="${path.strokeLinejoin ?? 'round'}"`,
+      `fill="${escapeAttr(normalizePaint(effectiveFill, 'none'))}"`,
+      `stroke="${escapeAttr(normalizePaint(effectiveStroke, 'none'))}"`,
+      ...(effectiveStroke !== 'none'
+        ? [
+            `stroke-width="${path.strokeWidth ?? props.strokeWidth ?? 1.5}"`,
+            `stroke-linecap="${path.strokeLinecap ?? 'round'}"`,
+            `stroke-linejoin="${path.strokeLinejoin ?? 'round'}"`,
+          ]
+        : []),
       path.opacity !== undefined ? `opacity="${path.opacity}"` : '',
     ]
       .filter(Boolean)

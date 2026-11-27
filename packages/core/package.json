@@ -149,6 +149,36 @@
       "react-native": "./src/transport/index.ts",
       "development": "./src/transport/index.ts",
       "default": "./dist/transport/index.js"
+    },
+    "./hub": {
+      "types": "./src/hub/index.ts",
+      "react-native": "./src/hub/index.ts",
+      "development": "./src/hub/index.ts",
+      "default": "./dist/hub/index.js"
+    },
+    "./servers": {
+      "types": "./src/servers/index.ts",
+      "react-native": "./src/servers/index.ts",
+      "development": "./src/servers/index.ts",
+      "default": "./dist/servers/index.js"
+    },
+    "./preferences": {
+      "types": "./src/preferences/index.ts",
+      "react-native": "./src/preferences/index.ts",
+      "development": "./src/preferences/index.ts",
+      "default": "./dist/preferences/index.js"
+    },
+    "./optimistic": {
+      "types": "./src/optimistic/index.ts",
+      "react-native": "./src/optimistic/index.ts",
+      "development": "./src/optimistic/index.ts",
+      "default": "./dist/optimistic/index.js"
+    },
+    "./brands": {
+      "types": "./src/brands/index.ts",
+      "react-native": "./src/brands/index.ts",
+      "development": "./src/brands/index.ts",
+      "default": "./dist/brands/index.js"
     }
   },
   "scripts": {

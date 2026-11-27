@@ -115,16 +115,20 @@ export class ClusterTransferManager implements OnModuleInit {
   }
 
   isFenced(): boolean {
+    if (this.hydrated && this.stateStore) {
+      const state = this.stateStore.getStateSync();
+      return state.fenced || state.role === 'fenced';
+    }
     return this.fenced;
   }
 
   assertNotFenced(): void {
-    if (this.fenced) {
+    if (this.isFenced()) {
       throw new HttpException(
         {
           error: 'coordinator_fenced',
           message: 'Coordinator is fenced during Hub transfer; mutations are prohibited',
-          transferId: this.activeTransferId,
+          transferId: this.activeTransferId ?? this.stateStore?.getStateSync().fencedReason,
         },
         HttpStatus.FORBIDDEN,
       );
@@ -132,15 +136,25 @@ export class ClusterTransferManager implements OnModuleInit {
   }
 
   getEpoch(): number {
+    if (this.hydrated && this.stateStore) {
+      return Math.max(this.coordinatorEpoch, this.stateStore.getStateSync().coordinatorEpoch);
+    }
     return this.coordinatorEpoch;
   }
 
   getRole(): 'coordinator' | 'node' | 'fenced' {
-    if (this.fenced) return 'fenced';
+    if (this.isFenced()) return 'fenced';
+    if (this.hydrated && this.stateStore) {
+      const role = this.stateStore.getStateSync().role;
+      return role === 'node' ? 'node' : 'coordinator';
+    }
     return this.roleOverride ?? 'coordinator';
   }
 
   getCoordinatorId(): string {
+    if (this.hydrated && this.stateStore) {
+      return this.stateStore.getStateSync().coordinatorId;
+    }
     return this.coordinatorIdOverride ?? this.authService?.getIdentity().hubId ?? 'hub-coordinator';
   }
 
@@ -171,15 +185,21 @@ export class ClusterTransferManager implements OnModuleInit {
       throw new HttpException({ error: 'target_cannot_be_self' }, HttpStatus.BAD_REQUEST);
     }
 
-    const homeId = this.authService?.getIdentity().homeId ?? 'home-default';
+    const identity = this.authService?.getIdentity();
+    const homeId = identity?.homeId ?? 'home-default';
     const preservePairing = dto.preservePairing ?? true;
     const transferId = `htx_${Date.now()}_${randomUUID().slice(0, 8)}`;
-    const nextEpoch = this.coordinatorEpoch + 1;
+    const nextEpoch = this.getEpoch() + 1;
+    const rawHubUrl =
+      this.stateStore?.getStateSync().coordinatorUrl ?? this.authService?.getHubUrl();
+    const sourceHubUrl = rawHubUrl && rawHubUrl !== 'http://127.0.0.1:8124' ? rawHubUrl : undefined;
     const manifest = await collectHubTransferManifest({
       source: this.source,
       transferId,
       homeId,
       sourceHubId,
+      sourceHubUrl,
+      sourceHubName: identity?.name,
       targetHubId: dto.targetHubId,
       epoch: nextEpoch,
       preservePairing,
@@ -334,8 +354,9 @@ export class ClusterTransferManager implements OnModuleInit {
     sourceHubId: string,
     targetHubId: string,
     epoch: number,
+    targetArch?: 'arm64' | 'x64',
   ): Promise<void> {
-    await transferWorkloadsOwnership(this.stateStore, sourceHubId, targetHubId, epoch);
+    await transferWorkloadsOwnership(this.stateStore, sourceHubId, targetHubId, epoch, targetArch);
   }
 
   async rollback(transferId: string, reason?: string): Promise<HubTransferRollbackResultDto> {
@@ -415,10 +436,13 @@ export class ClusterTransferManager implements OnModuleInit {
         fenced: false,
         fencedReason: undefined,
       });
+      const localArch =
+        process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : undefined;
       await this.transferLocalWorkloadsOwnership(
         params.previousCoordinatorHubId,
         params.newCoordinatorHubId,
         this.coordinatorEpoch,
+        localArch,
       );
       await this.authService?.loadPersistedSessions();
     }

@@ -106,7 +106,7 @@ const IntegrationCard = memo(function IntegrationCard({
     >
       <Row align="start" justify="between" gapPx={10} style={{ layout: { width: pct(100) } }}>
         <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-          <BrandIcon kind={card.iconKind} id={card.domain} size={44} hint={iconHint} />
+          <BrandIcon kind={card.iconKind} id={card.domain} size={46} hint={iconHint} />
           <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
             <Text
               size={14.5}

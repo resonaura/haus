@@ -5,14 +5,12 @@ import {
   Box,
   HausButton as Button,
   HausMenu,
-  HausScrollArea as ScrollShadow,
   Heading,
   Pressable,
-  SceneCard,
   Text,
   type HausMenuItem,
 } from '@haus/ui';
-import { SceneRooms, ScenesLibraryView } from '@haus/ui/components';
+import { SceneCardCollection, SceneRooms, ScenesLibraryView } from '@haus/ui/components';
 import { groupScenes, sceneCard } from '@haus/ha/view/scene-presentation';
 import { Eye, EyeOff, House, Info, MoreHorizontal, Sparkles } from 'lucide-react';
 import type { HassEntity, HausModel, Snapshot } from '../../model';
@@ -87,9 +85,11 @@ export function SceneCollection({
         .includes(query.toLowerCase()),
   );
 
-  const cards = (items: HassEntity[]) => (
-    <Box className={`scene-collection ${horizontal ? 'scene-collection-rail' : ''}`}>
-      {items.map((scene) => {
+  const cards = (items: HassEntity[], rail = false) => (
+    <SceneCardCollection
+      horizontal={rail}
+      showAccessoryCount={showAccessoryCount}
+      items={items.map((scene) => {
         const card = sceneCard(scene, snapshot, model);
         const { name, source } = card;
         const applying =
@@ -130,55 +130,52 @@ export function SceneCollection({
             onAction: () => onToggleApp(scene),
           },
         ];
-        return (
-          <SceneCard
-            {...card}
-            key={scene.entity_id}
-            applying={applying}
-            completed={completed === scene.entity_id}
-            details={hiddenView}
-            disabled={!hiddenView && (applying || scene.state === 'unavailable')}
-            showAccessoryCount={showAccessoryCount}
-            menuOpen={menuScene === scene.entity_id}
-            onContextOptions={() => setMenuScene(scene.entity_id)}
-            onActivate={() => (hiddenView ? setPreview(scene) : void run(scene))}
-            options={
-              <>
-                <Box className="mood-details-slot">
-                  <HausMenu
-                    open={menuScene === scene.entity_id}
-                    onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
-                    placement="bottom"
-                    items={menuItems}
-                    trigger={
-                      <Button
-                        isIconOnly
-                        variant="ghost"
-                        className="mood-details button"
-                        aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
-                        onPress={() =>
-                          setMenuScene((current) =>
-                            current === scene.entity_id ? '' : scene.entity_id,
-                          )
-                        }
-                      >
-                        <MoreHorizontal size={17} />
-                      </Button>
-                    }
-                  />
-                </Box>
-                {hiddenView && (
-                  <Pressable className="mood-restore" onPress={() => onToggleApp(scene)}>
-                    <Eye size={14} />
-                    Restore to Haus
-                  </Pressable>
-                )}
-              </>
-            }
-          />
-        );
+        return {
+          ...card,
+          entityId: scene.entity_id,
+          applying,
+          completed: completed === scene.entity_id,
+          details: hiddenView,
+          disabled: !hiddenView && (applying || scene.state === 'unavailable'),
+          menuOpen: menuScene === scene.entity_id,
+          onContextOptions: () => setMenuScene(scene.entity_id),
+          onActivate: () => (hiddenView ? setPreview(scene) : void run(scene)),
+          options: (
+            <>
+              <Box className="mood-details-slot">
+                <HausMenu
+                  open={menuScene === scene.entity_id}
+                  onOpenChange={(open) => setMenuScene(open ? scene.entity_id : '')}
+                  placement="bottom"
+                  items={menuItems}
+                  trigger={
+                    <Button
+                      isIconOnly
+                      variant="ghost"
+                      className="mood-details button"
+                      aria-label={`Options for ${name}${source ? `, ${source}` : ''}`}
+                      onPress={() =>
+                        setMenuScene((current) =>
+                          current === scene.entity_id ? '' : scene.entity_id,
+                        )
+                      }
+                    >
+                      <MoreHorizontal size={17} />
+                    </Button>
+                  }
+                />
+              </Box>
+              {hiddenView && (
+                <Pressable className="mood-restore" onPress={() => onToggleApp(scene)}>
+                  <Eye size={14} />
+                  Restore to Haus
+                </Pressable>
+              )}
+            </>
+          ),
+        };
       })}
-    </Box>
+    />
   );
 
   const previewCard = preview && sceneCard(preview, snapshot, model);
@@ -248,13 +245,7 @@ export function SceneCollection({
               {error}
             </Text>
           )}
-          {horizontal ? (
-            <ScrollShadow className="mood-scroll" orientation="horizontal" size={24} hideScrollBar>
-              {cards(filtered)}
-            </ScrollShadow>
-          ) : (
-            cards(filtered)
-          )}
+          {cards(filtered, horizontal)}
           {!filtered.length && (
             <Box className="management-empty">
               <Sparkles size={28} />

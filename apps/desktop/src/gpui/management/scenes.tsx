@@ -1,12 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import {
-  formatSceneTargetSetting,
-  parseRgbColorString,
-  type ManagementPort,
-} from '@haus/core/transport';
-import { lightColor } from '@haus/ha/light-color';
+import type { ManagementPort } from '@haus/core/transport';
 import type { HassEntity, Snapshot } from '@haus/ha/types';
 import { normalizeHome } from '@haus/ha/view/normalize';
 import { groupScenes, sceneCard } from '@haus/ha/view/scene-presentation';
@@ -14,9 +9,9 @@ import {
   SceneDetailsModal,
   SceneRooms,
   ScenesLibraryView,
-  type PortableSceneTargetDetail,
   type SceneScopeOption,
 } from '@haus/ui/components';
+import { buildSceneTargetDetails } from '../../shared/editor-catalog.js';
 import type { GpuiPlatform } from '../platform.js';
 import { availableAction, type homeDashboard } from '../home/model.js';
 import { GpuiConfigEditor } from './config-editor.js';
@@ -41,26 +36,10 @@ export function GpuiScenePreviewModal({
 }) {
   const model = useMemo(() => normalizeHome(snapshot), [snapshot]);
   const card = useMemo(() => sceneCard(scene, snapshot, model), [model, scene, snapshot]);
-
-  const targets: PortableSceneTargetDetail[] = card.targets.map(({ id, setting }) => {
-    const current = snapshot.states.find((s) => s.entity_id === id);
-    const { targetSummary, attributes } = formatSceneTargetSetting(setting);
-    const swatchRgb = attributes
-      ? parseRgbColorString(
-          lightColor({ entity_id: id, state: 'on', attributes, last_changed: '' }),
-        )
-      : undefined;
-    const friendlyName =
-      typeof current?.attributes.friendly_name === 'string' ? current.attributes.friendly_name : id;
-
-    return {
-      id,
-      name: friendlyName,
-      targetSummary,
-      currentState: current?.state ?? 'No live state',
-      swatchRgb,
-    };
-  });
+  const targets = useMemo(
+    () => buildSceneTargetDetails(card.targets, snapshot),
+    [card.targets, snapshot],
+  );
 
   return (
     <SceneDetailsModal

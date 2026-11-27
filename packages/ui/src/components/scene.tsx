@@ -13,7 +13,7 @@ import {
 } from '../ir/geometry.js';
 import { GradientMaterial, SolidMaterial } from '../ir/materials.js';
 import { useHausUi } from '../primitives/context.js';
-import { Box, Pressable, Text } from '../primitives/elements.js';
+import { Box, Pressable, Row, Text } from '../primitives/elements.js';
 import { GlassRim } from '../primitives/glass-rim.js';
 import { resolveColorToCss } from '../renderers/contract.js';
 import { parseCssColor } from './devices/tile-theme.js';
@@ -129,7 +129,7 @@ export function SceneCard({
           direction: 'column',
           width: pct(100),
           minWidth: px(0),
-          minHeight: px(178),
+          minHeight: px(caption ? 148 : 138),
           position: 'relative',
           overflow: 'hidden',
         },
@@ -214,23 +214,6 @@ export function SceneCard({
               ),
             }}
           />
-          {source && (
-            <Box
-              className="scene-source-badge"
-              style={{
-                ...SCENE_BADGE_STYLE,
-                layout: {
-                  ...SCENE_BADGE_STYLE.layout,
-                  position: 'absolute',
-                  inset: { top: px(10), left: px(14) },
-                  zIndex: 2,
-                },
-                pointerEvents: 'none',
-              }}
-            >
-              <Text style={{ typography: SCENE_BADGE_STYLE.typography }}>{source}</Text>
-            </Box>
-          )}
           {(active || applying) && (
             <Box
               className="scene-active-badge"
@@ -326,10 +309,11 @@ export function SceneCard({
             layout: {
               display: 'flex',
               direction: 'column',
+              justifyContent: 'center',
               width: pct(100),
               flexGrow: 1,
-              padding: insets(13, 14, 15, 14),
-              gap: px(3),
+              padding: insets(11, 15, 12, 15),
+              gap: px(2),
             },
             material: active
               ? new GradientMaterial(
@@ -343,20 +327,50 @@ export function SceneCard({
               : undefined,
           }}
         >
-          <Text
-            semantic="small"
-            style={{
-              typography: {
-                size: 10,
-                color: colorToken('textMuted'),
-                lineHeight: 1.3,
-                maxLines: 1,
-                truncate: true,
-              },
-            }}
+          <Row
+            gapPx={5}
+            align="center"
+            style={{ layout: { maxWidth: pct(100), minHeight: px(16) } }}
           >
-            {room}
-          </Text>
+            <Text
+              semantic="small"
+              style={{
+                typography: {
+                  size: 10,
+                  color: colorToken('textMuted'),
+                  lineHeight: 1.3,
+                  maxLines: 1,
+                  truncate: true,
+                },
+              }}
+            >
+              {room}
+            </Text>
+            {source && (
+              <Box
+                className="scene-source-badge scene-source-inline"
+                style={{
+                  layout: { padding: insets(2, 6), alignItems: 'center', justifyContent: 'center' },
+                  pointerEvents: 'none',
+                  corners: corners(10),
+                  material: new SolidMaterial(mixColor(transparentColor, ink, 0.07)),
+                  border: {
+                    width: 1,
+                    color: mixColor(transparentColor, ink, 0.1),
+                  },
+                }}
+              >
+                <Text
+                  size={8.5}
+                  weight={600}
+                  tone="muted"
+                  style={{ typography: { lineHeight: 1.1 } }}
+                >
+                  {source}
+                </Text>
+              </Box>
+            )}
+          </Row>
           <Text
             semantic="strong"
             style={{

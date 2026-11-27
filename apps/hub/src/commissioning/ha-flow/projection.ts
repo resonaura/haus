@@ -16,7 +16,7 @@ import {
 import type { StandaloneHomeService } from '../../home/home.service.js';
 import type { IntegrationEntryState } from '../entry-helpers.js';
 
-/** Prunes stale HA sub-devices whose endpoints were all absorbed by another active device in the same entry. */
+/** Prunes stale HA sub-devices whose endpoints were all absorbed by another active device in the same entry, preserving user room/name assignments and registering aliases. */
 export function pruneSupersededHaDevices(
   home: StandaloneHomeService | undefined,
   enabledEntries: ReadonlySet<string>,
@@ -24,22 +24,53 @@ export function pruneSupersededHaDevices(
   inProgressInstances: ReadonlySet<string>,
 ): number {
   if (!home || present.size === 0) return 0;
+  const allDevices = home.devices.listDevices();
+  const presentByInstance = new Map<string, HausDevice[]>();
+  for (const candidate of allDevices) {
+    if (!present.has(candidate.id) || !candidate.source.instanceId.startsWith('ha:')) continue;
+    const list = presentByInstance.get(candidate.source.instanceId);
+    if (list) list.push(candidate);
+    else presentByInstance.set(candidate.source.instanceId, [candidate]);
+  }
   let pruned = 0;
-  for (const device of home.devices.listDevices()) {
+  for (const device of allDevices) {
     if (!device.source.instanceId.startsWith('ha:')) continue;
     const entryId = device.source.instanceId.slice(3);
     if (!enabledEntries.has(entryId) || inProgressInstances.has(device.source.instanceId)) continue;
     if (present.has(device.id) || device.endpoints.length === 0) continue;
-    const allAbsorbed = device.endpoints.every((ep) => {
-      const owner = home.devices.getDeviceByEndpointId(ep.id);
-      return (
-        owner !== undefined &&
-        owner.id !== device.id &&
-        owner.source.instanceId === device.source.instanceId &&
-        present.has(owner.id)
+    const candidates = presentByInstance.get(device.source.instanceId);
+    if (!candidates || candidates.length === 0) continue;
+    const allAbsorbed = device.endpoints.every((ep) =>
+      candidates.some(
+        (owner) => owner.id !== device.id && owner.endpoints.some((cep) => cep.id === ep.id),
+      ),
+    );
+    if (!allAbsorbed) continue;
+    let bestSurvivor: HausDevice | undefined;
+    let bestOverlap = 0;
+    const deadEpIds = new Set(device.endpoints.map((ep) => ep.id));
+    for (const owner of candidates) {
+      if (owner.id === device.id) continue;
+      const overlap = owner.endpoints.filter((cep) => deadEpIds.has(cep.id)).length;
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestSurvivor = owner;
+      }
+    }
+    if (bestSurvivor) {
+      const latestSurvivor = home.devices.getDevice(bestSurvivor.id) ?? bestSurvivor;
+      const mergedSurvivor = reconcileDeviceUserAssignments(device, latestSurvivor);
+      const needsReindex = latestSurvivor.endpoints.some(
+        (ep) => home.devices.getDeviceByEndpointId(ep.id)?.id !== latestSurvivor.id,
       );
-    });
-    if (allAbsorbed && home.removeDevice(device.id)) pruned += 1;
+      if (needsReindex || !isDeepStrictEqual(mergedSurvivor, latestSurvivor)) {
+        home.registerDevice(mergedSurvivor);
+      }
+      if (typeof home.registerAlias === 'function') {
+        void home.registerAlias(device.id, latestSurvivor.id).catch(() => undefined);
+      }
+    }
+    if (home.removeDevice(device.id)) pruned += 1;
   }
   return pruned;
 }
@@ -226,7 +257,10 @@ export function prepareHaDeviceUpdate(input: {
     source,
     roomId: resolveHaRoomId(home, entity),
   });
-  const structureChanged = deviceStructureChanged(existing, normalized);
+  const endpointHijacked = normalized.endpoints.some(
+    (ep) => home.devices.getDeviceByEndpointId(ep.id)?.id !== normalized.id,
+  );
+  const structureChanged = endpointHijacked || deviceStructureChanged(existing, normalized);
   const updates = normalized.endpoints.map((endpoint) => {
     const previousState = structureChanged ? home.getEndpointState(endpoint.id) : undefined;
     const forceAll = Boolean(!structureChanged && inFlightEndpoints?.has(endpoint.id));

@@ -53,10 +53,12 @@ export interface UiMotionSpec {
   readonly propertyDurationsMs?: {
     readonly opacity?: number;
     readonly transform?: number;
+    readonly blur?: number;
   };
   readonly propertyEases?: {
     readonly opacity?: UiMotionEase;
     readonly transform?: UiMotionEase;
+    readonly blur?: UiMotionEase;
   };
   readonly originX?: number;
   readonly originY?: number;

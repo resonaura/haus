@@ -141,9 +141,8 @@ export function ManagementFilterBar<TId extends string>({
   readonly activeId: TId;
   readonly onChange: (id: TId) => void;
 }) {
-  const { theme } = useHausUi();
-  const activeBg = theme.mode === 'dark' ? rgba(255, 255, 255, 0.12) : rgba(16, 16, 20, 0.08);
-  const activeBorder = theme.mode === 'dark' ? rgba(255, 255, 255, 0.24) : rgba(16, 16, 20, 0.18);
+  const activeBg = colorToken('controlFillActive');
+  const activeBorder = colorToken('controlBorderActive');
 
   return (
     <Row gapPx={8} wrap style={{ layout: { flexShrink: 0 } }}>
@@ -159,6 +158,7 @@ export function ManagementFilterBar<TId extends string>({
               layout: {
                 direction: 'row',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: px(7),
                 padding: insets(6, 12),
                 position: 'relative',

@@ -147,13 +147,16 @@ export {
 export type { ParseSnapshotEnvelopeOptions, SnapshotEnvelope } from './snapshot-envelope.js';
 export {
   HubPairing,
+  groupDiscoveredHomeTargets,
   isLocalHostname,
   isLocalTarget,
   isPrivateIpv4,
   isUniqueLocalIpv6,
+  orderClusterCandidateUrls,
   parseDiscoveredHub,
   parseManualHubAddress,
   sanitizeServiceName,
+  stripBonjourInstanceSuffix,
   timingSafeStringEqual,
   validateClientIdentity,
   validateHubIdentity,
@@ -163,9 +166,13 @@ export {
 export type {
   ClientIdentity,
   ClientRole,
+  DiscoveredHomeTarget,
+  DiscoveredHomeTargetType,
   DiscoveredHub,
+  DiscoveredHubEndpointInput,
   DiscoveredService,
   HubIdentity,
+  HubIdentityClusterInfo,
   PairingErrorCode,
   PairingGrant,
   PairingOffer,
@@ -203,6 +210,31 @@ export * from './cluster/index.js';
 export * from './stats/index.js';
 export * from './commissioning/index.js';
 export * from './transport/index.js';
+export {
+  directRecordingInput,
+  sanitizeStorageMedia,
+  storageMedia,
+  udevMediaAttributes,
+  type HausStorageUsage,
+  type HomeServer,
+  type HostGraphicsAdapter,
+  type HostGraphicsReport,
+  type HostServiceEntry,
+  type HostServiceSnapshot,
+  type HostTelemetrySnapshot,
+  type RecordingInputCamera,
+  type RecordingInputEntity,
+  type RecordingInputState,
+  type ResourceSample,
+  type ServerDisk,
+  type ServerHost,
+  type ServersStatus,
+  type StorageMediaMetadata,
+} from './servers/index.js';
+export * from './hub/index.js';
+export * from './preferences/index.js';
+export * from './optimistic/index.js';
+export * from './brands/index.js';
 export {
   createHausLogger,
   formatHausLogLine,

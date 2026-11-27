@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Preferences } from '@haus/ha/view/preferences';
+import type { Preferences } from '@haus/core/preferences';
 
 export async function openDesktopAppearance(directory: string) {
   const path = join(directory, 'appearance');

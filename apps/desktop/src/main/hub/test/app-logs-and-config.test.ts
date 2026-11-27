@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { AppCatalog } from '@haus/apps';
-import { validateRequest } from '@haus/ha/native/validation';
+import { validateRequest } from '../../validation';
 import { HubApps } from '../apps';
 import { startAppConfigFlow } from '../app-flows';
 import { HubAppLogStreamManager } from '../management/app-logs';

@@ -119,7 +119,9 @@ export class AuthController {
     }
     const service = this.requireService();
     try {
-      return await service.pair(body.grant);
+      const paired = await service.pair(body.grant);
+      const cluster = service.getAuthenticatedClusterInfo();
+      return cluster ? { ...paired, cluster } : paired;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'invalid_grant';
       throw new HttpException({ error: msg }, HttpStatus.UNAUTHORIZED);
@@ -139,7 +141,12 @@ export class AuthController {
     const service = this.requireService();
     const result = await service.resume(body.sessionId, token);
     if (result.status === 'active' && result.session) {
-      return { status: 'active', session: result.session };
+      const cluster = service.getAuthenticatedClusterInfo();
+      return {
+        status: 'active',
+        session: result.session,
+        ...(cluster ? { cluster } : {}),
+      };
     }
     throw new HttpException(
       { error: result.error ?? 'invalid_credentials' },
@@ -205,7 +212,8 @@ export class AuthController {
       throw new HttpException({ error: 'invalid_credentials' }, HttpStatus.UNAUTHORIZED);
     }
     const view = await service.getSession(session.sessionId);
-    return { session: view };
+    const cluster = service.getAuthenticatedClusterInfo();
+    return { session: view, ...(cluster ? { cluster } : {}) };
   }
 
   @ApiOperation({ summary: 'List pending pairing challenges for connected admin devices' })

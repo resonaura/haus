@@ -1,2 +1,2 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-export { CameraMetadataCache } from '@haus/ha/native/camera-metadata-cache';
+export { CameraMetadataCache } from '@haus/core/hub';

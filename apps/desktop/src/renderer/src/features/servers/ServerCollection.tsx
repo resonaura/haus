@@ -6,6 +6,7 @@
  */
 
 import { Box, Heading, Text } from '@haus/ui';
+import { PresenceGrid } from '@haus/ui/web';
 import { Server } from 'lucide-react';
 import { useServers } from './useServers';
 import { groupServersByRoom, type ServerDevicePreferences, type ServerRoom } from './server-rooms';
@@ -53,7 +54,7 @@ export function ServerCollection({
             </Text>
             <Text className="device-group-rule" />
           </Box>
-          <Box className="accessory-grid server-card-grid">
+          <PresenceGrid className="accessory-grid server-card-grid">
             {group.servers.map((server) => (
               <ServerCard
                 key={server.id}
@@ -69,7 +70,7 @@ export function ServerCollection({
                 onOpen={() => onOpen(server.id)}
               />
             ))}
-          </Box>
+          </PresenceGrid>
         </Box>
       ))}
     </Box>

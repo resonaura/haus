@@ -5,3 +5,5 @@ export * from './errors.js';
 export * from './bundle.js';
 export * from './normalize.js';
 export * from './client.js';
+export * from './flow.js';
+export * from './flow-templates.js';

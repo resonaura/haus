@@ -123,8 +123,9 @@ export function syncKitsuneDevicesToHome(params: {
   readonly syncedDeviceIds: Set<string>;
   readonly pendingAliases: Set<Promise<void>>;
   readonly devices: readonly HausDevice[];
+  readonly purgeMissing?: boolean;
 }): void {
-  const { homeService, syncedDeviceIds, pendingAliases, devices } = params;
+  const { homeService, syncedDeviceIds, pendingAliases, devices, purgeMissing = false } = params;
   if (!homeService) return;
 
   const nextSynced = new Set<string>();
@@ -161,13 +162,31 @@ export function syncKitsuneDevicesToHome(params: {
 
   for (const previousId of syncedDeviceIds) {
     if (!nextSynced.has(previousId)) {
-      homeService.removeDevice(previousId);
+      if (purgeMissing) {
+        homeService.removeDevice(previousId);
+      } else {
+        const prev =
+          homeService.devices?.getDevice(previousId) ?? homeService.getDevice(previousId);
+        if (prev && prev.availability !== 'offline') {
+          homeService.registerDevice({
+            ...prev,
+            availability: 'offline',
+            endpoints: prev.endpoints.map((ep) => ({ ...ep, availability: 'offline' })),
+          });
+        }
+      }
     }
   }
 
-  syncedDeviceIds.clear();
-  for (const id of nextSynced) {
-    syncedDeviceIds.add(id);
+  if (purgeMissing) {
+    syncedDeviceIds.clear();
+    for (const id of nextSynced) {
+      syncedDeviceIds.add(id);
+    }
+  } else {
+    for (const id of nextSynced) {
+      syncedDeviceIds.add(id);
+    }
   }
 }
 

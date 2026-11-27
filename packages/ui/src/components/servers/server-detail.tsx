@@ -7,11 +7,11 @@
 
 import type { ReactNode } from 'react';
 import {
-  formatBytes,
-  formatRatio,
   resolveServerConnectionState,
   type ServerDetailTabId,
+  type ServerIdentityPatch,
   type ServerResourceSample,
+  type ServerRoomOption,
   type ServerServiceRow,
   type ServerSummaryRecord,
 } from '@haus/core/transport';
@@ -20,15 +20,19 @@ import { SolidMaterial } from '../../ir/materials.js';
 import { Box, HausButton, Heading, Pressable, Row, Stack, Text } from '../../primitives/index.js';
 import { GlassRim } from '../../primitives/glass-rim.js';
 import { UiIcon } from '../icon.js';
-import { resolveServerGlyphName, resolveServerKindLabel } from './server-card.js';
+import { resolveServerKindLabel } from './server-card.js';
 import { ServerDisksTab } from './server-disks-tab.js';
+import { ServerDistroIcon } from './server-icons.js';
+import { ServerNvrTab } from './server-nvr-tab.js';
 import { ServerOverviewTab } from './server-overview-tab.js';
 import { ServerServicesTab } from './server-services-tab.js';
-import { ServerFactRow, ServerGlassPanel } from './server-surfaces.js';
+import { ServerSettingsTab } from './server-settings-tab.js';
+import { ServerGlassPanel } from './server-surfaces.js';
 
 export function ServerDetailView({
   server,
   history = [],
+  rooms = [],
   activeTab,
   canManage,
   contextualNavigation = false,
@@ -36,13 +40,18 @@ export function ServerDetailView({
   error,
   logsSlot,
   terminalSlot,
+  backupsSlot,
   onSelectTab,
   onBack,
   onToggleEnabled,
+  onRemoveServer,
+  onSaveIdentity,
+  onSaveStorageLimit,
   onInspectService,
 }: {
   readonly server: ServerSummaryRecord;
   readonly history?: readonly ServerResourceSample[];
+  readonly rooms?: readonly ServerRoomOption[];
   readonly activeTab: ServerDetailTabId;
   readonly canManage: boolean;
   readonly contextualNavigation?: boolean;
@@ -50,19 +59,25 @@ export function ServerDetailView({
   readonly error?: string;
   readonly logsSlot?: ReactNode;
   readonly terminalSlot?: ReactNode;
+  readonly backupsSlot?: ReactNode;
   readonly onSelectTab: (tab: ServerDetailTabId) => void;
   readonly onBack: () => void;
   readonly onToggleEnabled?: () => void;
+  readonly onRemoveServer?: () => void | Promise<void>;
+  readonly onSaveIdentity?: (patch: ServerIdentityPatch) => void | Promise<void>;
+  readonly onSaveStorageLimit?: (limitBytes: number | null) => Promise<void>;
   readonly onInspectService?: (service: ServerServiceRow, mode: 'logs' | 'terminal') => void;
 }) {
   const state = resolveServerConnectionState(server);
+  const isHubServer = server.kind === 'hub' || server.kind === 'nvr' || Boolean(server.managedId);
   const tabs: readonly { readonly id: ServerDetailTabId; readonly label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'storage', label: 'Disks' },
     { id: 'services', label: 'Services' },
     { id: 'terminal', label: 'Terminal' },
-    { id: 'logs', label: 'Logs' },
+    ...(isHubServer ? ([{ id: 'logs', label: 'Logs' }] as const) : []),
     ...(server.nvr?.hasNvr ? ([{ id: 'nvr', label: 'NVR' }] as const) : []),
+    ...(canManage ? ([{ id: 'settings', label: 'Settings' }] as const) : []),
   ];
 
   const archSuffix =
@@ -90,8 +105,12 @@ export function ServerDetailView({
         ? rgba(237, 130, 123, 1)
         : colorToken('textMuted');
 
-  const nvrRatio = formatRatio(server.nvr?.usedBytes, server.nvr?.limitBytes);
-  const nvrPct = Math.round(Math.max(0, Math.min(1, nvrRatio ?? 0)) * 100);
+  const lastSeenText = server.lastSeen ? new Date(server.lastSeen).toLocaleString() : undefined;
+  const footerText = server.sampledAt
+    ? `${state === 'online' ? 'Updated' : 'Last sampled'} ${new Date(server.sampledAt).toLocaleTimeString()}${state === 'online' ? ' · refreshes every second' : ''}`
+    : server.kind === 'ssh'
+      ? 'Resource reporting is not configured'
+      : 'Waiting for resource information';
 
   return (
     <Box
@@ -134,7 +153,7 @@ export function ServerDetailView({
                     {statusText}
                   </Text>
                 </Row>
-                {canManage && onToggleEnabled && server.kind !== 'ssh' && (
+                {canManage && onToggleEnabled && server.kind !== 'ssh' && !server.local && (
                   <HausButton variant="outline" size="sm" disabled={busy} onPress={onToggleEnabled}>
                     <Row align="center" gapPx={6}>
                       <UiIcon name={server.enabled ? 'pause' : 'play'} size={13} />
@@ -163,7 +182,7 @@ export function ServerDetailView({
                   corners: corners(18),
                 }}
               >
-                <UiIcon name={resolveServerGlyphName(server)} size={28} />
+                <ServerDistroIcon server={server} size={28} />
                 <GlassRim preset="medium" radiusPx={17} opacity={0.62} />
               </Box>
               <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
@@ -194,7 +213,7 @@ export function ServerDetailView({
                 {error ||
                   (!server.enabled
                     ? 'This server is paused. Resume it to receive new work and refresh its information.'
-                    : 'This server is offline. Its saved configuration stays available.')}
+                    : `This server is offline.${lastSeenText ? ` Last seen ${lastSeenText}.` : ''} Its saved configuration stays available.`)}
               </Text>
             </Row>
           </ServerGlassPanel>
@@ -269,7 +288,11 @@ export function ServerDetailView({
           )}
 
           {activeTab === 'storage' && (
-            <ServerDisksTab disks={server.disks} reportingScope={server.reportingScope} />
+            <ServerDisksTab
+              disks={server.disks}
+              reportingScope={server.reportingScope}
+              lastKnown={state !== 'online'}
+            />
           )}
 
           {activeTab === 'services' && (
@@ -281,71 +304,36 @@ export function ServerDetailView({
           )}
 
           {activeTab === 'nvr' && server.nvr && (
-            <ServerGlassPanel padding={insets(24)} radius={24}>
-              <Row align="center" gapPx={9} style={{ layout: { margin: insets(0, 0, 14, 0) } }}>
-                <UiIcon name="video" size={17} />
-                <Heading level={3} size={15} weight={600}>
-                  Haus NVR
-                </Heading>
-              </Row>
-              {nvrRatio !== null && (
-                <Stack
-                  gapPx={8}
-                  style={{ layout: { width: pct(100), margin: insets(0, 0, 14, 0) } }}
-                >
-                  <Row align="center" justify="between">
-                    <Text size={11.5} tone="muted">
-                      Archive storage
-                    </Text>
-                    <Text size={12} weight={500} style={{ typography: { tabularNums: true } }}>
-                      {`${formatBytes(server.nvr.usedBytes)} of ${formatBytes(server.nvr.limitBytes)} (${nvrPct}%)`}
-                    </Text>
-                  </Row>
-                  <Box
-                    style={{
-                      layout: { width: pct(100), height: px(7), overflow: 'hidden' },
-                      material: new SolidMaterial(colorToken('soft')),
-                      corners: corners(999, 'round'),
-                    }}
-                  >
-                    <Box
-                      style={{
-                        layout: { width: pct(nvrPct), height: pct(100) },
-                        material: new SolidMaterial(colorToken('textPrimary')),
-                        corners: corners(999, 'round'),
-                      }}
-                    />
-                  </Box>
-                </Stack>
-              )}
-              <Stack gapPx={4} style={{ layout: { width: pct(100) } }}>
-                <ServerFactRow
-                  label="Recording storage"
-                  value={server.nvr.storageAssigned ? 'Assigned' : 'Not assigned'}
-                />
-                <ServerFactRow
-                  label="Video streaming"
-                  value={server.nvr.streamingAssigned ? 'Assigned' : 'Not assigned'}
-                />
-                {server.nvr.activeStreams && (
-                  <ServerFactRow label="Active streams" value={server.nvr.activeStreams} />
-                )}
-                {server.nvr.playbackPrep && (
-                  <ServerFactRow label="Playback prep" value={server.nvr.playbackPrep} />
-                )}
-                {server.nvr.activityAssist && (
-                  <ServerFactRow label="Activity assist" value={server.nvr.activityAssist} />
-                )}
-                {server.nvr.backupCopies !== undefined && (
-                  <ServerFactRow label="Recovery copies" value={String(server.nvr.backupCopies)} />
-                )}
-              </Stack>
-            </ServerGlassPanel>
+            <ServerNvrTab
+              server={server}
+              canManage={canManage}
+              busy={busy}
+              backupsSlot={backupsSlot}
+              onSaveStorageLimit={onSaveStorageLimit}
+            />
+          )}
+
+          {activeTab === 'settings' && canManage && (
+            <ServerSettingsTab
+              key={`${server.id}:${server.name}:${server.roomId ?? ''}:${server.icon ?? ''}`}
+              server={server}
+              rooms={rooms}
+              busy={busy}
+              onSaveIdentity={onSaveIdentity}
+              onToggleEnabled={server.local ? undefined : onToggleEnabled}
+              onRemoveServer={server.local ? undefined : onRemoveServer}
+            />
           )}
 
           {activeTab === 'logs' && logsSlot}
           {activeTab === 'terminal' && terminalSlot}
         </Box>
+
+        {activeTab !== 'terminal' && activeTab !== 'logs' && (
+          <Text size={11} tone="muted">
+            {footerText}
+          </Text>
+        )}
       </Stack>
     </Box>
   );

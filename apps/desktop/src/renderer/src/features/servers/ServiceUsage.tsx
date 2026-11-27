@@ -83,15 +83,17 @@ export function ServiceUsageGauge({
       <VectorGraphic
         viewWidth={32}
         viewHeight={32}
+        fill="none"
         surfaceTokens={{ strokeWidth: glyph.stroke }}
         ariaHidden
         circleGroupClassName="server-usage-memory"
         paths={[
-          { className: 'server-usage-track', d: glyph.arc },
+          { className: 'server-usage-track', d: glyph.arc, fill: 'none' },
           {
             pathRef: arc,
             className: 'server-usage-fill',
             d: duoUsageArc(cpuRatio ?? 0),
+            fill: 'none',
             opacity: cpuRatio !== null && cpuRatio > 0 ? 1 : 0,
           },
           {

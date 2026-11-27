@@ -17,8 +17,7 @@ import { groupNumberedLights, orderRoomDevices } from '@haus/ha/view/room-device
 import { accessoriesForCategory, homeCategorySummaries } from '@haus/ha/view/categories';
 import { homeControls } from '@haus/ha/view/controls/home';
 import { groupScenes, sceneCard } from '@haus/ha/view/scene-presentation';
-import type { Preferences } from '@haus/ha/view/preferences';
-import { setAccessoryFavorite } from '@haus/ha/view/settings/shared';
+import { setAccessoryFavorite, type Preferences } from '@haus/core/preferences';
 import { getCategoryMetadata } from '@haus/ui/categories';
 import type {
   DeviceBrandIconInput,
@@ -33,6 +32,8 @@ export interface HomeDevice extends DeviceTileData {
   readonly id: string;
   readonly accessory: HausAccessory;
   readonly active: boolean;
+  readonly pending?: boolean;
+  readonly pendingSince?: number;
   readonly accent?: string;
   readonly colorSwatch?: string;
   readonly lightEffect?: LightEffectOption;
@@ -50,7 +51,7 @@ export interface HomeRoom {
   readonly devices: readonly HomeDevice[];
 }
 
-export function lightCommand(snapshot: Snapshot, id: string) {
+export function lightAction(snapshot: Snapshot, id: string): HausAction | undefined {
   const entity = snapshot.states.find((state) => state.entity_id === id);
   if (
     !id.startsWith('light.') ||
@@ -60,11 +61,15 @@ export function lightCommand(snapshot: Snapshot, id: string) {
   )
     return undefined;
   return {
-    type: 'call_service',
     domain: 'light',
     service: entity.state === 'on' ? 'turn_off' : 'turn_on',
     target: { entity_id: id },
   };
+}
+
+export function lightCommand(snapshot: Snapshot, id: string) {
+  const action = lightAction(snapshot, id);
+  return action ? { type: 'call_service', ...action } : undefined;
 }
 
 function dashboardView(
@@ -175,6 +180,8 @@ export function homeDashboard(snapshot: Snapshot, preferences: Preferences) {
       stateKey: `${effectiveState.state}:${stateText}`,
       available: item.availability === 'available',
       active,
+      pending: item.pending,
+      pendingSince: item.pendingSince,
       favorite: view.isFavorite(item),
       accent: active ? appearance.actualColor : undefined,
       colorSwatch: active ? appearance.actualColor : undefined,

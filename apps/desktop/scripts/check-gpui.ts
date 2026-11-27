@@ -21,9 +21,13 @@ function click(id: string, button = 0) {
   const element = renderer.findByTestId(id);
   assert(element, `Missing ${id}`);
   let bounds = renderer.getElementBounds(element.id);
-  if (bounds && (bounds.y < 80 || bounds.y + bounds.height > 780)) {
+  for (
+    let attempt = 0;
+    attempt < 5 && bounds && (bounds.y < 80 || bounds.y + bounds.height > 700);
+    attempt += 1
+  ) {
     const scrollX = bounds.x + Math.max(24, bounds.width / 2);
-    renderer.nativeSimulateScrollWheel(scrollX, 400, 0, -(bounds.y - 360));
+    renderer.nativeSimulateScrollWheel(scrollX, 180, 0, -(bounds.y - 360));
     renderer.dispatchNativeEvents();
     renderer.flush();
     bounds = renderer.getElementBounds(element.id);
@@ -33,6 +37,15 @@ function click(id: string, button = 0) {
   const y =
     button === 2 ? bounds.y + Math.min(24, bounds.height / 4) : bounds.y + bounds.height / 2;
   renderer.nativeSimulateClick(x, y, button);
+  renderer.dispatchNativeEvents();
+  renderer.flush();
+  renderer.clockFastForward(240);
+  renderer.flush();
+}
+
+async function settleDialogExit() {
+  await new Promise((resolve) => setTimeout(resolve, 180));
+  renderer.clockFastForward(240);
   renderer.dispatchNativeEvents();
   renderer.flush();
 }
@@ -116,6 +129,7 @@ try {
   renderer.nativeSimulateKeystrokes(modalSlider.id, 'escape');
   renderer.dispatchNativeEvents();
   renderer.flush();
+  await settleDialogExit();
   assert(!renderer.findByTestId('dialog-panel'));
 
   // Right-click fallback ActionMenuDialog & submenu
@@ -126,17 +140,24 @@ try {
   click('menu-item-move-room:living_room');
   assert(renderer.findByTestId('dialog-panel'), 'Current room item must remain disabled');
   click('menu-item-move-room:bedroom');
+  await settleDialogExit();
   assert(!renderer.findByTestId('dialog-panel'));
 
   // Spotlight modal via topbar Search
   click('home-search');
-  assert(renderer.findByTestId('search-query'), 'Missing Spotlight search input');
+  const searchInput = renderer.findByTestId('search-query');
+  assert(searchInput, 'Missing Spotlight search input');
   assert(renderer.getAllText().includes('Search Haus'));
+  renderer.writeToClipboard('Corner');
+  renderer.nativeSimulateKeystrokes(searchInput.id, 'cmd-v');
+  renderer.dispatchNativeEvents();
+  renderer.flush();
   click(`spotlight-device-${demoLamp}`);
   assert(renderer.findByTestId('dialog-panel'), 'Spotlight selection should open device details');
   renderer.nativeSimulateKeystrokes(renderer.findByTestId('dialog-panel')!.id, 'escape');
   renderer.dispatchNativeEvents();
   renderer.flush();
+  await settleDialogExit();
 
   // Attention alerts feed
   click('home-attention');
@@ -154,17 +175,25 @@ try {
   const sceneDetailsShot = process.argv[9];
   if (sceneDetailsShot) renderer.captureScreenshot(sceneDetailsShot);
   click('dialog-close');
+  await settleDialogExit();
   assert(!renderer.findByTestId('dialog-panel'));
 
-  // Automations list + New automation config editor
+  // Automations gallery + dedicated New automation visual flow screen
   click('sidebar-automations');
   assert(renderer.getAllText().includes('Create automation'));
+  assert(renderer.getAllText().includes('Switch Press'));
+  assert(renderer.getAllText().includes('Good Morning'));
   const automationsShot = process.argv[10];
   if (automationsShot) renderer.captureScreenshot(automationsShot);
   click('automations-create');
+  assert(!renderer.findByTestId('dialog-panel'), 'Automation editor should open as a dedicated screen, not a modal');
   assert(renderer.getAllText().includes('New automation'));
-  click('dialog-close');
-  assert(!renderer.findByTestId('dialog-panel'));
+  assert(renderer.getAllText().includes('Switch / Button'));
+  assert(renderer.getAllText().includes('WHEN'));
+  click('automation-editor-back');
+  renderer.clockFastForward(260);
+  renderer.flush();
+  assert(renderer.getAllText().includes('Create automation'));
 
   // Servers overview + detail + interactive terminal
   click('sidebar-servers');
@@ -180,8 +209,7 @@ try {
   assert(renderer.getAllText().includes('Services'));
   assert(renderer.getAllText().includes('Terminal'));
   click('server-tab-terminal');
-  assert(renderer.getAllText().some((text) => text.includes('Connected to Willow Hub')));
-  assert(renderer.getAllText().includes('Demo interactive shell'));
+  assert(renderer.findByTestId('server-terminal-xterm'), 'Missing native xterm terminal');
   const serverDetailShot = process.argv[18];
   if (serverDetailShot) renderer.captureScreenshot(serverDetailShot);
   click('server-detail-back');
@@ -238,6 +266,7 @@ try {
   click('commissioning-start');
   assert(renderer.getAllText().includes('Device ready'));
   click('commissioning-finish');
+  await settleDialogExit();
   assert(!renderer.findByTestId('dialog-panel'));
 
   click('integrations-add-device');
@@ -248,6 +277,7 @@ try {
   click('flow-submit');
   assert(renderer.getAllText().some((t) => t.includes('Connected Philips Hue')));
   click('flow-done');
+  await settleDialogExit();
   assert(!renderer.findByTestId('dialog-panel'));
 
   // Apps + Catalog tab toggle
@@ -279,6 +309,20 @@ try {
   assert(renderer.getAllText().includes('Refraction strength'));
   assert(renderer.findByTestId('liquid-glass-recipe'));
   assert(renderer.getAllText().includes('Appearance'));
+
+  // Hotkey-triggered Component Storyboard (Console + Haus ASCII logo + ANSI palette)
+  const rootSearchBtn = renderer.findByTestId('home-search');
+  assert(rootSearchBtn, 'Missing topbar search trigger for Storyboard shortcut test');
+  renderer.nativeSimulateKeystrokes(rootSearchBtn.id, 'cmd-shift-u');
+  renderer.dispatchNativeEvents();
+  renderer.flush();
+  assert(renderer.findByTestId('haus-component-storyboard'), 'Storyboard should open on cmd-shift-u');
+  assert(renderer.findByTestId('storyboard-ascii-logo'), 'Storyboard must include Haus ASCII logo');
+  assert(renderer.findByTestId('storyboard-ansi-palette'), 'Storyboard must include ANSI palette');
+  assert(renderer.getAllText().some((t) => t.includes('hausfetch')));
+  click('storyboard-close');
+  assert(!renderer.findByTestId('haus-component-storyboard'), 'Storyboard should close cleanly');
+
   const screenshotArg = process.argv[2];
   if (screenshotArg) renderer.captureScreenshot(screenshotArg);
   console.log('GPUIX card rendering, actions and haptic dispatch passed.');

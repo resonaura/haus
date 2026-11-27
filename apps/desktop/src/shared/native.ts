@@ -6,7 +6,7 @@
  */
 
 import type { ContextMenuItem } from '@haus/ui/web';
-import type { BrandIconHint, BrandIconKind } from '@haus/ha/native/brand-fallbacks';
+import type { BrandIconHint, BrandIconKind } from '@haus/core/brands';
 import type { IconAppearance, ResolvedIconVariation } from '@haus/icons';
 
 export type { BrandIconHint, BrandIconKind, ContextMenuItem };
@@ -34,6 +34,13 @@ export interface DiscoveredServer {
   port: number;
   version?: string;
   kind?: 'haus-hub' | 'home-assistant';
+  targetType?: 'home-network' | 'home' | 'standalone-hub' | 'home-assistant';
+  homeId?: string;
+  hubId?: string;
+  hubCount?: number;
+  onboarded?: boolean;
+  memberUrls?: readonly string[];
+  memberNames?: readonly string[];
 }
 
 /** A local, unauthenticated pairing hint. Pairing still requires the node key. */
@@ -147,7 +154,11 @@ export interface HausNative {
     style: BrandIconTileStyle,
     hint?: BrandIconHint,
   ): Promise<BrandIconTileResult | null>;
-  discover(options?: { explicitHa?: boolean }): Promise<DiscoveredServer[]>;
+  discover(options?: {
+    explicitHa?: boolean;
+    rawHubsOnly?: boolean;
+    excludeHomeId?: string;
+  }): Promise<DiscoveredServer[]>;
   cancelDiscovery(): void;
   discoverHausNvrNodes(): Promise<DiscoveredHausNvr[]>;
   cancelHausNvrDiscovery(): void;

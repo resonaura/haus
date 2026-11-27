@@ -6,8 +6,12 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { HausClient, type ClusterNodeDrainPlan, type ClusterStatus } from '@haus/ha/helper-client';
-import { validateServiceOperation } from '@haus/ha/helper-service-validation';
+import {
+  HausClient,
+  validateHubServiceOperation as validateServiceOperation,
+  type ClusterNodeDrainPlan,
+  type ClusterStatus,
+} from '@haus/core/hub';
 import { clusterErrorMessage } from './errors';
 
 describe('clusterErrorMessage & Hub cluster DTO contracts', () => {

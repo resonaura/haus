@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { HausDevice } from '@haus/core/device';
+import { reconcileDeviceUserAssignments, type HausDevice } from '@haus/core/device';
 import {
   HOMEBRIDGE_GOVEE_PACKAGE,
   isHomebridgeGoveeOutletModel,
@@ -29,9 +29,11 @@ interface GoveeOutletHandover {
   readonly oldEndpointIds: readonly string[];
   readonly roomId?: string;
   readonly areaId?: string;
+  readonly opaqueMetadata?: Readonly<Record<string, unknown>>;
   readonly cleanMac?: string;
   readonly model?: string;
   readonly name: string;
+  readonly snapshot: HausDevice;
 }
 
 const handoverByHome = new WeakMap<StandaloneHomeService, GoveeOutletHandover[]>();
@@ -131,18 +133,24 @@ export function isMqttGoveeOutletSuppressionActive(homeService?: StandaloneHomeS
   if (
     goveeApp &&
     !isDockerGovee2MqttApp(goveeApp) &&
-    goveeApp.state !== 'stopped' &&
+    goveeApp.state === 'running' &&
     goveeApp.config?.hybridSplit !== false
   ) {
     return true;
   }
   const hbApp = homeService.appManager?.getInstalledApp?.(HOMEBRIDGE_GOVEE_APP_ID);
-  if (hbApp && hbApp.state !== 'stopped' && hbApp.config?.hybridSplit !== false) {
+  if (hbApp && hbApp.state === 'running' && hbApp.config?.hybridSplit !== false) {
     return true;
+  }
+  if (hbApp || goveeApp) {
+    return false;
   }
   return homeService
     .listDevices()
-    .some((device) => isHomebridgeGoveeInstanceId(device.source.instanceId));
+    .some(
+      (device) =>
+        isHomebridgeGoveeInstanceId(device.source.instanceId) && device.availability !== 'offline',
+    );
 }
 
 export function isHomebridgeGoveeOutletsOnlyActive(
@@ -185,9 +193,11 @@ export function stashAndRemoveSupersededMqttOutlet(
     oldEndpointIds: device.endpoints.map((ep) => ep.id),
     roomId: device.roomId,
     areaId: device.areaId,
+    opaqueMetadata: device.opaqueMetadata,
     cleanMac: extractGoveeCleanMacFromDevice(device),
     model: normalizeGoveeModel(device.model),
     name: device.name,
+    snapshot: device,
   });
   handoverByHome.set(homeService, filtered);
   homeService.removeDevice(device.id);
@@ -338,6 +348,7 @@ export function reconcileHomebridgeGoveeDevice(
       remaining.push(handover);
       continue;
     }
+    updated = reconcileDeviceUserAssignments(handover.snapshot, updated);
     if (
       (!updated.roomId || updated.roomId === 'default' || updated.roomId === 'unassigned') &&
       handover.roomId &&

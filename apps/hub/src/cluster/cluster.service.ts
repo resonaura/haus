@@ -24,16 +24,13 @@ import type {
   UpdateNodeDto,
   ClusterNodeRecordDto,
   ClusterStatusResponseDto,
+  EnrollHubRequestDto,
   JoinClusterDto,
   JoinClusterResponseDto,
   RebalanceClusterDto,
   RemoveNodeOptionsDto,
 } from './cluster.dto.js';
-import {
-  acceptCoordinatorJoinRequest,
-  assertValidClusterRoles,
-  attachSecondaryHubToCoordinator,
-} from './attach.js';
+import { acceptCoordinatorJoinRequest, attachSecondaryHubToCoordinator } from './attach.js';
 import { ClusterTransferManager, CLUSTER_TRANSFER_MANAGER } from './transfer.js';
 import type {
   HubTransferCommitResultDto,
@@ -41,20 +38,24 @@ import type {
   HubTransferRollbackResultDto,
   InitiateTransferDto,
 } from './transfer.dto.js';
-import { validateClusterPeerUrl } from './crypto/transport.js';
+import {
+  buildClusterTopologyView,
+  enrollSecondaryHubIntoHome,
+  forwardCoordinatorActionIfSecondary,
+  type EnrollHubResponse,
+} from './coordination/enroll.js';
 import { ClusterStateStore } from './coordination/state.js';
 import { ClusterLeaseService } from './coordination/leases.js';
 import { ClusterOrchestrator } from './coordination/orchestrator.js';
 import { persistPeerNvrAccess } from './coordination/nvr-peer.js';
 import { ClusterDrainService, type NodeDrainPlan, type NodeDrainResult } from './drain/service.js';
 import {
-  applyClusterNodePatch,
+  addClusterNodeRecord,
   deduplicateClusterNodes,
-  forwardNodeStoragePolicy,
   loadClusterNodesFromDb,
   stripNodeSecrets,
   syncRemovedNodeToRecordingCluster,
-  syncUpdatedNodeToRecordingCluster,
+  updateClusterNodeRecord,
 } from './nodes.js';
 import type { Cluster } from './cluster.js';
 import { RECORDING_CLUSTER } from '../events/tokens.js';
@@ -84,20 +85,42 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
     await this.initialize();
   }
 
-  status(): ClusterStatusResponseDto {
+  private topologyView() {
     const state = this.stateStore?.getStateSync();
     const coordinatorId =
       this.transferManager?.getCoordinatorId() ??
       state?.coordinatorId ??
-      this.authService?.getIdentity().hubId ??
+      this.authService?.getIdentitySummary().hubId ??
       this.coordinatorId;
-    const role = this.transferManager?.getRole() ?? state?.role ?? 'coordinator';
+    const role = (this.transferManager?.getRole() ?? state?.role ?? 'coordinator') as
+      'coordinator' | 'node' | 'fenced' | 'standalone';
     const epoch = this.transferManager?.getEpoch() ?? state?.coordinatorEpoch ?? 1;
-    const fenced = this.transferManager?.isFenced() ?? state?.fenced ?? false;
+    return {
+      state,
+      coordinatorId,
+      role,
+      epoch,
+      fenced: this.transferManager?.isFenced() ?? state?.fenced ?? false,
+      view: buildClusterTopologyView({
+        stateStore: this.stateStore,
+        authService: this.authService,
+        nodes: this.nodesMap.values(),
+        fallbackHubId: this.coordinatorId,
+        role,
+        coordinatorId,
+        epoch,
+      }),
+    };
+  }
+
+  status(): ClusterStatusResponseDto {
+    const { coordinatorId, role, epoch, fenced, view } = this.topologyView();
     const rec = this.recordingCluster?.status();
     const backups = rec?.backups;
     return {
       id: coordinatorId,
+      selfHubId: view.selfHubId,
+      ...(view.coordinatorUrl ? { coordinatorUrl: view.coordinatorUrl } : {}),
       coordinatorId,
       role,
       epoch,
@@ -111,6 +134,7 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
         ...(backups?.error ? { error: backups.error } : {}),
       },
       nodes: Array.from(this.nodesMap.values()),
+      members: view.members,
     };
   }
 
@@ -125,54 +149,41 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
 
   async add(node: AddNodeDto): Promise<ClusterNodeRecordDto> {
     this.transferManager?.assertNotFenced();
-    if (!node.url || typeof node.url !== 'string') {
-      throw new HttpException({ error: 'invalid_node_url' }, HttpStatus.BAD_REQUEST);
-    }
-    let validatedUrl: string;
-    try {
-      validatedUrl = validateClusterPeerUrl(node.url, true);
-    } catch {
-      throw new HttpException({ error: 'invalid_node_address' }, HttpStatus.BAD_REQUEST);
-    }
-
-    const roles = node.roles ?? ['storage', 'stream'];
-    assertValidClusterRoles(roles);
-
-    const coordinatorHomeId = this.authService?.getIdentity().homeId ?? 'home-default';
-    if (node.homeId && node.homeId !== coordinatorHomeId) {
-      throw new HttpException({ error: 'wrong_home' }, HttpStatus.FORBIDDEN);
-    }
-
     await this.initialize();
-    const id = node.nodeId?.trim() || randomUUID();
-    const record: ClusterNodeRecordDto = {
-      id,
-      name: node.name ?? `Node ${id.slice(0, 6)}`,
-      url: validatedUrl,
-      enabled: true,
-      roles,
-      online: true,
-      homeId: coordinatorHomeId,
-      ...(typeof node.allowHttp === 'boolean' ? { allowHttp: node.allowHttp } : {}),
-      ...(node.sshServerId !== undefined ? { sshServerId: node.sshServerId } : {}),
-    };
-    if (this.transactions) {
-      await this.transactions.run((manager) =>
-        manager.upsert(ClusterNodeEntity, { id, value: JSON.stringify(record) }, ['id']),
-      );
-    }
-    this.nodesMap.set(id, record);
+    return addClusterNodeRecord({
+      node,
+      nodesMap: this.nodesMap,
+      authService: this.authService,
+      transactions: this.transactions,
+    });
+  }
 
-    const nodeToken = node.token ?? node.key;
-    if (nodeToken && this.authService) {
-      this.authService.registerToken(nodeToken, {
-        clientId: id,
-        clientRole: 'node',
-        clientName: record.name,
-      });
-    }
+  private async proxyOrRun<T>(
+    action: string,
+    payload: unknown,
+    local: () => Promise<T>,
+  ): Promise<T> {
+    await this.initialize();
+    const proxied = await forwardCoordinatorActionIfSecondary<T>({
+      stateStore: this.stateStore,
+      nodesMap: this.nodesMap,
+      action,
+      payload,
+    });
+    return proxied.forwarded ? proxied.result : local();
+  }
 
-    return { ...record, pairedNodeId: id };
+  async enrollHub(dto: EnrollHubRequestDto): Promise<EnrollHubResponse> {
+    this.transferManager?.assertNotFenced();
+    return this.proxyOrRun('enroll_hub', dto, () =>
+      enrollSecondaryHubIntoHome({
+        dto,
+        stateStore: this.stateStore,
+        authService: this.authService,
+        nodesMap: this.nodesMap,
+        fallbackCoordinatorId: this.coordinatorId,
+      }),
+    );
   }
 
   async join(joinRequest: JoinClusterDto): Promise<JoinClusterResponseDto> {
@@ -206,39 +217,30 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
   async update(id: string, patch: UpdateNodeDto): Promise<ClusterNodeRecordDto> {
     this.transferManager?.assertNotFenced();
     await this.initialize();
-    const cached = this.nodesMap.get(id);
-    if (!cached) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
+    return updateClusterNodeRecord({
+      id,
+      patch,
+      nodesMap: this.nodesMap,
+      transactions: this.transactions,
+      recordingCluster: this.recordingCluster,
+    });
+  }
 
-    let updated = applyClusterNodePatch(cached, patch);
-    let serialized: string | undefined;
-    await forwardNodeStoragePolicy(id, patch.storageLimitBytes, this.recordingCluster);
-    if (this.transactions) {
-      updated = await this.transactions.run(async (manager) => {
-        const saved = await manager.findOneBy(ClusterNodeEntity, { id });
-        if (!saved) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
-        const current = JSON.parse(saved.value) as ClusterNodeRecordDto;
-        const next = applyClusterNodePatch({ ...current, id }, patch);
-        serialized = JSON.stringify(next);
-        await manager.update(ClusterNodeEntity, { id }, { value: serialized });
-        return stripNodeSecrets(next);
-      });
+  private assertKnownNode(id: string): string {
+    const localHubId =
+      this.stateStore?.getStateSync().hubId ??
+      this.authService?.getIdentitySummary().hubId ??
+      this.coordinatorId;
+    if (id !== localHubId && !this.nodesMap.has(id)) {
+      throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
     }
-    const clean = stripNodeSecrets(updated);
-    this.nodesMap.set(id, clean);
-    await syncUpdatedNodeToRecordingCluster(id, serialized, this.recordingCluster);
-    return clean;
+    return localHubId;
   }
 
   async getDrainPlan(id: string): Promise<NodeDrainPlan> {
     this.transferManager?.assertNotFenced();
     await this.initialize();
-    const localHubId =
-      this.stateStore?.getStateSync().hubId ??
-      this.authService?.getIdentity().hubId ??
-      this.coordinatorId;
-    if (id !== localHubId && !this.nodesMap.has(id)) {
-      throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
-    }
+    this.assertKnownNode(id);
     if (!this.drainService) {
       throw new HttpException(
         { error: 'drain_service_unavailable' },
@@ -251,13 +253,7 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
   async drain(id: string, options?: RemoveNodeOptionsDto): Promise<NodeDrainResult> {
     this.transferManager?.assertNotFenced();
     await this.initialize();
-    const localHubId =
-      this.stateStore?.getStateSync().hubId ??
-      this.authService?.getIdentity().hubId ??
-      this.coordinatorId;
-    if (id !== localHubId && !this.nodesMap.has(id)) {
-      throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
-    }
+    this.assertKnownNode(id);
     if (!this.drainService) {
       throw new HttpException(
         { error: 'drain_service_unavailable' },
@@ -285,13 +281,7 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
   ): Promise<{ removed: boolean; id: string }> {
     this.transferManager?.assertNotFenced();
     await this.initialize();
-    const localHubId =
-      this.stateStore?.getStateSync().hubId ??
-      this.authService?.getIdentity().hubId ??
-      this.coordinatorId;
-    if (id !== localHubId && !this.nodesMap.has(id)) {
-      throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
-    }
+    this.assertKnownNode(id);
 
     if (this.orchestrator) {
       await this.orchestrator.verifyAndDrainBeforeRemove(id, options);
@@ -345,16 +335,17 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
 
   async rebalance(options?: RebalanceClusterDto) {
     this.transferManager?.assertNotFenced();
-    await this.initialize();
-    if (!this.orchestrator) {
-      throw new HttpException(
-        { error: 'orchestrator_unavailable' },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
-    return this.orchestrator.rebalanceCluster({
-      force: options?.force ?? true,
-      preferences: options?.preferences,
+    return this.proxyOrRun('rebalance', options, () => {
+      if (!this.orchestrator) {
+        throw new HttpException(
+          { error: 'orchestrator_unavailable' },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+      return this.orchestrator.rebalanceCluster({
+        force: options?.force ?? true,
+        preferences: options?.preferences,
+      });
     });
   }
 
@@ -380,27 +371,35 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
   }
 
   initiateTransfer(dto: InitiateTransferDto): Promise<HubTransferIntentDto> {
-    return this.requireTransferManager().initiate(dto);
+    return this.proxyOrRun('transfer_initiate', dto, () =>
+      this.requireTransferManager().initiate(dto),
+    );
   }
 
   prepareTransfer(
     id: string,
   ): Promise<{ transferId: string; state: 'target_prepared'; valid: boolean }> {
-    return this.requireTransferManager().prepare(id);
+    return this.proxyOrRun('transfer_prepare', { id }, () =>
+      this.requireTransferManager().prepare(id),
+    );
   }
 
   fenceTransfer(
     id: string,
   ): Promise<{ transferId: string; state: 'source_fenced'; fenced: boolean; epoch: number }> {
-    return this.requireTransferManager().fence(id);
+    return this.proxyOrRun('transfer_fence', { id }, () => this.requireTransferManager().fence(id));
   }
 
   commitTransfer(id: string): Promise<HubTransferCommitResultDto> {
-    return this.requireTransferManager().commit(id);
+    return this.proxyOrRun('transfer_commit', { id }, () =>
+      this.requireTransferManager().commit(id),
+    );
   }
 
   rollbackTransfer(id: string, reason?: string): Promise<HubTransferRollbackResultDto> {
-    return this.requireTransferManager().rollback(id, reason);
+    return this.proxyOrRun('transfer_rollback', { id, reason }, () =>
+      this.requireTransferManager().rollback(id, reason),
+    );
   }
 
   async getTransfer(id: string): Promise<HubTransferIntentDto> {
@@ -413,28 +412,29 @@ export class DefaultClusterService implements IClusterService, OnModuleInit {
 
   private initialize(): Promise<void> {
     this.initialization ??= (async () => {
-      const identity = this.authService?.getIdentity();
+      const identity = this.authService?.getIdentitySummary();
+      this.authService?.setClusterTopologyProvider(() => {
+        const { view } = this.topologyView();
+        return {
+          homeName: view.homeName,
+          publicCluster: view.publicCluster,
+          authenticated: view.authenticated,
+        };
+      });
       if (this.source) {
         await loadClusterNodesFromDb(this.source, this.nodesMap);
-        const grants = await this.source.manager.findBy(StandaloneHomeEntryEntity, {
-          kind: 'consumed_grant',
-        });
-        for (const row of grants) {
-          this.consumedGrantIds.add(row.entryId);
-        }
-      } else if (this.transactions) {
-        const grants = await this.transactions.run((manager) =>
-          manager.findBy(StandaloneHomeEntryEntity, { kind: 'consumed_grant' }),
-        );
-        for (const row of grants) {
-          this.consumedGrantIds.add(row.entryId);
-        }
       }
+      const grantRows = this.source
+        ? await this.source.manager.findBy(StandaloneHomeEntryEntity, { kind: 'consumed_grant' })
+        : this.transactions
+          ? await this.transactions.run((m) =>
+              m.findBy(StandaloneHomeEntryEntity, { kind: 'consumed_grant' }),
+            )
+          : [];
+      for (const row of grantRows) this.consumedGrantIds.add(row.entryId);
       this.stateStore?.setDecommissionHook((localHubId) => {
         for (const key of this.nodesMap.keys()) {
-          if (key !== localHubId) {
-            this.nodesMap.delete(key);
-          }
+          if (key !== localHubId) this.nodesMap.delete(key);
         }
       });
       const localNodeUrl = identity ? this.nodesMap.get(identity.hubId)?.url : undefined;

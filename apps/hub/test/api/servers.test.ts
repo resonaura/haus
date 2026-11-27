@@ -14,7 +14,7 @@ import { Servers, type ServersOptions } from '@haus/hub/servers';
 import { openTestRecordingStore } from '../support/recording.js';
 import { ServiceCatalog } from '@haus/hub/servers';
 import { openTestCatalog } from '../support/catalog.js';
-import type { HostTelemetrySnapshot } from '@haus/ha/node/host-telemetry';
+import type { HostTelemetrySnapshot } from '@haus/core/servers';
 
 const meminfo = 'MemTotal: 8000 kB\nMemAvailable: 3000 kB\nSwapTotal: 2000 kB\nSwapFree: 1500 kB\n';
 

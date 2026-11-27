@@ -5,6 +5,7 @@ import type { DetectedSetupCode } from '@haus/core/transport';
 import { colorToken, corners, insets, pct, px, rgba } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import {
+  Box,
   HausButton,
   HausDialog,
   Pressable,
@@ -13,19 +14,12 @@ import {
   Stack,
   Text,
 } from '../../primitives/index.js';
+import { BrandIcon, ManagementGlassCard, ManagementStatusPill } from '../brand/index.js';
 import { UiIcon } from '../icon.js';
-import {
-  CommissioningCodeStep,
-  CommissioningCredentialsStep,
-} from './commissioning-steps.js';
+import { CommissioningCodeStep, CommissioningCredentialsStep } from './commissioning-steps.js';
 
 export type CommissioningStage =
-  | 'code_entry'
-  | 'candidate_selection'
-  | 'credentials'
-  | 'pairing'
-  | 'complete'
-  | 'error';
+  'code_entry' | 'candidate_selection' | 'credentials' | 'pairing' | 'complete' | 'error';
 
 export interface CommissioningCandidateItem {
   readonly identifier: string;
@@ -130,7 +124,10 @@ export function CommissioningModal({
   const [saveForReuse, setSaveForReuse] = useState(true);
 
   const primaryLabel = (text: string) => (
-    <Text size={12.5} style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}>
+    <Text
+      size={12.5}
+      style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}
+    >
       {text}
     </Text>
   );
@@ -180,7 +177,12 @@ export function CommissioningModal({
     if (stage === 'complete') {
       return (
         <Row justify="end" style={{ layout: { width: pct(100) } }}>
-          <HausButton id="commissioning-finish" variant="primary" disabled={busy} onPress={onFinish}>
+          <HausButton
+            id="commissioning-finish"
+            variant="primary"
+            disabled={busy}
+            onPress={onFinish}
+          >
             {primaryLabel(busy ? 'Saving…' : 'Done')}
           </HausButton>
         </Row>
@@ -207,10 +209,30 @@ export function CommissioningModal({
     );
   })();
 
+  const protocolIconId =
+    detected.protocol === 'matter'
+      ? 'matter'
+      : detected.protocol === 'homekit'
+        ? 'homekit_controller'
+        : detected.protocol === 'improv'
+          ? 'esphome'
+          : undefined;
+
   return (
     <HausDialog
       size="md"
+      eyebrow="SET UP WITH CODE"
       title={stageTitle(stage)}
+      headerLeading={
+        protocolIconId ? (
+          <BrandIcon
+            kind="integration"
+            id={protocolIconId}
+            size={38}
+            hint={{ name: detected.label }}
+          />
+        ) : undefined
+      }
       scrollable
       onClose={() => {
         if (!busy) onCancel();
@@ -236,43 +258,47 @@ export function CommissioningModal({
               Multiple nearby devices matched your setup code. Choose one to pair:
             </Text>
             {candidates.map((cand) => (
-              <Row
+              <ManagementGlassCard
                 key={cand.identifier}
-                align="center"
-                justify="between"
-                gapPx={12}
-                style={{
-                  layout: { width: pct(100), padding: insets(12, 14) },
-                  material: new SolidMaterial(colorToken('surfaceSecondary')),
-                  border: { width: 1, color: colorToken('border') },
-                  corners: corners(12),
-                }}
+                radius={18}
+                padding={insets(12, 14)}
+                interactive
+                style={{ layout: { width: pct(100) } }}
               >
-                <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                  <Text size={13} weight={600}>
-                    {cand.name || cand.identifier}
-                  </Text>
-                  <Text size={11.5} tone="muted">
-                    {[
-                      cand.protocol.toUpperCase(),
-                      cand.transport.toUpperCase(),
-                      cand.address,
-                      cand.rssi !== undefined ? `${cand.rssi} dBm` : undefined,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Text>
-                </Stack>
-                <HausButton
-                  id={`commissioning-candidate-${cand.identifier}`}
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy}
-                  onPress={() => onSelectCandidate(cand.identifier)}
+                <Row
+                  align="center"
+                  justify="between"
+                  gapPx={12}
+                  style={{ layout: { width: pct(100) } }}
                 >
-                  <Text size={12}>Pair</Text>
-                </HausButton>
-              </Row>
+                  <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                    <Row align="center" gapPx={6} wrap>
+                      <Text size={13.5} weight={600}>
+                        {cand.name || cand.identifier}
+                      </Text>
+                      <ManagementStatusPill label={cand.protocol.toUpperCase()} tone="accent" />
+                    </Row>
+                    <Text size={11.5} tone="muted">
+                      {[
+                        cand.transport.toUpperCase(),
+                        cand.address,
+                        cand.rssi !== undefined ? `${cand.rssi} dBm` : undefined,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Text>
+                  </Stack>
+                  <HausButton
+                    id={`commissioning-candidate-${cand.identifier}`}
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onPress={() => onSelectCandidate(cand.identifier)}
+                  >
+                    {primaryLabel('Pair')}
+                  </HausButton>
+                </Row>
+              </ManagementGlassCard>
             ))}
           </Stack>
         )}
@@ -295,18 +321,22 @@ export function CommissioningModal({
         )}
 
         {stage === 'pairing' && (
-          <Stack gapPx={10}>
-            <Row align="center" gapPx={8}>
-              <UiIcon name="loader-circle" size={16} />
-              <Text size={13} weight={600}>
+          <ManagementGlassCard
+            radius={20}
+            padding={insets(16)}
+            style={{ layout: { width: pct(100), gap: px(12) } }}
+          >
+            <Row align="center" gapPx={10}>
+              <UiIcon name="loader-circle" size={17} />
+              <Text size={13.5} weight={600}>
                 {statusMessage || 'Establishing secure local pairing session…'}
               </Text>
             </Row>
             <ScrollView
               style={{
                 layout: { width: pct(100), maxHeight: px(200), padding: insets(10, 12) },
-                material: new SolidMaterial(colorToken('surfaceSecondary')),
-                border: { width: 1, color: colorToken('border') },
+                material: new SolidMaterial(colorToken('surface')),
+                border: { width: 1, color: colorToken('borderSubtle') },
                 corners: corners(12),
               }}
             >
@@ -324,35 +354,50 @@ export function CommissioningModal({
                 )}
               </Stack>
             </ScrollView>
-          </Stack>
+          </ManagementGlassCard>
         )}
 
         {stage === 'complete' && (
-          <Stack gapPx={12}>
-            <Row
-              align="center"
-              gapPx={10}
-              style={{
-                layout: { width: pct(100), padding: insets(14) },
-                material: new SolidMaterial(rgba(52, 211, 153, 0.12)),
-                border: { width: 1, color: rgba(52, 211, 153, 0.36) },
-                corners: corners(12),
-              }}
+          <Stack gapPx={14}>
+            <ManagementGlassCard
+              radius={20}
+              padding={insets(18)}
+              style={{ layout: { width: pct(100) } }}
             >
-              <UiIcon name="check-circle" size={18} color="#34d399" />
-              <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                <Text size={13.5} weight={600}>
-                  Pairing complete
-                </Text>
-                <Text size={12} tone="muted">
-                  {pairedDevices.length > 0
-                    ? pairedDevices.map((d) => d.name).join(', ')
-                    : 'Your accessory is now available in Haus.'}
-                </Text>
-              </Stack>
-            </Row>
+              <Row align="center" gapPx={12}>
+                <Box
+                  style={{
+                    layout: {
+                      width: px(40),
+                      height: px(40),
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    },
+                    material: new SolidMaterial(rgba(52, 211, 153, 0.14)),
+                    border: { width: 1, color: rgba(52, 211, 153, 0.36) },
+                    corners: corners(999, 'round'),
+                  }}
+                >
+                  <UiIcon name="check-circle" size={20} color="#34d399" />
+                </Box>
+                <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                  <Row align="center" gapPx={8} wrap>
+                    <Text size={14} weight={600}>
+                      Pairing complete
+                    </Text>
+                    <ManagementStatusPill label="Ready" tone="success" showDot />
+                  </Row>
+                  <Text size={12.5} tone="muted">
+                    {pairedDevices.length > 0
+                      ? pairedDevices.map((d) => d.name).join(', ')
+                      : 'Your accessory is now available in Haus.'}
+                  </Text>
+                </Stack>
+              </Row>
+            </ManagementGlassCard>
             {rooms.length > 0 && (
-              <Stack gapPx={6}>
+              <Stack gapPx={8}>
                 <Text size={12} weight={600}>
                   Assign to room (optional)
                 </Text>
@@ -366,11 +411,14 @@ export function CommissioningModal({
                         ariaPressed={active}
                         onActivate={() => onSelectRoom(active ? '' : room.id)}
                         style={{
-                          layout: { padding: insets(6, 12) },
+                          layout: { padding: insets(7, 13) },
                           material: new SolidMaterial(
-                            active ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
+                            active ? colorToken('surfaceActive') : colorToken('card'),
                           ),
-                          border: { width: 1, color: active ? colorToken('accent') : colorToken('border') },
+                          border: {
+                            width: 1,
+                            color: active ? colorToken('accent') : colorToken('border'),
+                          },
                           corners: corners(999),
                         }}
                       >
@@ -387,23 +435,28 @@ export function CommissioningModal({
         )}
 
         {stage === 'error' && (
-          <Stack
-            gapPx={8}
-            style={{
-              layout: { width: pct(100), padding: insets(14) },
-              material: new SolidMaterial(colorToken('surfaceSecondary')),
-              border: { width: 1, color: colorToken('critical') },
-              corners: corners(12),
-            }}
+          <ManagementGlassCard
+            radius={20}
+            padding={insets(16)}
+            attention
+            style={{ layout: { width: pct(100), gap: px(8) } }}
           >
             <Row align="center" gapPx={8}>
-              <UiIcon name="alert-circle" size={16} />
-              <Text size={13} weight={600} tone="critical">
+              <UiIcon name="alert-circle" size={17} color="#f87171" />
+              <Text size={13.5} weight={600} tone="critical">
                 {errorMessage || 'Device setup failed'}
               </Text>
             </Row>
-            {actionableHint && <Text size={12} tone="muted">{actionableHint}</Text>}
-          </Stack>
+            {actionableHint && (
+              <Text
+                size={12.5}
+                tone="muted"
+                style={{ typography: { size: 12.5, lineHeight: 1.45 } }}
+              >
+                {actionableHint}
+              </Text>
+            )}
+          </ManagementGlassCard>
         )}
       </Stack>
     </HausDialog>

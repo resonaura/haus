@@ -92,7 +92,7 @@ export function DiscoveryRadarPanel({
   const { theme } = useHausUi();
   const dark = theme.mode === 'dark';
   const radarItems = discovered.slice(0, RADAR_BLIP_POSITIONS.length);
-  const discBg = dark ? rgba(255, 255, 255, 0.03) : rgba(16, 18, 22, 0.03);
+  const discBg = mixColor(transparentColor, colorToken('ink'), 0.03);
   const sweepTint = dark ? rgba(52, 211, 153, 0.16) : rgba(16, 185, 129, 0.14);
   const axisColor = mixColor(transparentColor, colorToken('ink'), dark ? 0.08 : 0.07);
   const statusDotColor = rgba(52, 211, 153, 1);
@@ -209,8 +209,8 @@ export function DiscoveryRadarPanel({
             {radarItems.length > 0
               ? radarItems.map((item, idx) => {
                   const pos = RADAR_BLIP_POSITIONS[idx]!;
-                  const leftPx = Math.round((RADAR_DISC_SIZE * pos.leftPct) / 100) - 16;
-                  const topPx = Math.round((RADAR_DISC_SIZE * pos.topPct) / 100) - 16;
+                  const leftPx = Math.round((RADAR_DISC_SIZE * pos.leftPct) / 100) - 18;
+                  const topPx = Math.round((RADAR_DISC_SIZE * pos.topPct) / 100) - 18;
                   return (
                     <Pressable
                       key={item.flowId}
@@ -221,8 +221,8 @@ export function DiscoveryRadarPanel({
                         layout: {
                           position: 'absolute',
                           inset: { left: px(leftPx), top: px(topPx) },
-                          width: px(32),
-                          height: px(32),
+                          width: px(36),
+                          height: px(36),
                           alignItems: 'center',
                           justifyContent: 'center',
                           overflow: 'visible',
@@ -245,21 +245,21 @@ export function DiscoveryRadarPanel({
                           layout: {
                             position: 'absolute',
                             inset: insets(-4),
-                            width: px(40),
-                            height: px(40),
+                            width: px(44),
+                            height: px(44),
                           },
                           border: {
                             width: 1.5,
                             color: rgba(52, 211, 153, 0.38),
                           },
-                          corners: corners(11),
+                          corners: corners(12),
                           pointerEvents: 'none',
                         }}
                       />
                       <BrandIcon
                         kind="integration"
                         id={item.domain}
-                        size={32}
+                        size={34}
                         hint={{ name: item.title }}
                       />
                     </Pressable>
@@ -353,7 +353,7 @@ export function DiscoveryRadarPanel({
                       <BrandIcon
                         kind="integration"
                         id={item.domain}
-                        size={36}
+                        size={40}
                         hint={{
                           name: item.title,
                           ...(item.source ? { category: item.source } : {}),

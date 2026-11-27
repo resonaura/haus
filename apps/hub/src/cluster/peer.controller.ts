@@ -41,6 +41,8 @@ import { NvrTransport } from '../nvr/transport/service.js';
 import { ClusterPeerGuard, type AuthenticatedPeerRequest } from './peer.guard.js';
 import { ClusterSyncService } from './sync/service.js';
 import { ClusterTransferManager } from './transfer.js';
+import { CLUSTER_SERVICE, type IClusterService } from './cluster.controller.js';
+import { dispatchCoordinatorProxyCall } from './coordination/proxy.js';
 import { HubTerminalService } from '../servers/terminal/service.js';
 import type {
   RemoteTransferCommitPayload,
@@ -70,6 +72,7 @@ export class ClusterPeerController {
     @Optional() @Inject(CATALOG_TRANSACTIONS) private readonly transactions?: Transactions,
     @Optional() @Inject(NvrTransport) private readonly nvrTransport?: NvrTransport,
     @Optional() @Inject(HubTerminalService) private readonly terminalService?: HubTerminalService,
+    @Optional() @Inject(CLUSTER_SERVICE) private readonly clusterService?: IClusterService,
   ) {}
 
   @Get('status')
@@ -293,11 +296,16 @@ export class ClusterPeerController {
       throw new BadRequestException({ error: 'invalid_command_payload' });
     }
     if (!this.leaseService.shouldRunLocally(body.workloadId)) {
-      const existing = this.stateStore.getWorkloadSync(body.workloadId);
-      throw new ConflictException({
-        error: 'workload_not_owned_locally',
-        ownerHubId: existing?.ownerHubId,
-      });
+      const canActivate =
+        (body.action === 'execute_app' || body.action === 'operate_app') &&
+        (await this.leaseService.activateOwnedLocalWorkload(body.workloadId));
+      if (!canActivate) {
+        const existing = this.stateStore.getWorkloadSync(body.workloadId);
+        throw new ConflictException({
+          error: 'workload_not_owned_locally',
+          ownerHubId: existing?.ownerHubId,
+        });
+      }
     }
     const ctrl = this.leaseService.getController(body.workloadId);
     if (!ctrl || !ctrl.executeRemote) {
@@ -431,5 +439,19 @@ export class ClusterPeerController {
       throw new ForbiddenException({ error: 'terminal_unavailable' });
     }
     return this.terminalService.issuePeerTicket(senderHubId, body);
+  }
+
+  @Post('coordinator-proxy')
+  @HttpCode(200)
+  coordinatorProxy(
+    @Req() req: AuthenticatedPeerRequest,
+    @Body() body: { readonly action?: string; readonly payload?: Record<string, unknown> },
+  ) {
+    return dispatchCoordinatorProxyCall({
+      senderHubId: req.clusterPeer?.hubId,
+      clusterService: this.clusterService,
+      action: body?.action,
+      payload: body?.payload,
+    });
   }
 }

@@ -15,7 +15,7 @@ import {
 import type { HassEntity, Snapshot } from '@haus/ha/types';
 import type { RegistryController } from '@haus/ha/ui/registry';
 import { isEntityActive } from '@haus/ha/view/device-state';
-import type { Preferences } from '@haus/ha/view/preferences';
+import { buildCameraMovePreferencePatch, type Preferences } from '@haus/core/preferences';
 import type { Category } from '@haus/ha/view/types';
 import {
   DEVICE_ICONS,
@@ -388,6 +388,7 @@ export function openSceneContextMenu({
 
 export function openCameraContextMenu({
   cameraId,
+  visibleCameraIds,
   home,
   preferences,
   platform,
@@ -397,6 +398,7 @@ export function openCameraContextMenu({
   onPreferencesPatch,
 }: {
   readonly cameraId: string;
+  readonly visibleCameraIds?: readonly string[];
   readonly home: ReturnType<typeof homeDashboard>;
   readonly preferences: Preferences;
   readonly platform?: Pick<GpuiPlatform, 'showContextMenu'>;
@@ -406,8 +408,18 @@ export function openCameraContextMenu({
   readonly onPreferencesPatch?: (patch: Partial<Preferences>) => void;
 }): void {
   const allAccessories = home.devices.map((item) => item.accessory);
+  const allCameraIds = home.allCameras.map((item) => item.id);
+  const scopeIds =
+    visibleCameraIds && visibleCameraIds.includes(cameraId)
+      ? visibleCameraIds
+      : home.cameras.some((item) => item.id === cameraId)
+        ? home.cameras.map((item) => item.id)
+        : allCameraIds;
+  const index = scopeIds.indexOf(cameraId);
   const cameraInfo = home.allCameras.find((item) => item.id === cameraId);
   const items = buildCameraMenuOptions({
+    index: index >= 0 ? index : undefined,
+    total: index >= 0 ? scopeIds.length : undefined,
     isHomeHidden: preferences.hiddenHome.includes(cameraId),
     isAppHidden: preferences.hiddenApp.includes(cameraId),
   });
@@ -419,7 +431,16 @@ export function openCameraContextMenu({
     onSelect: (actionId) => {
       onCloseFallback();
       if (actionId === 'details') onOpenCamera(cameraId);
-      else {
+      else if (actionId === 'earlier' || actionId === 'later') {
+        const patch = buildCameraMovePreferencePatch(
+          preferences,
+          allCameraIds,
+          scopeIds,
+          cameraId,
+          actionId === 'earlier' ? -1 : 1,
+        );
+        if (patch) onPreferencesPatch?.(patch);
+      } else {
         handleEntityVisibilityAction({
           actionId,
           entityId: cameraId,

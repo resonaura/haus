@@ -431,9 +431,9 @@ export function useHaus() {
       if (mode === 'demo') {
         await transport.request({ type: 'call_service', ...action });
         const next = transport.demo.getSnapshot();
-        serverSnapshotRef.current = next;
-        setSnapshot(next);
-        return;
+        next.states.forEach((item) => optimistic.current.lightMemory.remember(item));
+        setSnapshot((serverSnapshotRef.current = next));
+        return invalidateOptimistic();
       }
       if (status !== 'connected' || !window.hausNative)
         throw new Error('Your home is offline. Wait for reconnection before making changes.');

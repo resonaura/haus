@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { createHash } from 'node:crypto';
-import { HomeCache } from '../home-cache';
+import { HomeCache } from '@haus/core/hub';
 import type { DesktopHubSessionManager } from '../hub-session';
 import { isRecord } from './types';
 

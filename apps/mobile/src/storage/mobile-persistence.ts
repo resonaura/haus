@@ -12,7 +12,7 @@ import {
   snapshotEnvelopeVersion,
 } from '@haus/core/snapshot-envelope';
 import { validateSessionCredentials, type ClientSessionCredentials } from '@haus/core/auth';
-import { sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
+import { sanitizePreferences, type Preferences } from '@haus/core/preferences';
 
 export interface HaSession {
   url: string;

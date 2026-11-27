@@ -5,4 +5,23 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from '@haus/ha/light-profile';
+export {
+  applyLightEffectPrediction,
+  buildLightEffectOptions,
+  describeLightEffect,
+  findDisableEffectOption,
+  formatLightEffectLabel,
+  lightActiveEffect,
+  lightActiveEffectOption,
+  lightDisableEffect,
+  lightEffectOptions,
+  lightEffects,
+  lightProfile,
+  lightStateDescription,
+  lightTemperature,
+  normalizeActiveLightEffect,
+  type LightEffectIcon,
+  type LightEffectMotion,
+  type LightEffectOption,
+  type LightEffectVisual,
+} from '@haus/core/optimistic';

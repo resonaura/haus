@@ -5,90 +5,44 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { validateHelperRequest, type HelperRequest } from './helper-request.js';
 import {
   parseHelperCapabilities,
   safeHelperDiagnostic,
-  type HelperDiagnostic,
   type HelperCapabilities,
+  type HelperDiagnostic,
 } from '@haus/core/helper-protocol';
-import type { ServersStatus } from './server-types.js';
+import type { ServersStatus } from '@haus/core/servers';
+import { validateHelperRequest, type HelperRequest } from './helper-request.js';
+
+export type HaVideoNodeRole = 'storage' | 'stream';
 
 export interface HelperPort {
   request<T>(request: HelperRequest): Promise<T>;
 }
-export interface ClusterWorkloadSummary {
-  readonly workloadId: string;
-  readonly kind: string;
-  readonly name: string;
-  readonly ownerHubId: string;
-  readonly standbyHubIds: readonly string[];
-  readonly generation: number;
-  readonly epoch: number;
-  readonly state: string;
-  readonly configRevision: number;
-  readonly credentialRevision: number;
-  readonly cacheRevision: number;
-  readonly preferredHubId?: string;
-}
-export interface ClusterNodeDrainPlan {
+
+export interface HaVideoNodeDrainPlan {
   readonly nodeId: string;
-  readonly isLocalNode?: boolean;
-  readonly isSoleHub?: boolean;
   readonly canRemoveSafely?: boolean;
   readonly blockReason?: string;
   readonly blockingReasons?: readonly string[];
   readonly online: boolean;
-  readonly isCoordinator?: boolean;
-  readonly workloadsToMigrate?: readonly {
-    readonly workloadId: string;
-    readonly name: string;
-    readonly kind: string;
-    readonly suggestedTargetHubId?: string;
-  }[];
-  readonly activeWorkloadIds?: readonly string[];
   readonly soleCopyMediaCount: number;
   readonly soleCopyMediaBytes: number;
   readonly soleCopyBackupsCount: number;
-  readonly exclusiveRadios?: readonly string[];
-  readonly soleRadioWarnings?: readonly string[];
   readonly requiresForceIfOffline?: boolean;
   readonly requiresForce?: boolean;
 }
-export interface RemoveClusterNodeOptions {
+
+export interface RemoveHaVideoNodeOptions {
   readonly force?: boolean;
-  readonly targetHubId?: string;
 }
-export interface ClusterTransferSummary {
-  readonly transferId: string;
-  readonly homeId: string;
-  readonly sourceHubId: string;
-  readonly targetHubId: string;
-  readonly epoch: number;
-  readonly state: string;
-}
-export interface ClusterStatus {
-  optional: boolean;
-  id?: string;
-  role?: 'coordinator' | 'node' | 'standalone' | 'fenced';
-  epoch?: number;
-  coordinatorId?: string;
-  fenced?: boolean;
-  nodes: ClusterNode[];
-  backups: {
-    items: { digest: string; kind: 'haus' | 'ha'; createdAt: number; bytes: number }[];
-    busy: boolean;
-    error?: string;
-  };
-  sync: { enabled: boolean; authority: string };
-  busy: boolean;
-}
-export interface ClusterNode {
+
+export interface HaVideoClusterNode {
   livePriority?: number;
   id: string;
   name: string;
   url: string;
-  roles: ('storage' | 'stream' | 'radio' | 'bridge')[];
+  roles: HaVideoNodeRole[];
   allowHttp: boolean;
   enabled: boolean;
   sshServerId?: string;
@@ -98,41 +52,47 @@ export interface ClusterNode {
   remote?: Record<string, unknown>;
   error?: string;
   backupCopies: number;
-  isCoordinator?: boolean;
-  fenced?: boolean;
-  capacityScore?: number;
 }
-export interface AddClusterNodeInput {
+
+export interface HaVideoClusterStatus {
+  optional: boolean;
+  nodes: HaVideoClusterNode[];
+  backups: {
+    items: { digest: string; kind: 'haus' | 'ha'; createdAt: number; bytes: number }[];
+    busy: boolean;
+    error?: string;
+  };
+  sync: { enabled: boolean; authority: string };
+  busy: boolean;
+}
+
+export interface AddHaVideoNodeInput {
   name: string;
   url: string;
   key?: string;
   token?: string;
   allowHttp?: boolean;
-  roles: ('storage' | 'stream' | 'radio' | 'bridge')[];
+  roles: HaVideoNodeRole[];
   sshServerId?: string;
   nodeId?: string;
-  homeId?: string;
 }
-export interface AttachClusterInput {
-  coordinatorUrl: string;
-  grant: Record<string, unknown>;
-  name?: string;
-  selfUrl?: string;
-  homeId?: string;
-  roles?: ('storage' | 'stream' | 'radio' | 'bridge')[];
-  coordinatorToken?: string;
-}
-export type ClusterNodePatch =
+
+export type HaVideoNodePatch =
   | { livePriority: number }
   | { enabled: boolean }
   | { storageLimitBytes: number | null }
   | { sshServerId: string | null }
   | { enabled: boolean; storageLimitBytes: number | null };
 
-/** Authenticated native/mobile port, with the same operation allowlist as Electron main. */
-export class HausClient {
+/**
+ * Home Assistant Helper client.
+ * Supports full Home Assistant hub compatibility, optional NVR video-node clustering
+ * (`storage` | `stream`), and `/api/ha-integration` for sharing cameras/entities into Home Assistant.
+ */
+export class HaHelperClient {
   private generation = 0;
   private disposed = false;
+
   constructor(
     private readonly port: HelperPort,
     private readonly report?: (diagnostic: HelperDiagnostic) => void,
@@ -167,133 +127,81 @@ export class HausClient {
     return this.request({ method: 'GET', path: '/api/servers' });
   }
 
-  private assertNodeId(id: string): void {
-    if (!/^(?:[a-f0-9-]{36}|hub-[a-zA-Z0-9_-]{1,64})$/.test(id)) {
+  /** Configures the Home Assistant integration so cameras (and optional native entities) are shared into Home Assistant. */
+  setupHaIntegration(options?: { nativeEntities?: boolean }): Promise<Record<string, unknown>> {
+    return this.request({
+      method: 'POST',
+      path: '/api/ha-integration',
+      data: {
+        action: 'setup',
+        ...(options?.nativeEntities !== undefined
+          ? { nativeEntities: options.nativeEntities }
+          : {}),
+      },
+    });
+  }
+
+  /** Revokes a previously enrolled Home Assistant camera integration client. */
+  revokeHaIntegration(clientId: string): Promise<Record<string, unknown>> {
+    if (!/^[a-f0-9]{24}$/.test(clientId)) {
+      throw new Error('Invalid Home Assistant camera integration request.');
+    }
+    return this.request({
+      method: 'POST',
+      path: '/api/ha-integration',
+      data: { action: 'revoke', clientId },
+    });
+  }
+
+  private assertVideoNodeId(id: string): void {
+    if (!/^[a-f0-9-]{36}$/.test(id)) {
       throw new Error('invalid-server');
     }
   }
 
-  cluster(): Promise<ClusterStatus> {
+  cluster(): Promise<HaVideoClusterStatus> {
     return this.request({ method: 'GET', path: '/api/cluster' });
   }
-  clusterWorkloads(): Promise<{
-    workloads: ClusterWorkloadSummary[];
-    epoch: number;
-    coordinatorId: string;
-    role: string;
-  }> {
-    return this.request({ method: 'GET', path: '/api/cluster/workloads' });
-  }
-  rebalanceCluster(): Promise<{
-    rebalanced: boolean;
-    movedCount: number;
-    workloads: ClusterWorkloadSummary[];
-  }> {
-    return this.request({ method: 'POST', path: '/api/cluster/rebalance', data: {} });
-  }
-  reconcileCluster(): Promise<{
-    reconciled: boolean;
-    epoch: number;
-    coordinatorId: string;
-    role: string;
-    stoppedWorkloads: number;
-    conflictingCoordinators: string[];
-  }> {
-    return this.request({ method: 'POST', path: '/api/cluster/reconcile', data: {} });
-  }
-  drainPlan(id: string): Promise<ClusterNodeDrainPlan> {
-    this.assertNodeId(id);
+
+  drainPlan(id: string): Promise<HaVideoNodeDrainPlan> {
+    this.assertVideoNodeId(id);
     return this.request({ method: 'GET', path: `/api/cluster/nodes/${id}/drain-plan` });
   }
-  drainNode(
-    id: string,
-    targetHubId?: string,
-  ): Promise<{
+
+  drainNode(id: string): Promise<{
     drained: boolean;
     nodeId: string;
-    migratedWorkloads: number;
     evacuatedBlobs: number;
     remainingBlobs: number;
   }> {
-    this.assertNodeId(id);
-    if (targetHubId !== undefined) this.assertNodeId(targetHubId);
+    this.assertVideoNodeId(id);
     return this.request({
       method: 'POST',
       path: `/api/cluster/nodes/${id}/drain`,
-      data: targetHubId ? { targetHubId } : {},
+      data: {},
     });
   }
-  addNode(input: AddClusterNodeInput): Promise<ClusterStatus> {
+
+  addNode(input: AddHaVideoNodeInput): Promise<HaVideoClusterStatus> {
     return this.request({ method: 'POST', path: '/api/cluster/nodes', data: { ...input } });
   }
-  attachToCoordinator(input: AttachClusterInput): Promise<{
-    status: string;
-    homeId: string;
-    coordinatorHubId: string;
-    coordinatorEpoch?: number;
-  }> {
-    return this.request({ method: 'POST', path: '/api/cluster/attach', data: { ...input } });
-  }
-  updateNode(id: string, patch: ClusterNodePatch): Promise<ClusterStatus> {
-    this.assertNodeId(id);
+
+  updateNode(id: string, patch: HaVideoNodePatch): Promise<HaVideoClusterStatus> {
+    this.assertVideoNodeId(id);
     return this.request({ method: 'PATCH', path: `/api/cluster/nodes/${id}`, data: patch });
   }
-  removeNode(id: string, options?: RemoveClusterNodeOptions): Promise<ClusterStatus> {
-    this.assertNodeId(id);
-    if (options?.targetHubId !== undefined) this.assertNodeId(options.targetHubId);
+
+  removeNode(id: string, options?: RemoveHaVideoNodeOptions): Promise<HaVideoClusterStatus> {
+    this.assertVideoNodeId(id);
     return this.request({
       method: 'POST',
       path: `/api/cluster/nodes/${id}/remove`,
       data: options ? { ...options } : {},
     });
   }
-  initiateTransfer(targetHubId: string, preservePairing = true): Promise<ClusterTransferSummary> {
-    this.assertNodeId(targetHubId);
-    return this.request({
-      method: 'POST',
-      path: '/api/cluster/transfer/initiate',
-      data: { targetHubId, preservePairing },
-    });
-  }
-  prepareTransfer(
-    transferId: string,
-  ): Promise<{ transferId: string; state: string; valid: boolean }> {
-    return this.request({
-      method: 'POST',
-      path: `/api/cluster/transfer/${transferId}/prepare`,
-      data: {},
-    });
-  }
-  fenceTransfer(
-    transferId: string,
-  ): Promise<{ transferId: string; state: string; fenced: boolean }> {
-    return this.request({
-      method: 'POST',
-      path: `/api/cluster/transfer/${transferId}/fence`,
-      data: {},
-    });
-  }
-  commitTransfer(
-    transferId: string,
-  ): Promise<{ transferId: string; state: string; newCoordinator: string }> {
-    return this.request({
-      method: 'POST',
-      path: `/api/cluster/transfer/${transferId}/commit`,
-      data: {},
-    });
-  }
-  rollbackTransfer(
-    transferId: string,
-    reason?: string,
-  ): Promise<{ transferId: string; state: string }> {
-    return this.request({
-      method: 'POST',
-      path: `/api/cluster/transfer/${transferId}/rollback`,
-      data: reason ? { reason } : {},
-    });
-  }
+
   async setStorageLimit(serverId: string, bytes: number | null): Promise<ServersStatus> {
-    if (serverId !== 'home-assistant') this.assertNodeId(serverId);
+    if (serverId !== 'home-assistant') this.assertVideoNodeId(serverId);
     const path =
       serverId === 'home-assistant'
         ? '/api/servers/home-assistant'
@@ -306,12 +214,13 @@ export class HausClient {
       throw new Error('storage-limit-unconfirmed');
     return status;
   }
+
   dispose(): void {
     this.disposed = true;
     ++this.generation;
   }
 
-  private diagnostic(input: HelperDiagnostic) {
+  private diagnostic(input: HelperDiagnostic): void {
     if (input.outcome !== 'failure') return;
     const safe = safeHelperDiagnostic(input);
     if (!safe || !this.report) return;
@@ -323,9 +232,10 @@ export class HausClient {
   }
 }
 
-const CLUSTER_NODE_PATH = /^\/api\/cluster\/nodes\/(?:[a-f0-9-]{36}|hub-[a-zA-Z0-9_-]{1,64})$/;
-const CLUSTER_REMOVE_PATH =
-  /^\/api\/cluster\/nodes\/(?:[a-f0-9-]{36}|hub-[a-zA-Z0-9_-]{1,64})\/remove$/;
+export { HaHelperClient as HausClient };
+
+const VIDEO_NODE_PATH = /^\/api\/cluster\/nodes\/[a-f0-9-]{36}$/;
+const VIDEO_REMOVE_PATH = /^\/api\/cluster\/nodes\/[a-f0-9-]{36}\/remove$/;
 
 function helperDiagnosticOperation(request: HelperRequest): HelperDiagnostic['operation'] {
   if (request.method === 'GET' && request.path === '/api/status') return 'helper-status';
@@ -334,12 +244,12 @@ function helperDiagnosticOperation(request: HelperRequest): HelperDiagnostic['op
   if (
     request.method === 'PATCH' &&
     (request.path === '/api/servers/home-assistant' ||
-      (CLUSTER_NODE_PATH.test(request.path) &&
+      (VIDEO_NODE_PATH.test(request.path) &&
         Object.hasOwn(request.data ?? {}, 'storageLimitBytes')))
   )
     return 'update-storage-limit';
   if (request.method === 'POST' && request.path === '/api/cluster/nodes') return 'enroll-node';
-  if (request.method === 'POST' && CLUSTER_REMOVE_PATH.test(request.path)) return 'remove-node';
-  if (request.method === 'PATCH' && CLUSTER_NODE_PATH.test(request.path)) return 'update-node';
+  if (request.method === 'POST' && VIDEO_REMOVE_PATH.test(request.path)) return 'remove-node';
+  if (request.method === 'PATCH' && VIDEO_NODE_PATH.test(request.path)) return 'update-node';
   return 'other-allowlisted';
 }

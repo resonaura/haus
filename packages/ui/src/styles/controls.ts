@@ -5,10 +5,35 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { colorToken, corners, insets, pct, px, rgba } from '../ir/geometry.js';
+import {
+  colorToken,
+  corners,
+  insets,
+  pct,
+  px,
+  rgba,
+  type ColorValue,
+} from '../ir/geometry.js';
 import { LiquidGlassMaterial, SolidMaterial } from '../ir/materials.js';
-import type { UiStyleSpec } from '../ir/node.js';
+import type { UiStyleSpec, UiTheme } from '../ir/node.js';
 import { defineStyleSheet } from './sheet.js';
+
+export function resolveCapsuleThumbColor(
+  accentColor: ColorValue | undefined,
+  theme: UiTheme,
+): ColorValue {
+  if (!accentColor || (accentColor.kind === 'token' && accentColor.name === 'accent')) {
+    return theme.color('accentForeground');
+  }
+  if (accentColor.kind === 'rgba') {
+    const lum = (0.2126 * accentColor.r + 0.7152 * accentColor.g + 0.0722 * accentColor.b) / 255;
+    return lum > 0.58 ? rgba(12, 14, 18, 0.96) : rgba(255, 255, 255, 0.98);
+  }
+  if (accentColor.kind === 'oklch') {
+    return accentColor.l > 0.68 ? rgba(12, 14, 18, 0.96) : rgba(255, 255, 255, 0.98);
+  }
+  return theme.color('accentForeground');
+}
 
 export type HausButtonVariant =
   'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'danger-soft' | 'glass';
@@ -49,20 +74,18 @@ export const buttonStyles = defineStyleSheet('button', (theme, props: ButtonStyl
             },
           ],
           states: {
-            hover: { opacity: 0.92, transform: { translateY: -0.5 } },
+            hover: { opacity: 0.92 },
             pressed: { opacity: 0.85, transform: { scale: 0.98 } },
           },
         };
       case 'secondary':
         return {
-          material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.1) : rgba(15, 23, 42, 0.07)),
+          material: new SolidMaterial(theme.color('controlFill')),
           typography: { color: colorToken('textPrimary'), weight: 500 },
           border: { width: 1, style: 'solid', color: colorToken('border') },
           states: {
             hover: {
-              material: new SolidMaterial(
-                isDark ? rgba(255, 255, 255, 0.15) : rgba(15, 23, 42, 0.11),
-              ),
+              material: new SolidMaterial(theme.color('controlFillHover')),
             },
             pressed: { transform: { scale: 0.98 } },
           },
@@ -74,9 +97,7 @@ export const buttonStyles = defineStyleSheet('button', (theme, props: ButtonStyl
           border: { width: 1, style: 'solid', color: colorToken('materialEdge') },
           states: {
             hover: {
-              material: new SolidMaterial(
-                isDark ? rgba(255, 255, 255, 0.08) : rgba(15, 23, 42, 0.05),
-              ),
+              material: new SolidMaterial(theme.color('controlFill')),
             },
             pressed: { transform: { scale: 0.98 } },
           },
@@ -88,9 +109,7 @@ export const buttonStyles = defineStyleSheet('button', (theme, props: ButtonStyl
           border: { width: 1, style: 'solid', color: rgba(0, 0, 0, 0) },
           states: {
             hover: {
-              material: new SolidMaterial(
-                isDark ? rgba(255, 255, 255, 0.08) : rgba(15, 23, 42, 0.06),
-              ),
+              material: new SolidMaterial(theme.color('controlFill')),
               textColor: colorToken('textPrimary'),
             },
             pressed: { transform: { scale: 0.98 } },
@@ -129,7 +148,7 @@ export const buttonStyles = defineStyleSheet('button', (theme, props: ButtonStyl
           typography: { color: colorToken('textPrimary'), weight: 500 },
           border: { width: 1, style: 'solid', color: colorToken('materialEdge') },
           states: {
-            hover: { opacity: 0.95, transform: { translateY: -0.5 } },
+            hover: { opacity: 0.95 },
             pressed: { transform: { scale: 0.98 } },
           },
         };
@@ -169,21 +188,28 @@ export const buttonStyles = defineStyleSheet('button', (theme, props: ButtonStyl
   };
 });
 
-const SWITCH_SIZES = {
-  sm: { width: 34, height: 20, thumb: 14, pad: 3 },
-  md: { width: 42, height: 24, thumb: 18, pad: 3 },
-  lg: { width: 50, height: 28, thumb: 22, pad: 3 },
+export const SWITCH_SIZES = {
+  sm: { width: 38, height: 20, thumbWidth: 18, thumbHeight: 14, pad: 3 },
+  md: { width: 46, height: 24, thumbWidth: 22, thumbHeight: 18, pad: 3 },
+  lg: { width: 54, height: 28, thumbWidth: 26, thumbHeight: 22, pad: 3 },
 } as const;
 
 export interface SwitchStyleProps {
   readonly checked: boolean;
   readonly disabled?: boolean;
   readonly size: HausControlSize;
+  readonly accentColor?: ColorValue;
 }
 
 export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyleProps) => {
   const dim = SWITCH_SIZES[props.size];
   const isDark = theme.mode === 'dark';
+  const travel = dim.width - dim.thumbWidth - dim.pad * 2;
+  const activeFill = props.accentColor ?? theme.color('accent');
+  const uncheckedFill = isDark ? rgba(255, 255, 255, 0.16) : rgba(0, 0, 0, 0.12);
+  const thumbColor = props.checked
+    ? resolveCapsuleThumbColor(props.accentColor, theme)
+    : rgba(255, 255, 255, isDark ? 0.92 : 0.98);
 
   return {
     wrapper: {
@@ -200,42 +226,35 @@ export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyl
         display: 'inline-flex',
         direction: 'row',
         alignItems: 'center',
-        justifyContent: props.checked ? 'end' : 'start',
+        justifyContent: 'start',
         width: px(dim.width),
         height: px(dim.height),
         padding: insets(dim.pad),
         flexShrink: 0,
       },
-      material: new SolidMaterial(
-        props.checked
-          ? theme.color('accent')
-          : isDark
-            ? rgba(255, 255, 255, 0.16)
-            : rgba(15, 23, 42, 0.16),
-      ),
+      material: new SolidMaterial(props.checked ? activeFill : uncheckedFill),
       corners: corners(999, 'round'),
-      border: {
-        width: 1,
-        style: 'solid',
-        color: props.checked ? colorToken('accent') : colorToken('border'),
-      },
+      border: { width: 0, style: 'none', color: rgba(0, 0, 0, 0) },
       opacity: props.disabled ? 0.45 : 1,
       cursor: props.disabled ? 'not-allowed' : 'pointer',
-      transitionMs: 180,
+      transitionMs: 190,
       states: {
-        hover: { opacity: 0.94 },
+        hover: { opacity: 0.93 },
         pressed: { transform: { scale: 0.97 } },
       },
     },
     thumb: {
-      layout: { width: px(dim.thumb), height: px(dim.thumb), flexShrink: 0 },
-      material: new SolidMaterial(
-        isDark && props.checked ? rgba(18, 18, 22, 0.96) : rgba(255, 255, 255, 0.98),
-      ),
+      layout: {
+        width: px(dim.thumbWidth),
+        height: px(dim.thumbHeight),
+        flexShrink: 0,
+      },
+      material: new SolidMaterial(thumbColor),
       corners: corners(999, 'round'),
-      shadows: [{ offsetX: 0, offsetY: 1, blurRadius: 3, color: rgba(0, 0, 0, 0.28) }],
+      shadows: [{ offsetX: 0, offsetY: 1, blurRadius: 2.5, color: rgba(0, 0, 0, 0.22) }],
+      transform: { translateX: props.checked ? travel : 0 },
       pointerEvents: 'none',
-      transitionMs: 180,
+      transitionMs: 190,
     },
     label: {
       typography: { size: 13.5, weight: 500, color: colorToken('textPrimary') },
@@ -246,16 +265,30 @@ export const switchStyles = defineStyleSheet('switch', (theme, props: SwitchStyl
   };
 });
 
+export const SLIDER_SIZES = {
+  sm: { trackHeight: 18, thumbWidth: 18, thumbHeight: 12, pad: 3, minFill: 24 },
+  md: { trackHeight: 22, thumbWidth: 22, thumbHeight: 16, pad: 3, minFill: 28 },
+  lg: { trackHeight: 26, thumbWidth: 26, thumbHeight: 20, pad: 3, minFill: 32 },
+} as const;
+
 export interface SliderStyleProps {
   readonly ratioPct: number;
   readonly disabled?: boolean;
+  readonly size?: HausControlSize;
+  readonly accentColor?: ColorValue;
 }
 
 export const sliderStyles = defineStyleSheet('slider', (theme, props: SliderStyleProps) => {
   const isDark = theme.mode === 'dark';
+  const dim = SLIDER_SIZES[props.size ?? 'md'];
+  const clampedRatio = Math.max(0, Math.min(100, props.ratioPct));
+  const activeFill = props.accentColor ?? theme.color('accent');
+  const grooveFill = isDark ? rgba(255, 255, 255, 0.11) : rgba(0, 0, 0, 0.09);
+  const thumbColor = resolveCapsuleThumbColor(props.accentColor, theme);
+
   return {
     root: {
-      layout: { display: 'flex', direction: 'column', gap: px(6), width: pct(100) },
+      layout: { display: 'flex', direction: 'column', gap: px(8), width: pct(100) },
       opacity: props.disabled ? 0.45 : 1,
     },
     header: {
@@ -268,14 +301,14 @@ export const sliderStyles = defineStyleSheet('slider', (theme, props: SliderStyl
       },
     },
     label: {
-      typography: { size: 12.5, weight: 500, color: colorToken('textPrimary') },
+      typography: { size: 13, weight: 500, color: colorToken('textPrimary') },
     },
     valueLabel: {
       typography: {
-        fontFamily: 'mono',
-        size: 11.5,
+        size: 13,
+        weight: 500,
         tabularNums: true,
-        color: colorToken('textMuted'),
+        color: colorToken('textPrimary'),
       },
     },
     trackHost: {
@@ -284,46 +317,57 @@ export const sliderStyles = defineStyleSheet('slider', (theme, props: SliderStyl
         display: 'flex',
         alignItems: 'center',
         width: pct(100),
-        height: px(22),
+        height: px(dim.trackHeight),
       },
       cursor: props.disabled ? 'not-allowed' : 'pointer',
     },
     track: {
-      layout: { width: pct(100), height: px(6), overflow: 'hidden' },
-      material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.14) : rgba(15, 23, 42, 0.12)),
-      corners: corners(999, 'round'),
-    },
-    fill: {
-      layout: { width: pct(props.ratioPct), height: pct(100) },
-      material: new SolidMaterial(theme.color('accent')),
-      corners: corners(999, 'round'),
-    },
-    thumbRow: {
       layout: {
-        position: 'absolute',
-        inset: insets(0),
-        width: pct(100),
-        height: pct(100),
         display: 'flex',
         direction: 'row',
         alignItems: 'center',
+        width: pct(100),
+        height: px(dim.trackHeight),
+        overflow: 'hidden',
+      },
+      material: new SolidMaterial(grooveFill),
+      corners: corners(999, 'round'),
+    },
+    fill: {
+      layout: {
+        display: 'flex',
+        direction: 'row',
+        alignItems: 'center',
+        justifyContent: 'end',
+        width: px(dim.minFill),
+        minWidth: px(dim.minFill),
+        height: pct(100),
+        padding: insets(dim.pad),
+        flexGrow: clampedRatio,
+        flexShrink: 0,
+      },
+      material: new SolidMaterial(activeFill),
+      corners: corners(999, 'round'),
+      pointerEvents: 'none',
+    },
+    spacer: {
+      layout: {
+        width: px(0),
+        height: pct(100),
+        flexGrow: Math.max(0, 100 - clampedRatio),
+        flexShrink: 1,
       },
       pointerEvents: 'none',
     },
     thumb: {
       layout: {
-        width: px(16),
-        height: px(16),
+        width: px(dim.thumbWidth),
+        height: px(dim.thumbHeight),
         flexShrink: 0,
       },
-      material: new SolidMaterial(rgba(255, 255, 255, 0.98)),
+      material: new SolidMaterial(thumbColor),
       corners: corners(999, 'round'),
-      border: {
-        width: 1,
-        style: 'solid',
-        color: isDark ? rgba(0, 0, 0, 0.28) : colorToken('materialEdge'),
-      },
-      shadows: [{ offsetX: 0, offsetY: 2, blurRadius: 6, color: rgba(0, 0, 0, 0.28) }],
+      shadows: [{ offsetX: 0, offsetY: 1, blurRadius: 2, color: rgba(0, 0, 0, 0.2) }],
       pointerEvents: 'none',
     },
     boundsRow: {
@@ -351,24 +395,26 @@ export const segmentedStyles = defineStyleSheet('segmented', (theme, selected: b
         gap: px(2),
         padding: insets(3),
       },
-      material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.08) : rgba(15, 23, 42, 0.06)),
+      material: new SolidMaterial(theme.color('controlFill')),
       corners: corners(999, 'round'),
       border: { width: 1, style: 'solid', color: colorToken('border') },
     },
     option: {
       layout: {
         display: 'inline-flex',
+        direction: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         padding: insets(5, 12),
       },
       material: selected
-        ? new SolidMaterial(isDark ? rgba(255, 255, 255, 0.16) : rgba(255, 255, 255, 0.96))
+        ? new SolidMaterial(isDark ? theme.color('controlFillActive') : theme.color('surface'))
         : new SolidMaterial(rgba(0, 0, 0, 0)),
       corners: corners(999, 'round'),
       border: { width: 0, style: 'none', color: rgba(0, 0, 0, 0) },
       typography: {
         size: 12.5,
+        lineHeight: 1.2,
         weight: selected ? 600 : 500,
         color: selected ? colorToken('textPrimary') : colorToken('textMuted'),
       },

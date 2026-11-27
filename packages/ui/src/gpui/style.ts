@@ -185,6 +185,8 @@ function resolveMaterial(
         };
       });
       if (stops.length < 2) return {};
+      const gradientBlur =
+        material.blur && material.blur.radius > 0 ? material.blur.radius * 0.5 : undefined;
       if (material.gradientType === 'radial') {
         const centerX = material.radial?.centerX ?? 0.5;
         const centerY = material.radial?.centerY ?? 0.5;
@@ -196,6 +198,7 @@ function resolveMaterial(
           (material.radial ? Math.max(centerY, 1 - centerY) * Math.SQRT2 : 0.5);
         return {
           clearBackgroundColor: true,
+          ...(gradientBlur !== undefined ? { blur: gradientBlur } : {}),
           background: {
             type: 'radial-gradient',
             stops,
@@ -208,6 +211,7 @@ function resolveMaterial(
       }
       return {
         clearBackgroundColor: true,
+        ...(gradientBlur !== undefined ? { blur: gradientBlur } : {}),
         background: { type: 'linear-gradient', angle: material.angleDeg, stops },
       };
     }
@@ -334,6 +338,25 @@ function overlayStyleDesc(
   return buildSingleStyle(overlaySpec, context);
 }
 
+const HOST_PLATFORM = (globalThis as { readonly process?: { readonly platform?: string } }).process
+  ?.platform;
+const NATIVE_MONO_FONT =
+  HOST_PLATFORM === 'win32' ? 'Consolas' : HOST_PLATFORM === 'linux' ? 'DejaVu Sans Mono' : 'Menlo';
+
+function resolveGpuiFontFamily(
+  token: 'sans' | 'mono' | 'display' | undefined,
+  renderedFamily: string | undefined,
+): string | undefined {
+  if (token === 'sans' || token === 'display') return undefined;
+  if (token === 'mono') return NATIVE_MONO_FONT;
+  if (!renderedFamily) return undefined;
+  if (renderedFamily.includes('-apple-system') || renderedFamily.includes('sans-serif')) {
+    return undefined;
+  }
+  if (renderedFamily.includes('monospace')) return NATIVE_MONO_FONT;
+  return renderedFamily;
+}
+
 function buildSingleStyle(style: UiStyleSpec | undefined, context: RenderContext): StyleDesc {
   const rendered = rnRenderer.render(new UiNode({ kind: 'box', style }), context).style;
   const {
@@ -346,8 +369,10 @@ function buildSingleStyle(style: UiStyleSpec | undefined, context: RenderContext
     zIndex: _zi,
     textTransform: _tt,
     letterSpacing: _ls,
+    fontFamily: rawFontFamily,
     ...cleanBase
   } = rendered;
+  const gpuiFontFamily = resolveGpuiFontFamily(style?.typography?.fontFamily, rawFontFamily);
 
   const { layout } = style ?? {};
   const material = resolveMaterial(style, context);
@@ -358,6 +383,7 @@ function buildSingleStyle(style: UiStyleSpec | undefined, context: RenderContext
 
   const resolved: StyleDesc = {
     ...cleanBase,
+    ...(gpuiFontFamily !== undefined ? { fontFamily: gpuiFontFamily } : {}),
     ...(gpuiCorners.borderTopLeftRadius !== undefined
       ? {
           borderTopLeftRadius: gpuiCorners.borderTopLeftRadius,

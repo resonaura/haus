@@ -13,6 +13,11 @@ import type { HassEntity, HausAction } from './types.js';
 export type HaConnectionState =
   'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'auth-required';
 export type HaMessage = { type: string } & Record<string, unknown>;
+export interface HaEntityObservation {
+  readonly entityId: string;
+  readonly value: HassEntity | null;
+  readonly correlationId?: string;
+}
 /** A secure platform session opens this port; credentials never enter the home store. */
 export interface HaTransport {
   readonly connected: boolean;
@@ -20,6 +25,7 @@ export interface HaTransport {
   request<T>(message: HaMessage): Promise<T>;
   watchState(callback: (state: HaConnectionState) => void): () => void;
   watchEntities(callback: (entities: readonly HassEntity[]) => void): () => void;
+  watchObservations?(callback: (observation: HaEntityObservation) => void): () => void;
 }
 export interface HaClientObserver {
   state(homeId: string, state: HaConnectionState): void;

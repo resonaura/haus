@@ -64,6 +64,7 @@ export function HomeRouteContent({
   onControl,
   onApplySceneEntities,
   onSaved,
+  integrationsRefreshSignal,
   onAddDevice,
   onTheme,
   onGrouping,
@@ -109,6 +110,7 @@ export function HomeRouteContent({
   onControl: DeviceControl;
   onApplySceneEntities?: (entities: Record<string, unknown>) => Promise<void>;
   onSaved?: () => void;
+  integrationsRefreshSignal?: number;
   onAddDevice?: (request?: GpuiAddDeviceRequest) => void;
   onTheme: (theme: Preferences['theme']) => void;
   onGrouping: (enabled: boolean) => void;
@@ -122,7 +124,11 @@ export function HomeRouteContent({
   onCopyText?: (text: string) => void;
   onServerSidebarChange?: (context: SidebarContextualNav | undefined) => void;
   renderDevices: (devices: readonly HomeDevice[]) => ReactNode;
-  renderScenes: (scenes: readonly HassEntity[], showAccessoryCount?: boolean) => ReactNode;
+  renderScenes: (
+    scenes: readonly HassEntity[],
+    showAccessoryCount?: boolean,
+    horizontal?: boolean,
+  ) => ReactNode;
   renderCameras: (cameras: typeof home.cameras) => ReactNode;
 }): ReactNode {
   const roomIcons = mergeRoomIcons(snapshot.areas, preferences.roomIcons);
@@ -194,7 +200,9 @@ export function HomeRouteContent({
           home={home}
           columns={columns}
           demo={demo}
+          management={management}
           requestRpc={system?.requestRpc}
+          refreshSignal={integrationsRefreshSignal}
           openExternal={openExternal}
           openPaths={openPaths}
           onOpenEntity={onOpenEntity}
@@ -219,11 +227,14 @@ export function HomeRouteContent({
       return (
         <GpuiServersView
           snapshot={snapshot}
+          preferences={preferences}
           columns={columns}
           demo={demo}
           system={system}
           onCopyText={onCopyText}
           onSaved={onSaved}
+          onPreferencesPatch={onPreferencesPatch}
+          onGo={onGo}
           onContextualSidebarChange={onServerSidebarChange}
         />
       );
@@ -246,6 +257,7 @@ export function HomeRouteContent({
         <GpuiAutomationsView
           snapshot={snapshot}
           automations={home.automations}
+          columns={columns}
           demo={demo}
           disabled={disabled}
           management={management}
@@ -306,7 +318,7 @@ export function HomeRouteContent({
               <Text tone="muted">No cameras on Home</Text>
             )
           }
-          scenes={home.homeScenes.length ? renderScenes(home.homeScenes, false) : undefined}
+          scenes={home.homeScenes.length ? renderScenes(home.homeScenes, false, true) : undefined}
           onScenes={() => onGo('scenes')}
           quick={
             home.quick.cards.length

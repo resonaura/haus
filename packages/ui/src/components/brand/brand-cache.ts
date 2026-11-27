@@ -7,12 +7,73 @@
 
 import { useSyncExternalStore } from 'react';
 import {
+  APP_ICON_METRICS,
   buildUnifiedPlaceholderSvgUri,
   ICON_CACHE_VERSION,
   type PlaceholderGlyphKind,
   type ResolvedIconStyle,
 } from '@haus/icons';
 import type { BrandIconHint, BrandIconKind, RenderedBrandTile } from './types.js';
+
+export interface BrandIconShadowLayout {
+  readonly displaySize: number;
+  readonly dpr: number;
+  readonly bodyPx: number;
+  readonly padPx: number;
+  readonly outPx: number;
+  readonly displaySizePt: number;
+  readonly insetOffsetPt: number;
+  readonly bleedFraction: number;
+}
+
+/**
+ * Computes deterministic 1:1 physical Retina canvas metrics for GPUIX brand icon tiles so
+ * placeholders and loaded icons always share the exact same visible squircle body (`displaySize`)
+ * and symmetrical outer shadow bleed regardless of source image dimensions or tile margins.
+ */
+export function computeBrandIconShadowLayout(displaySize = 44, dpr = 2): BrandIconShadowLayout {
+  const clampedDisplay = Math.max(16, Math.min(256, Math.round(displaySize)));
+  const clampedDpr = Math.max(2, Math.min(3, Math.round(Number.isFinite(dpr) ? dpr : 2)));
+  const bodyPx = clampedDisplay * clampedDpr;
+  const padPx = Math.max(clampedDpr * 12, Math.round((bodyPx * 0.26) / clampedDpr) * clampedDpr);
+  const outPx = bodyPx + padPx * 2;
+  const displaySizePt = outPx / clampedDpr;
+  return {
+    displaySize: clampedDisplay,
+    dpr: clampedDpr,
+    bodyPx,
+    padPx,
+    outPx,
+    displaySizePt,
+    insetOffsetPt: (displaySizePt - clampedDisplay) / 2,
+    bleedFraction: padPx / bodyPx,
+  };
+}
+
+/**
+ * Expands `@haus/icons`'s `0 0 1024 1024` placeholder SVG viewBox to match `computeBrandIconShadowLayout`
+ * so the visible squircle body is `displaySize × displaySize pt` with zero scale jump on load.
+ */
+export function padPlaceholderSvgForShadowLayout(
+  svgDataUri: string,
+  layout: BrandIconShadowLayout,
+): string {
+  const prefix = 'data:image/svg+xml;charset=utf-8,';
+  if (!svgDataUri.startsWith(prefix)) return svgDataUri;
+  try {
+    const raw = decodeURIComponent(svgDataUri.slice(prefix.length));
+    const bodySpanSvg = 1024 * APP_ICON_METRICS.tileFraction;
+    const totalSpanSvg = bodySpanSvg * (layout.outPx / layout.bodyPx);
+    const origin = Number((512 - totalSpanSvg / 2).toFixed(2));
+    const span = Number(totalSpanSvg.toFixed(2));
+    const padded = raw
+      .replace('width="256" height="256"', `width="${layout.outPx}" height="${layout.outPx}"`)
+      .replace('viewBox="0 0 1024 1024"', `viewBox="${origin} ${origin} ${span} ${span}"`);
+    return `${prefix}${encodeURIComponent(padded)}`;
+  } catch {
+    return svgDataUri;
+  }
+}
 
 function monogramLetters(label: string): string {
   const clean = label

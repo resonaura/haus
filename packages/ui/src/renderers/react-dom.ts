@@ -262,6 +262,9 @@ function applyMaterialCss(
       } else {
         target.backgroundImage = `linear-gradient(${material.angleDeg}deg, ${stops})`;
       }
+      if (material.blur && material.blur.radius > 0) {
+        target.filter = `blur(${material.blur.radius}px)`;
+      }
       return {};
     }
     case 'blur':

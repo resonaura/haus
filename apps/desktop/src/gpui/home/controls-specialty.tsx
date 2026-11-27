@@ -9,22 +9,20 @@ import {
   hsvToRgb,
   rgbToHsv,
 } from '@haus/core/transport';
-import { lightColor } from '@haus/ha/light-color';
-import { presentPowerOutlets } from '@haus/ha/view/device-relationships';
 import {
   lightActiveEffect,
+  lightColor,
   lightDisableEffect,
   lightEffectOptions,
   lightProfile,
   lightStateDescription,
   lightTemperature,
-} from '@haus/ha/light-profile';
+} from '@haus/core/optimistic';
+import { presentPowerOutlets } from '@haus/ha/view/device-relationships';
 import type { HassEntity, Snapshot } from '@haus/ha/types';
-import { HausSlider, HausSwitch, Row, Stack, Text } from '@haus/ui/primitives';
+import { HausSlider } from '@haus/ui/primitives';
 import {
-  LightColorPanel,
-  LightEffectsPanel,
-  LightGroupPanel,
+  LightModalPanel,
   NetworkDetailsPanel,
   PowerStripPanel,
   PrinterSuppliesPanel,
@@ -162,69 +160,49 @@ export function LightControlsSection({
   const disableEffect = lightDisableEffect(entity);
 
   return (
-    <Stack gapPx={12}>
-      {canToggle && (
-        <Row justify="between" align="center">
-          <Text size={13} weight={500}>
-            Power
-          </Text>
-          <HausSwitch
-            id={`control-${id}-toggle`}
-            checked={entity.state === 'on'}
-            disabled={disabled}
-            aria-label={`Toggle ${device.name}`}
-            onChange={() => sendTargets('toggle')}
-          />
-        </Row>
-      )}
-      {canBrightness && (
-        <DeviceRange
-          id={`control-${id}-brightness`}
-          label="Brightness"
-          value={entity.state === 'on' ? rawBrightness : 0}
-          min={0}
-          max={100}
-          disabled={disabled}
-          onCommit={(next) => sendTargets('brightness', next)}
-        />
-      )}
-      <LightColorPanel
-        idPrefix={`control-${id}`}
-        rgb={rgb}
-        hue={hsvH}
-        saturation={hsvS}
-        kelvin={lightTemperature(entity)}
-        minKelvin={minKelvin}
-        maxKelvin={maxKelvin}
-        canColor={profile.color}
-        canTemperature={profile.temperature}
-        disabled={disabled}
-        presets={LIGHT_COLOUR_PRESETS}
-        onColorRgb={(nextRgb) => sendTargets('color', nextRgb)}
-        onColorHsv={(nextHue, nextSat) => sendTargets('color', hsvToRgb(nextHue, nextSat))}
-        onTemperature={(nextKelvin) => sendTargets('temperature', nextKelvin)}
-      />
-      <LightEffectsPanel
-        idPrefix={`control-${id}`}
-        options={effects}
-        active={activeEffect}
-        stop={disableEffect}
-        disabled={disabled}
-        onSelect={(effect) => sendTargets('effect', effect)}
-      />
-      {lightGroup && onSeparateLightGroup && (
-        <LightGroupPanel
-          members={lightGroup.members.map((member) => ({
-            id: member.primaryEntityId,
-            name: member.name,
-            state: lightStateDescription(member.state),
-          }))}
-          disabled={disabled}
-          onOpenMember={(memberId) => onOpenMember?.(memberId)}
-          onSeparate={() => onSeparateLightGroup(lightGroup.key)}
-        />
-      )}
-    </Stack>
+    <LightModalPanel
+      idPrefix={`control-${id}`}
+      deviceName={device.name}
+      active={entity.state === 'on'}
+      stateSubtitle={device.state}
+      brightnessPct={entity.state === 'on' ? rawBrightness : 0}
+      rgb={rgb}
+      hue={hsvH}
+      saturation={hsvS}
+      kelvin={lightTemperature(entity)}
+      minKelvin={minKelvin}
+      maxKelvin={maxKelvin}
+      canToggle={canToggle}
+      canBrightness={canBrightness}
+      canColor={profile.color}
+      canTemperature={profile.temperature}
+      effects={effects}
+      activeEffect={activeEffect}
+      stopEffect={disableEffect}
+      groupMembers={
+        lightGroup && onSeparateLightGroup
+          ? lightGroup.members.map((member) => ({
+              id: member.primaryEntityId,
+              name: member.name,
+              state: lightStateDescription(member.state),
+            }))
+          : undefined
+      }
+      disabled={disabled}
+      presets={LIGHT_COLOUR_PRESETS}
+      onToggle={() => sendTargets('toggle')}
+      onBrightness={(next) => sendTargets('brightness', next)}
+      onColorRgb={(nextRgb) => sendTargets('color', nextRgb)}
+      onColorHsv={(nextHue, nextSat) => sendTargets('color', hsvToRgb(nextHue, nextSat))}
+      onTemperature={(nextKelvin) => sendTargets('temperature', nextKelvin)}
+      onSelectEffect={(effect) => sendTargets('effect', effect)}
+      onOpenMember={onOpenMember}
+      onSeparateGroup={
+        lightGroup && onSeparateLightGroup
+          ? () => onSeparateLightGroup(lightGroup.key)
+          : undefined
+      }
+    />
   );
 }
 

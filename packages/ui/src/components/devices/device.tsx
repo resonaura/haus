@@ -2,7 +2,7 @@
 
 import type { LightEffectOption } from '@haus/core/device';
 import type { DeviceCategory } from '../../categories/index.js';
-import { colorToken, corners, insets, px } from '../../ir/geometry.js';
+import { colorToken, corners, insets, mixColor, px, transparentColor } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import { mergeStyleSpecs, type UiStyleSpec } from '../../ir/node.js';
 import { useHausUi } from '../../primitives/context.js';
@@ -11,6 +11,7 @@ import { resolveColorToCss } from '../../renderers/contract.js';
 import { DEVICE_ICONS, type UiIconName } from '../icons.js';
 import { UiIcon } from '../icon.js';
 import { DeviceBrandIcon } from '../brand/device-icon.js';
+import { useDelayedPending } from './battery.js';
 import { DesktopDeviceTile, type DesktopTileRenderProps } from './tile-desktop.js';
 
 export interface DeviceTileBatteryData {
@@ -26,6 +27,9 @@ export interface DeviceTileData {
   readonly categoryLabel?: string;
   readonly state: string;
   readonly available: boolean;
+  readonly active?: boolean;
+  readonly pending?: boolean;
+  readonly pendingSince?: number;
   readonly favorite?: boolean;
 }
 
@@ -75,6 +79,9 @@ export function DeviceTile(props: DeviceTileProps) {
     category,
     categoryLabel,
     favorite,
+    active = false,
+    pending = false,
+    pendingSince,
     compact = false,
     accent,
     frame,
@@ -94,19 +101,67 @@ export function DeviceTile(props: DeviceTileProps) {
     selected,
   } = props;
   const { theme } = useHausUi();
+  const slowPending = useDelayedPending(pending, pendingSince);
   const styles = compact ? compactStyles : undefined;
+  const isActive = available && active;
+  const resolvedAccent = accent ?? (isActive ? colorToken('accent') : undefined);
   const iconColor = resolveColorToCss(
-    accent ?? colorToken(available ? 'textPrimary' : 'textMuted'),
+    resolvedAccent ?? colorToken(available ? 'textPrimary' : 'textMuted'),
     theme,
     false,
   );
+  const mutedCss = resolveColorToCss(colorToken('textMuted'), theme, false);
   const tileIcon = (key: UiIconName, size: number) => (
     <UiIcon name={key} size={size} color={iconColor} />
   );
-  const indicatorsContent = indicators ?? (favorite ? tileIcon('heart', 12) : undefined);
-  const frameStyle = styles ? mergeStyleSpecs(styles.frame, frame?.style) : frame?.style;
+  const pendingSpinner = slowPending ? (
+    <Box
+      className="tile-pending-indicator"
+      ariaLabel="Updating device"
+      motion={{
+        initial: false,
+        animate: { rotate: [0, 360] },
+        durationMs: 1000,
+        ease: 'linear',
+        repeat: 'Infinity',
+      }}
+    >
+      <UiIcon name="loader-circle" size={12} color={mutedCss} />
+    </Box>
+  ) : undefined;
+  const indicatorsContent =
+    indicators ?? (pendingSpinner || (favorite ? tileIcon('heart', 12) : undefined));
+  const activeCompactFrame: UiStyleSpec | undefined =
+    compact && isActive && resolvedAccent
+      ? {
+          border: { width: 1, color: mixColor(colorToken('borderSubtle'), resolvedAccent, 0.38) },
+        }
+      : undefined;
+  const activeCompactIcon: UiStyleSpec | undefined =
+    compact && styles
+      ? {
+          ...styles.icon,
+          material: new SolidMaterial(
+            isActive && resolvedAccent
+              ? mixColor(transparentColor, resolvedAccent, 0.16)
+              : mixColor(transparentColor, colorToken('ink'), 0.05),
+          ),
+        }
+      : styles?.icon;
+  const frameStyle = styles
+    ? mergeStyleSpecs(mergeStyleSpecs(styles.frame, activeCompactFrame), frame?.style)
+    : frame?.style;
   const tile = (
-    <Box semantic="article" {...frame} style={frameStyle}>
+    <Box
+      semantic="article"
+      {...frame}
+      dataAttrs={{
+        ...(pending ? { 'data-pending': true } : {}),
+        ...(isActive ? { 'data-active': true } : {}),
+        ...frame?.dataAttrs,
+      }}
+      style={frameStyle}
+    >
       <Box className="tile-top" style={styles?.top}>
         <TileAction
           id={frame?.id && `${frame.id}-quick`}
@@ -114,7 +169,7 @@ export function DeviceTile(props: DeviceTileProps) {
           ariaLabel={quickLabel}
           disabled={quickDisabled}
           onActivate={onQuick}
-          style={styles?.icon}
+          style={activeCompactIcon}
         >
           {icon ??
             (deviceIcon ? (

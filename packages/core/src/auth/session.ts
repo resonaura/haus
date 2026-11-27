@@ -113,9 +113,19 @@ export function validateSessionCredentials(value: unknown): ClientSessionCredent
     typeof candidate.refreshToken === 'string' && candidate.refreshToken.length > 0
       ? candidate.refreshToken
       : undefined;
+  const clusterUrls = Array.isArray(candidate.clusterUrls)
+    ? [
+        ...new Set(
+          candidate.clusterUrls
+            .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            .map((item) => item.trim().replace(/\/+$/, '')),
+        ),
+      ]
+    : undefined;
 
   return {
     hubUrl: candidate.hubUrl,
+    ...(clusterUrls && clusterUrls.length > 0 ? { clusterUrls } : {}),
     sessionId: candidate.sessionId,
     sessionToken: candidate.sessionToken,
     refreshToken,

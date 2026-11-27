@@ -1,69 +1,49 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowSize } from '@gpuix/react';
 import { mergeRoomIcons } from '@haus/core/transport';
 import type { HassEntity } from '@haus/ha/types';
-import { SCROLL_SHADOW_PRESETS, type HausScrollHandle } from '@haus/ui';
-import { DesktopTopbar, type SidebarContextualNav } from '@haus/ui/components';
-import { insets, pct, px } from '@haus/ui/ir';
-import { Box, HausUiProvider, ScrollView, Stack, Text } from '@haus/ui/primitives';
-import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
-import { DesktopShell, type HomeRoute } from '../shell.js';
-import { CameraPreviews, DeviceCards, SceneCards } from './cards.js';
-import { useGpuiBrandIconPort } from './device-icon.js';
-import { WorkspaceCategoryRail, WorkspacePageHeader } from './header.js';
-import { useGpuiAlerts } from './hub-alerts.js';
+import type { HausScrollHandle } from '@haus/ui';
 import {
-  buildWorkspaceSpotlightItems,
-  openCameraContextMenu,
-  openDeviceContextMenu,
-  openSceneContextMenu,
-  type ActiveFallbackMenu,
-} from './menus.js';
-import { navigation, settingsLink, WORKSPACE_ROUTE_LABELS } from './navigation.js';
+  isStoryboardToggleShortcut,
+  type SidebarContextualNav,
+} from '@haus/ui/components';
+import { pct } from '@haus/ui/ir';
+import { Box, HausUiProvider } from '@haus/ui/primitives';
+import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
 import type { GpuiAddDeviceRequest } from '../management/add-device.js';
+import type { HomeRoute } from '../shell.js';
+import { resolveModalDevice } from './cards.js';
+import { useGpuiBrandIconPort } from './device-icon.js';
+import { useGpuiAlerts } from './hub-alerts.js';
+import { buildWorkspaceSpotlightItems, type ActiveFallbackMenu } from './menus.js';
+import { homeDashboard } from './model.js';
+import { navigation, WORKSPACE_ROUTE_LABELS } from './navigation.js';
 import { WorkspaceOverlays } from './overlays.js';
-import { HomeRouteContent } from './routes.js';
-import { homeDashboard, type HomeDevice } from './model.js';
+import { WorkspaceShellView } from './shell-view.js';
 import { NON_DEVICE_ROUTES } from './workspace-props.js';
 import type { HomeWorkspaceProps, WorkspaceEditingConfig } from './workspace-props.js';
 
-export function HomeWorkspace({
-  snapshot,
-  preferences,
-  systemTheme = 'dark',
-  reducedTransparency,
-  platform,
-  alertsTransport,
-  management,
-  system,
-  brandIcons,
-  subscribeKeyDown,
-  sidebar,
-  streaming,
-  cameraApi,
-  demo,
-  disabled = false,
-  canFavorite = false,
-  registry,
-  statistics,
-  fetchCameraSnapshot,
-  onApplySceneEntities,
-  sessionMeta,
-  notice,
-  onControl,
-  onFavorite,
-  onTheme,
-  onGrouping,
-  onPreferencesPatch,
-  onResetLightGroups,
-  onToggleDemo,
-  onManage,
-  onConnect,
-  onRefresh,
-  onDisconnect,
-}: HomeWorkspaceProps) {
+export function HomeWorkspace(props: HomeWorkspaceProps) {
+  const {
+    snapshot,
+    preferences,
+    systemTheme = 'dark',
+    reducedTransparency,
+    platform,
+    management,
+    system,
+    demo,
+    disabled = false,
+    canFavorite = false,
+    registry,
+    sessionMeta,
+    onControl,
+    onFavorite,
+    onPreferencesPatch,
+    onRefresh,
+  } = props;
   const home = useMemo(() => homeDashboard(snapshot, preferences), [snapshot, preferences]);
   const roomIcons = useMemo(
     () => mergeRoomIcons(snapshot.areas, preferences.roomIcons),
@@ -71,27 +51,33 @@ export function HomeWorkspace({
   );
   const groups = useMemo(() => navigation(home, roomIcons), [home, roomIcons]);
   const [route, setRouteState] = useState<HomeRoute>(() => globalThis.hausGpuiRoute ?? 'home');
-  const setRoute = (next: HomeRoute) => {
+  const setRoute = useCallback((next: HomeRoute) => {
     globalThis.hausGpuiRoute = next;
     setRouteState(next);
-  };
+  }, []);
   const [camera, setCamera] = useState<string>();
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [previewScene, setPreviewScene] = useState<HassEntity | null>(null);
   const [editingConfig, setEditingConfig] = useState<WorkspaceEditingConfig | null>(null);
   const [addDevice, setAddDevice] = useState<GpuiAddDeviceRequest | null>(null);
+  const [integrationsRefreshSignal, setIntegrationsRefreshSignal] = useState(0);
   const [fallbackMenu, setFallbackMenu] = useState<ActiveFallbackMenu | null>(null);
   const [search, setSearch] = useState(false);
+  const [storyboardOpen, setStoryboardOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [serverSidebar, setServerSidebar] = useState<SidebarContextualNav>();
   const activeServerSidebar = route === 'servers' ? serverSidebar : undefined;
   const mainScrollRef = useRef<HausScrollHandle | null>(null);
-  const alerts = useGpuiAlerts({ transport: alertsTransport, states: snapshot.states, demo });
+  const alerts = useGpuiAlerts({
+    transport: props.alertsTransport,
+    states: snapshot.states,
+    demo,
+  });
   const { width, height } = useWindowSize();
   const inset = width <= 760 ? 19 : width <= 1180 ? 25 : 32;
   const columns = width <= 760 ? 2 : width <= 1180 ? 3 : 4;
   const dark = (preferences.theme === 'system' ? systemTheme : preferences.theme) === 'dark';
-  const resolvedBrandIcons = useGpuiBrandIconPort(brandIcons, preferences, dark);
+  const resolvedBrandIcons = useGpuiBrandIconPort(props.brandIcons, preferences, dark);
   const category = route.startsWith('category:')
     ? home.categories.find((item) => item.id === route.slice(9))
     : undefined;
@@ -102,216 +88,145 @@ export function HomeWorkspace({
   const heading = room?.name ?? category?.name ?? WORKSPACE_ROUTE_LABELS[route] ?? 'Home';
   const showCategoryDock =
     (route === 'home' || Boolean(category) || route === 'servers') && !activeServerSidebar;
-  const closeSearch = () => (setSearch(false), setQuery(''));
-  const go = (next: HomeRoute) => {
-    setCamera(undefined);
-    setSelectedDeviceId('');
-    setFallbackMenu(null);
-    closeSearch();
-    if (next !== 'servers') setServerSidebar(undefined);
-    setRoute(next);
-    mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  };
+
+  const closeSearch = useCallback(() => {
+    setSearch(false);
+    setQuery('');
+  }, []);
+  const toggleSearch = useCallback(() => setSearch((value) => !value), []);
+  const go = useCallback(
+    (next: HomeRoute) => {
+      setCamera(undefined);
+      setSelectedDeviceId('');
+      setFallbackMenu(null);
+      closeSearch();
+      if (next !== 'servers') setServerSidebar(undefined);
+      setRoute(next);
+      mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    },
+    [closeSearch, setRoute],
+  );
+
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [route, activeServerSidebar?.title, activeServerSidebar?.activeId]);
-  const openCamera = (id: string) => {
-    setFallbackMenu(null);
-    closeSearch();
-    setSelectedDeviceId('');
-    setCamera(id);
-  };
-  const openDeviceByEntity = (entityOrDeviceId: string) => {
-    const target = home.devices.find(
-      (item) =>
-        item.id === entityOrDeviceId ||
-        item.accessory.primaryEntityId === entityOrDeviceId ||
-        item.accessory.entityIds.includes(entityOrDeviceId),
-    );
-    if (!target) return;
-    setSearch(false);
-    setFallbackMenu(null);
-    if (NON_DEVICE_ROUTES.has(route)) setRoute(`category:${target.category}`);
-    setSelectedDeviceId(target.id);
-  };
-  const handleShortcut = (key: string, mod: boolean, preventDefault?: () => void) => {
+
+  const openCamera = useCallback(
+    (id: string) => {
+      setFallbackMenu(null);
+      closeSearch();
+      setSelectedDeviceId('');
+      setCamera(id);
+    },
+    [closeSearch],
+  );
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const openDeviceByEntity = useCallback(
+    (entityOrDeviceId: string) => {
+      const target = home.devices.find(
+        (item) =>
+          item.id === entityOrDeviceId ||
+          item.accessory.primaryEntityId === entityOrDeviceId ||
+          item.accessory.entityIds.includes(entityOrDeviceId),
+      );
+      if (!target) return;
+      setSearch(false);
+      setFallbackMenu(null);
+      if (NON_DEVICE_ROUTES.has(routeRef.current)) setRoute(`category:${target.category}`);
+      setSelectedDeviceId(target.id);
+    },
+    [home.devices, setRoute],
+  );
+
+  const handleShortcut = (
+    key: string,
+    mod: boolean,
+    shift = false,
+    alt = false,
+    preventDefault?: () => void,
+  ) => {
     const lower = key.toLocaleLowerCase();
-    if (mod && lower === 'k') return (preventDefault?.(), setSearch((value) => !value));
+    if (isStoryboardToggleShortcut({ key, metaKey: mod, shiftKey: shift, altKey: alt })) {
+      preventDefault?.();
+      setStoryboardOpen((value) => !value);
+      return;
+    }
+    if (mod && !shift && lower === 'k') return (preventDefault?.(), setSearch((value) => !value));
     if (mod && (key === ',' || lower === 'comma')) return (preventDefault?.(), go('settings'));
     if (lower !== 'escape') return;
-    if (fallbackMenu) setFallbackMenu(null);
+    if (storyboardOpen) setStoryboardOpen(false);
+    else if (fallbackMenu) setFallbackMenu(null);
     else if (search) closeSearch();
     else if (camera) setCamera(undefined);
   };
   useEffect(() => {
-    if (!subscribeKeyDown) return;
-    return subscribeKeyDown((event) => {
-      handleShortcut(event.key ?? '', Boolean(event.modifiers?.cmd || event.modifiers?.ctrl), () =>
-        event.preventDefault(),
+    if (!props.subscribeKeyDown) return;
+    return props.subscribeKeyDown((event) => {
+      handleShortcut(
+        event.key ?? '',
+        Boolean(event.modifiers?.cmd || event.modifiers?.ctrl),
+        Boolean(event.modifiers?.shift),
+        Boolean(event.modifiers?.alt),
+        () => event.preventDefault(),
       );
     });
   });
 
-  const renderDevices = (devices: readonly HomeDevice[]) =>
-    devices.length ? (
-      <DeviceCards
-        cards={devices}
-        columns={columns}
-        snapshot={snapshot}
-        preferences={preferences}
-        allAccessories={home.devices.map((item) => item.accessory)}
-        demo={demo}
-        disabled={disabled}
-        canFavorite={canFavorite}
-        selectedId={selectedDeviceId}
-        statistics={statistics}
-        registry={registry}
-        onSelectId={setSelectedDeviceId}
-        onControl={onControl}
-        onFavorite={onFavorite}
-        onPreferencesPatch={onPreferencesPatch}
-        onManage={onManage}
-        onContextMenu={(device) =>
-          openDeviceContextMenu({
-            device,
+  const allAccessories = useMemo(() => home.devices.map((item) => item.accessory), [home.devices]);
+  const activeDevice = useMemo(
+    () => resolveModalDevice(home.devices, selectedDeviceId, preferences),
+    [home.devices, selectedDeviceId, preferences],
+  );
+  const closeDeviceModal = useCallback(() => setSelectedDeviceId(''), []);
+  const openAddDevice = useCallback(
+    (req?: GpuiAddDeviceRequest) => setAddDevice(req ?? { mode: 'picker' }),
+    [],
+  );
+  const closeAddDevice = useCallback(() => setAddDevice(null), []);
+  const onAddDeviceSaved = useCallback(() => {
+    setIntegrationsRefreshSignal((n) => n + 1);
+    onRefresh?.();
+  }, [onRefresh]);
+
+  const openExternal = platform?.openExternal;
+  const sessionUrl = sessionMeta?.url;
+  const boundOpenExternal = useMemo(
+    () =>
+      openExternal
+        ? (url: string) =>
+            sessionUrl
+              ? openExternal(url, sessionUrl)
+              : Promise.reject(new Error('Connect your home first.'))
+        : undefined,
+    [openExternal, sessionUrl],
+  );
+  const clipboard = platform?.clipboard;
+  const copyText = useMemo(
+    () =>
+      clipboard
+        ? (text: string) => void clipboard.writeText(text).catch(() => undefined)
+        : undefined,
+    [clipboard],
+  );
+  const dismissNoticeFn = alerts.dismissNotice;
+  const dismissNotice = useCallback((id: string) => void dismissNoticeFn(id), [dismissNoticeFn]);
+
+  const spotlightItems = useMemo(
+    () =>
+      search
+        ? buildWorkspaceSpotlightItems({
+            query,
             home,
             snapshot,
             preferences,
-            platform,
-            onFallback: setFallbackMenu,
-            onCloseFallback: () => setFallbackMenu(null),
+            onGo: go,
+            onOpenDevice: openDeviceByEntity,
+            onOpenCamera: openCamera,
             onControl,
-            onFavorite,
-            onManage,
-            onPreferencesPatch,
-            onOpenDetails: setSelectedDeviceId,
-            registry,
           })
-        }
-      />
-    ) : (
-      <Text tone="muted">No devices to show.</Text>
-    );
-  const renderScenes = (scenes: readonly HassEntity[], showAccessoryCount = true) =>
-    scenes.length ? (
-      <SceneCards
-        scenes={scenes}
-        present={home.sceneCard}
-        columns={columns}
-        snapshot={snapshot}
-        disabled={disabled}
-        showAccessoryCount={showAccessoryCount}
-        onControl={onControl}
-        onContextMenu={(scene) =>
-          openSceneContextMenu({
-            scene,
-            home,
-            preferences,
-            platform,
-            canEdit: Boolean(demo || snapshot.user.is_admin),
-            onFallback: setFallbackMenu,
-            onCloseFallback: () => setFallbackMenu(null),
-            onControl,
-            onPreviewScene: setPreviewScene,
-            onEditScene: (target) => setEditingConfig({ kind: 'scene', entity: target }),
-            onOpenScenes: () => go('scenes'),
-            onPreferencesPatch,
-          })
-        }
-      />
-    ) : (
-      <Text tone="muted">No scenes to show.</Text>
-    );
-  const renderCameras = (cameras: typeof home.cameras) => (
-    <CameraPreviews
-      cameras={cameras}
-      columns={columns}
-      demo={demo}
-      fetchSnapshot={fetchCameraSnapshot}
-      onOpen={openCamera}
-      onContextMenu={(cameraId) =>
-        openCameraContextMenu({
-          cameraId,
-          home,
-          preferences,
-          platform,
-          onFallback: setFallbackMenu,
-          onCloseFallback: () => setFallbackMenu(null),
-          onOpenCamera: openCamera,
-          onPreferencesPatch,
-        })
-      }
-    />
-  );
-
-  const spotlightItems = search
-    ? buildWorkspaceSpotlightItems({
-        query,
-        home,
-        snapshot,
-        preferences,
-        onGo: go,
-        onOpenDevice: openDeviceByEntity,
-        onOpenCamera: openCamera,
-        onControl,
-      })
-    : [];
-
-  const openAddDevice = (req?: GpuiAddDeviceRequest) => setAddDevice(req ?? { mode: 'picker' });
-  const openExternal = platform?.openExternal;
-  const boundOpenExternal = openExternal
-    ? (url: string) =>
-        sessionMeta?.url
-          ? openExternal(url, sessionMeta.url)
-          : Promise.reject(new Error('Connect your home first.'))
-    : undefined;
-  const copyText = platform?.clipboard
-    ? (text: string) => void platform.clipboard?.writeText(text).catch(() => undefined)
-    : undefined;
-
-  const content = (
-    <HomeRouteContent
-      route={route}
-      home={home}
-      snapshot={snapshot}
-      preferences={preferences}
-      category={category}
-      room={room}
-      columns={columns}
-      demo={demo}
-      disabled={disabled}
-      canFavorite={canFavorite}
-      registry={registry}
-      management={management}
-      system={system}
-      statistics={statistics}
-      sessionMeta={sessionMeta}
-      alertsNotices={alerts.notices}
-      alertsError={alerts.error}
-      fetchCameraSnapshot={fetchCameraSnapshot}
-      onDismissNotice={(id) => void alerts.dismissNotice(id)}
-      onOpenEntity={openDeviceByEntity}
-      onOpenCamera={openCamera}
-      onGo={go}
-      onControl={onControl}
-      onApplySceneEntities={onApplySceneEntities}
-      onSaved={onRefresh}
-      onAddDevice={openAddDevice}
-      onTheme={onTheme}
-      onGrouping={onGrouping}
-      onPreferencesPatch={onPreferencesPatch}
-      onResetLightGroups={onResetLightGroups}
-      onToggleDemo={onToggleDemo}
-      onConnect={onConnect}
-      onDisconnect={onDisconnect}
-      openExternal={boundOpenExternal}
-      openPaths={platform?.openPaths}
-      onCopyText={copyText}
-      onServerSidebarChange={setServerSidebar}
-      renderDevices={renderDevices}
-      renderScenes={renderScenes}
-      renderCameras={renderCameras}
-    />
+        : [],
+    [search, query, home, snapshot, preferences, go, openDeviceByEntity, openCamera, onControl],
   );
 
   return (
@@ -325,88 +240,76 @@ export function HomeWorkspace({
     >
       <Box
         onKeyDown={(event) =>
-          handleShortcut(event.key, Boolean(event.metaKey || event.ctrlKey), () =>
-            event.preventDefault(),
+          handleShortcut(
+            event.key,
+            Boolean(event.metaKey || event.ctrlKey),
+            Boolean(event.shiftKey),
+            Boolean(event.altKey),
+            () => event.preventDefault(),
           )
         }
         style={{ layout: { width: pct(100), height: pct(100) } }}
       >
-        <DesktopShell
-          sidebar={sidebar}
+        <WorkspaceShellView
+          sidebar={props.sidebar}
+          notice={props.notice}
           route={route}
-          onSelect={go}
           dark={dark}
           groups={groups}
-          footer={settingsLink}
-          contextual={activeServerSidebar}
-          expandedWidth={width > 760 && width <= 1180 ? 215 : undefined}
-        >
-          <Stack gapPx={0} style={{ layout: { height: pct(100) } }}>
-            <DesktopTopbar
-              homeName={snapshot.config.location_name}
-              heading={activeServerSidebar?.title ?? (route === 'home' ? 'Overview' : heading)}
-              userName={snapshot.user.name}
-              demo={demo}
-              hasAttention={home.attention.length + alerts.notices.length > 0}
-              inset={inset}
-              showMenu={false}
-              onSearch={() => setSearch((value) => !value)}
-              onNotifications={() => go('attention')}
-              onSettings={() => go('settings')}
-            />
-            <ScrollView
-              id="main-scroll"
-              scrollId="main-scroll"
-              scrollRef={mainScrollRef}
-              orientation="vertical"
-              shadowSizePx={SCROLL_SHADOW_PRESETS.main}
-              edges={showCategoryDock ? ['bottom'] : ['top', 'bottom']}
-              style={{ layout: { flexGrow: 1, minHeight: px(0), direction: 'column' } }}
-            >
-              <Stack
-                gapPx={0}
-                style={{
-                  layout: {
-                    width: pct(100),
-                    maxWidth: px(1420),
-                    padding: insets(width <= 760 ? 22 : 27, inset, 22, inset),
-                  },
-                }}
-              >
-                {!activeServerSidebar && (
-                  <WorkspacePageHeader
-                    category={category}
-                    room={room}
-                    roomArea={roomArea}
-                    route={route}
-                    search={search}
-                    heading={heading}
-                    demo={demo}
-                    isAdmin={Boolean(snapshot.user.is_admin)}
-                    disabled={disabled}
-                    registry={registry}
-                    onGo={go}
-                    onAddDevice={openAddDevice}
-                    onConnect={onConnect}
-                    onRefresh={onRefresh}
-                  />
-                )}
-                {notice}
-                {showCategoryDock && (
-                  <WorkspaceCategoryRail
-                    categories={home.categories}
-                    route={route}
-                    activeCategory={category}
-                    bleedX={inset}
-                    liquidGlass={preferences.liquidGlass}
-                    onGo={go}
-                  />
-                )}
-                {content}
-              </Stack>
-            </ScrollView>
-          </Stack>
-        </DesktopShell>
+          activeServerSidebar={activeServerSidebar}
+          width={width}
+          inset={inset}
+          columns={columns}
+          home={home}
+          allAccessories={allAccessories}
+          snapshot={snapshot}
+          preferences={preferences}
+          category={category}
+          room={room}
+          roomArea={roomArea}
+          heading={heading}
+          showCategoryDock={showCategoryDock}
+          search={search}
+          demo={demo}
+          disabled={disabled}
+          canFavorite={canFavorite}
+          registry={registry}
+          management={management}
+          system={system}
+          statistics={props.statistics}
+          sessionMeta={sessionMeta}
+          alertsNotices={alerts.notices}
+          alertsError={alerts.error}
+          integrationsRefreshSignal={integrationsRefreshSignal}
+          platform={platform}
+          mainScrollRef={mainScrollRef}
+          fetchCameraSnapshot={props.fetchCameraSnapshot}
+          boundOpenExternal={boundOpenExternal}
+          copyText={copyText}
+          onGo={go}
+          onToggleSearch={toggleSearch}
+          onAddDevice={openAddDevice}
+          onSelectDevice={setSelectedDeviceId}
+          onOpenCamera={openCamera}
+          onOpenEntity={openDeviceByEntity}
+          onPreviewScene={setPreviewScene}
+          onEditConfig={setEditingConfig}
+          onFallbackMenu={setFallbackMenu}
+          onDismissNotice={dismissNotice}
+          onServerSidebarChange={setServerSidebar}
+          onControl={onControl}
+          onFavorite={onFavorite}
+          onTheme={props.onTheme}
+          onGrouping={props.onGrouping}
+          onPreferencesPatch={onPreferencesPatch}
+          onResetLightGroups={props.onResetLightGroups}
+          onToggleDemo={props.onToggleDemo}
+          onConnect={props.onConnect}
+          onDisconnect={props.onDisconnect}
+          onManage={props.onManage}
+          onApplySceneEntities={props.onApplySceneEntities}
+          onRefresh={onRefresh}
+        />
         <WorkspaceOverlays
           search={search}
           query={query}
@@ -418,6 +321,27 @@ export function HomeWorkspace({
           activePairing={alerts.activePairing}
           platform={platform}
           onDismissPairing={(sessionId) => void alerts.dismissPairing(sessionId)}
+          deviceModal={
+            activeDevice
+              ? {
+                  device: activeDevice,
+                  snapshot,
+                  preferences,
+                  allAccessories,
+                  demo,
+                  disabled,
+                  canFavorite,
+                  statistics: props.statistics,
+                  registry,
+                  onClose: closeDeviceModal,
+                  onSelectDevice: setSelectedDeviceId,
+                  onControl,
+                  onFavorite,
+                  onPreferencesPatch,
+                  onManage: props.onManage,
+                }
+              : undefined
+          }
           cameraModal={
             camera
               ? {
@@ -427,9 +351,9 @@ export function HomeWorkspace({
                   allAccessories: home.allAccessories,
                   demo,
                   disabled,
-                  streaming,
-                  cameraApi,
-                  fetchSnapshot: fetchCameraSnapshot,
+                  streaming: props.streaming,
+                  cameraApi: props.cameraApi,
+                  fetchSnapshot: props.fetchCameraSnapshot,
                   onControl,
                   onToggleFullscreen: platform?.toggleFullscreen,
                   onPreferencesPatch,
@@ -463,7 +387,7 @@ export function HomeWorkspace({
                   snapshot,
                   demo,
                   management,
-                  onApplySceneEntities,
+                  onApplySceneEntities: props.onApplySceneEntities,
                   onClose: () => setEditingConfig(null),
                   onSaved: () => onRefresh?.(),
                 }
@@ -474,19 +398,23 @@ export function HomeWorkspace({
               ? {
                   snapshot,
                   demo,
+                  sessionKind: system?.sessionKind,
                   management,
                   requestRpc: system?.requestRpc,
                   openExternal: boundOpenExternal,
+                  onCopyText: copyText,
                   initialRequest: addDevice,
                   onOpenApps: () => {
-                    setAddDevice(null);
+                    closeAddDevice();
                     go('addons');
                   },
-                  onClose: () => setAddDevice(null),
-                  onSaved: () => onRefresh?.(),
+                  onClose: closeAddDevice,
+                  onSaved: onAddDeviceSaved,
                 }
               : undefined
           }
+          storyboardOpen={storyboardOpen}
+          onCloseStoryboard={() => setStoryboardOpen(false)}
         />
       </Box>
     </HausUiProvider>

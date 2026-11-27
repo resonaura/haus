@@ -312,23 +312,43 @@ export class HubIntegrationFlowManager {
         throw new Error('Setup flow expired. Please refresh and try again.');
       }
       if (flow.candidateId) {
-        return startNativeCommissioningFlow(
-          this.dispatchContext(),
-          flow.handler,
-          flowId,
-          { candidateId: flow.candidateId, source: 'discovery', preserveFlowId: true },
-          'discovery',
-        );
+        try {
+          return await startNativeCommissioningFlow(
+            this.dispatchContext(),
+            flow.handler,
+            flowId,
+            { candidateId: flow.candidateId, source: 'discovery', preserveFlowId: true },
+            'discovery',
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes('discovery_flow_unavailable')) throw err;
+          if (flow.handler !== 'homekit_controller' && flow.handler !== 'homekit') {
+            return startNativeCommissioningFlow(
+              this.dispatchContext(),
+              flow.handler,
+              flowId,
+              { source: 'user', preserveFlowId: true },
+              'user',
+            );
+          }
+        }
       }
-      return {
-        type: 'form',
-        flow_id: flowId,
-        handler: flow.handler,
-        step_id: 'pair',
-        title: flow.name ? `Pair ${flow.name}` : 'Pair Device',
-        last_step: true,
-        dataSchema: [{ name: 'pairing_code', type: 'string', required: true }],
-      };
+      return normalizeCoreStepToHaStep(
+        {
+          type: 'form',
+          flow_id: flowId,
+          handler: flow.handler,
+          step_id: 'pair',
+          title: flow.name ? `Pair ${flow.name}` : 'Pair Device',
+          description:
+            'Enter the 8-digit HomeKit setup code (XXX-XX-XXX) printed on the device or its manual.',
+          last_step: true,
+          dataSchema: [{ name: 'pairing_code', type: 'string', required: true }],
+        },
+        flowId,
+        flow.handler,
+      );
     }
 
     if (method === 'POST' && path === 'config/config_entries/flow') {

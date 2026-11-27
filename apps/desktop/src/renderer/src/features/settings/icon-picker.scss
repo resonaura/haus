@@ -93,10 +93,6 @@
   filter: drop-shadow(0 2px 4px rgb(0 0 0 / 26%));
 }
 
-.icon-style-card:hover .icon-style-preview {
-  transform: translateY(-1px);
-}
-
 .icon-style-card.is-selected .icon-style-preview {
   border-color: var(--accent, #0a84ff);
   box-shadow:

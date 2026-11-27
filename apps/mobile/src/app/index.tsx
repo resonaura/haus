@@ -5,28 +5,41 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
   Image,
+  LayoutAnimation,
   Pressable,
+  ScrollView,
   SectionList,
-  StyleSheet,
   Text,
-  TextInput,
   View,
   useColorScheme,
   useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { Snapshot } from '@haus/ha/types';
-import { defaults, type Preferences } from '@haus/ha/view/preferences';
+import type { HausAction, Snapshot } from '@haus/ha/types';
+import { defaults, type Preferences } from '@haus/core/preferences';
+import { ConnectHomePanel, type DiscoveredHomeServer } from '@haus/ui/components';
+import { REACT_NATIVE_CONTENT_HOST } from '@haus/ui/native';
+import { HausUiProvider } from '@haus/ui/primitives';
 import { discoverHaOAuth, signInToHomeAssistant } from '../auth/home-assistant-oauth';
+import { MOBILE_HUB_PAIRING_REQUIRED, MobileHubSessionManager } from '../auth/hub-session';
+import { openMobileHubHome } from '../home/hub-home';
 import { openMobileHome, type MobileHomeRuntime } from '../home/mobile-home';
-import { createMobileDashboardProjection, type MobileDestination } from '../home/mobile-dashboard';
+import {
+  MOBILE_DESTINATIONS as destinations,
+  createMobileDashboardProjection,
+  mobileConnectionStatus,
+  mobileDashboardSignature,
+  safeMobileError as safeError,
+  type MobileDestination,
+} from '../home/mobile-dashboard';
 import { HomeDeviceRow } from '../home/device';
+import { homeScreenStyles as styles } from '../home/screen-styles';
 import {
   createLocalHomeDiscovery,
   type LocalDiscoveryTask,
@@ -34,18 +47,6 @@ import {
 } from '../discovery/local-home-discovery';
 import { mobilePersistence } from '../storage/native-persistence';
 import type { HaSession } from '../storage/mobile-persistence';
-
-function safeError(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : 'Could not connect to your home.';
-}
-
-const destinations = [
-  { id: 'home', label: 'Home' },
-  { id: 'rooms', label: 'Rooms' },
-  { id: 'scenes', label: 'Scenes' },
-] as const;
 
 export default function Home() {
   const router = useRouter();
@@ -62,27 +63,57 @@ export default function Home() {
   const colorScheme = useColorScheme();
   const runtimeRef = useRef<MobileHomeRuntime | null>(null);
   const sessionRef = useRef<HaSession | null>(null);
+  const hubManagerRef = useRef<MobileHubSessionManager | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const discoveryRef = useRef<LocalDiscoveryTask | null>(null);
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [discoveredHomes, setDiscoveredHomes] = useState<LocalHomeCandidate[]>([]);
-  const [discoveryFinished, setDiscoveryFinished] = useState(false);
   const [explicitHa, setExplicitHa] = useState(false);
   const [url, setUrl] = useState('');
+  const [code, setCode] = useState('');
+  const [pairingUrl, setPairingUrl] = useState<string | null>(null);
+  const [selectedClusterUrls, setSelectedClusterUrls] = useState<readonly string[] | undefined>();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const projectDashboard = useMemo(createMobileDashboardProjection, []);
   const [connection, setConnection] = useState('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const triggerActions = useCallback((actions: readonly HausAction[]) => {
+    const active = runtimeRef.current;
+    if (!active || !actions.length) return;
+    setError(null);
+    active.store.getState().clearCommandNotice();
+    void active.store
+      .getState()
+      .executeBatch(actions)
+      .catch(() => {
+        setError('The command could not be confirmed. Check the device before trying again.');
+      });
+  }, []);
   const sections = useMemo(
     () => projectDashboard(snapshot, preferences, destination, roomId),
     [snapshot, preferences, projectDashboard, destination, roomId],
   );
+  const layoutKey = `${destination}:${roomId ?? ''}`;
+  const signature = useMemo(() => mobileDashboardSignature(sections), [sections]);
+  const prevLayoutRef = useRef({ key: layoutKey, sig: signature });
+  useLayoutEffect(() => {
+    const prev = prevLayoutRef.current;
+    if (prev.key === layoutKey && prev.sig && signature && prev.sig !== signature) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    prevLayoutRef.current = { key: layoutKey, sig: signature };
+  }, [layoutKey, signature]);
   const dark =
     preferences.theme === 'system' ? colorScheme !== 'light' : preferences.theme === 'dark';
   const palette = dark ? styles.dark : styles.light;
+
+  const getHubManager = () => {
+    hubManagerRef.current ??= new MobileHubSessionManager({ storage: mobilePersistence });
+    return hubManagerRef.current;
+  };
 
   const bindRuntime = (runtime: MobileHomeRuntime) => {
     unsubscribeRef.current?.();
@@ -93,6 +124,7 @@ export default function Home() {
       const state = runtime.store.getState();
       setSnapshot(state.snapshot);
       setConnection(state.connection);
+      if (state.commandNotice) setError(state.commandNotice);
     };
     const updatePreferences = () => setPreferences(runtime.preferences);
     update();
@@ -100,10 +132,12 @@ export default function Home() {
     runtime.setActive(AppState.currentState === 'active');
     const stopSnapshot = runtime.store.subscribe((state) => state.snapshot, update);
     const stopConnection = runtime.store.subscribe((state) => state.connection, update);
+    const stopNotice = runtime.store.subscribe((state) => state.commandNotice, update);
     const stopPreferences = runtime.subscribePreferences(updatePreferences);
     unsubscribeRef.current = () => {
       stopSnapshot();
       stopConnection();
+      stopNotice();
       stopPreferences();
     };
   };
@@ -119,6 +153,15 @@ export default function Home() {
     let cancelled = false;
     void (async () => {
       try {
+        const hubManager = getHubManager();
+        const hubSession = await hubManager.resume();
+        if (cancelled) return;
+        if (hubSession) {
+          const runtime = await openMobileHubHome(hubManager);
+          if (cancelled) runtime.dispose();
+          else bindRuntime(runtime);
+          return;
+        }
         const saved = await mobilePersistence.loadSession();
         if (cancelled) return;
         if (saved) {
@@ -147,60 +190,85 @@ export default function Home() {
     };
   }, []);
 
-  const connect = async () => {
-    discoveryRef.current?.cancel();
-    discoveryRef.current = null;
-    setDiscovering(false);
-    setBusy(true);
-    setError(null);
-    try {
-      const discovered = await discoverHaOAuth(url);
-      const nextSession = await signInToHomeAssistant(discovered, (request) =>
-        request.promptAsync({ authorizationEndpoint: discovered.metadata.authorizationEndpoint }),
-      );
-      await mobilePersistence.saveSession(nextSession);
-      sessionRef.current = nextSession;
-      const runtime = await openMobileHome(nextSession, (updated) => {
-        sessionRef.current = updated;
-      });
-      bindRuntime(runtime);
-    } catch (caught) {
-      setError(safeError(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const findHome = async (targetExplicitHa = explicitHa) => {
     discoveryRef.current?.cancel();
     const task = createLocalHomeDiscovery({ explicitHa: targetExplicitHa });
     discoveryRef.current = task;
     setDiscovering(true);
     setDiscoveredHomes([]);
-    setDiscoveryFinished(false);
     setError(null);
     try {
       const outcome = await task.result;
       if (discoveryRef.current !== task) return;
       setDiscoveredHomes(outcome.servers);
-      setDiscoveryFinished(outcome.status === 'complete');
       if (outcome.status === 'permission-denied')
         setError(
           targetExplicitHa
             ? 'Allow local network access in Settings, or enter the Home Assistant URL manually.'
-            : 'Allow local network access in Settings, or enter the Haus Hub URL manually.',
+            : 'Allow local network access in Settings, or enter your Haus Hub URL manually.',
         );
       else if (outcome.status === 'unavailable')
         setError(
           targetExplicitHa
             ? 'Local discovery is unavailable in this build. Enter the Home Assistant URL manually.'
-            : 'Local discovery is unavailable in this build. Enter the Haus Hub URL manually.',
+            : 'Local discovery is unavailable in this build. Enter your Haus Hub URL manually.',
         );
     } finally {
       if (discoveryRef.current === task) {
         discoveryRef.current = null;
         setDiscovering(false);
       }
+    }
+  };
+
+  const submitConnect = async (targetAddress: string, selected?: DiscoveredHomeServer) => {
+    const clean = targetAddress.trim();
+    if (!clean) return;
+    discoveryRef.current?.cancel();
+    discoveryRef.current = null;
+    setDiscovering(false);
+    setBusy(true);
+    setError(null);
+    try {
+      if (explicitHa) {
+        const discovered = await discoverHaOAuth(clean);
+        const nextSession = await signInToHomeAssistant(discovered, (request) =>
+          request.promptAsync({
+            authorizationEndpoint: discovered.metadata.authorizationEndpoint,
+          }),
+        );
+        await mobilePersistence.saveSession(nextSession);
+        sessionRef.current = nextSession;
+        const runtime = await openMobileHome(nextSession, (updated) => {
+          sessionRef.current = updated;
+        });
+        bindRuntime(runtime);
+        return;
+      }
+
+      const memberUrls = selected?.memberUrls ?? selectedClusterUrls;
+      if (selected?.memberUrls) setSelectedClusterUrls(selected.memberUrls);
+      const hubManager = getHubManager();
+      const paired = await hubManager.pairWithHub(
+        pairingUrl ?? clean,
+        pairingUrl ? code.trim() : undefined,
+        memberUrls,
+      );
+      setPairingUrl(null);
+      setCode('');
+      const runtime = await openMobileHubHome(hubManager, selected?.name ?? paired.hubName);
+      bindRuntime(runtime);
+    } catch (caught) {
+      if (caught instanceof Error && caught.message === MOBILE_HUB_PAIRING_REQUIRED) {
+        setUrl(clean);
+        setPairingUrl(clean);
+        return;
+      }
+      setPairingUrl(null);
+      setCode('');
+      setError(safeError(caught));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -226,7 +294,10 @@ export default function Home() {
     setConnection('disconnected');
     try {
       if (runtime) await runtime.logout();
-      else await mobilePersistence.clearSession();
+      else {
+        await mobilePersistence.clearSession();
+        await mobilePersistence.clearHubSession();
+      }
       setError(null);
     } catch (caught) {
       setError(safeError(caught));
@@ -249,14 +320,7 @@ export default function Home() {
   }
 
   if (snapshot) {
-    const status =
-      connection === 'connected'
-        ? 'Connected'
-        : connection === 'reconnecting' || connection === 'connecting'
-          ? 'Reconnecting'
-          : connection === 'auth-required'
-            ? 'Sign in again to reconnect'
-            : 'Your home is offline';
+    const status = mobileConnectionStatus(connection);
     return (
       <SafeAreaView style={[styles.screen, palette]}>
         <View style={styles.dashboard}>
@@ -305,7 +369,7 @@ export default function Home() {
             key={`${destination}:${roomId ?? ''}`}
             sections={sections}
             keyExtractor={(item) => item.id}
-            extraData={dark}
+            extraData={`${dark}:${connection === 'connected'}`}
             initialNumToRender={12}
             windowSize={7}
             maxToRenderPerBatch={12}
@@ -335,7 +399,12 @@ export default function Home() {
                   </Text>
                 </Pressable>
               ) : (
-                <HomeDeviceRow item={item} dark={dark} />
+                <HomeDeviceRow
+                  item={item}
+                  dark={dark}
+                  disabled={connection !== 'connected'}
+                  onTriggerActions={triggerActions}
+                />
               )
             }
             ListEmptyComponent={
@@ -384,253 +453,47 @@ export default function Home() {
 
   return (
     <SafeAreaView style={[styles.screen, palette]}>
-      <View style={styles.signInContent}>
-        <View style={styles.brandMark}>
-          <Image
-            accessibilityLabel="Haus"
-            source={require('../../assets/icon.png')}
-            style={styles.brandIcon}
-          />
+      <ScrollView contentContainerStyle={styles.signInScroll} keyboardShouldPersistTaps="handled">
+        <View style={styles.signInContent}>
+          <View style={styles.brandMark}>
+            <Image
+              accessibilityLabel="Haus"
+              source={require('../../assets/icon.png')}
+              style={styles.brandIcon}
+            />
+          </View>
+          <HausUiProvider contentHost={REACT_NATIVE_CONTENT_HOST} mode={dark ? 'dark' : 'light'}>
+            <ConnectHomePanel
+              servers={discoveredHomes}
+              scanning={discovering}
+              pending={busy}
+              explicitHa={explicitHa}
+              url={url}
+              code={code}
+              pairingUrl={pairingUrl}
+              error={error}
+              onUrlChange={setUrl}
+              onCodeChange={setCode}
+              onSubmit={(addr, selected) => void submitConnect(addr, selected)}
+              onScan={() => void findHome(explicitHa)}
+              onCancelPairing={() => {
+                getHubManager().cancelPairing();
+                setPairingUrl(null);
+                setCode('');
+                setError(null);
+              }}
+              onToggleExplicitHa={(next) => {
+                setExplicitHa(next);
+                setDiscoveredHomes([]);
+                setUrl('');
+                setPairingUrl(null);
+                setCode('');
+                setError(null);
+              }}
+            />
+          </HausUiProvider>
         </View>
-        <Text style={[styles.title, titleColor]}>Your home</Text>
-        <Text style={[styles.message, secondaryColor]}>
-          {explicitHa
-            ? 'Connect to Home Assistant to see your rooms and devices.'
-            : 'Connect to your Haus Hub to manage your home.'}
-        </Text>
-        <TextInput
-          accessibilityLabel={explicitHa ? 'Home Assistant URL' : 'Haus Hub URL'}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          onChangeText={setUrl}
-          onFocus={() => setDiscoveryFinished(false)}
-          placeholder={explicitHa ? 'http://homeassistant.local:8123' : 'http://hub.local:8443'}
-          placeholderTextColor={dark ? '#77777c' : '#8a8a8e'}
-          returnKeyType="go"
-          onSubmitEditing={() => void connect()}
-          style={[styles.urlInput, dark ? styles.inputDark : styles.inputLight, titleColor]}
-          value={url}
-        />
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy || discovering}
-          onPress={() => void findHome()}
-          style={[styles.discoveryButton, { opacity: busy ? 0.55 : 1 }]}
-        >
-          {discovering ? (
-            <ActivityIndicator color={dark ? '#a1a1a6' : '#6e6e73'} size="small" />
-          ) : null}
-          <Text style={[styles.discoveryButtonLabel, secondaryColor]}>
-            {discovering
-              ? explicitHa
-                ? 'Looking for Home Assistant…'
-                : 'Looking for Haus Hub…'
-              : 'Find on local network'}
-          </Text>
-        </Pressable>
-        {discoveredHomes.map((home) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Use ${home.name} at ${home.host}`}
-            key={home.id}
-            onPress={() => {
-              setUrl(home.url);
-              setDiscoveredHomes([]);
-              setDiscoveryFinished(false);
-              setError(null);
-            }}
-            style={[styles.discoveredHome, dark ? styles.rowDark : styles.rowLight]}
-          >
-            <Text style={[styles.discoveredHomeName, titleColor]} numberOfLines={1}>
-              {home.name}
-            </Text>
-            <Text style={[styles.discoveredHomeAddress, secondaryColor]} numberOfLines={1}>
-              {home.host}:{home.port}
-            </Text>
-          </Pressable>
-        ))}
-        {discoveryFinished && discoveredHomes.length === 0 ? (
-          <Text style={[styles.discoveryEmpty, secondaryColor]}>
-            {explicitHa
-              ? 'No Home Assistant found. You can enter its URL above.'
-              : 'No Haus Hubs found. You can enter its URL above.'}
-          </Text>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy || !url.trim()}
-          onPress={() => void connect()}
-          style={[
-            styles.button,
-            dark ? styles.buttonDark : styles.buttonLight,
-            styles.connectButton,
-          ]}
-        >
-          {busy ? (
-            <ActivityIndicator color={dark ? '#f5f5f7' : '#1d1d1f'} />
-          ) : (
-            <Text style={[styles.buttonLabel, titleColor]}>
-              {explicitHa ? 'Connect Home Assistant' : 'Connect Haus Hub'}
-            </Text>
-          )}
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            const next = !explicitHa;
-            setExplicitHa(next);
-            setDiscoveredHomes([]);
-            setDiscoveryFinished(false);
-            setUrl('');
-            setError(null);
-          }}
-          style={styles.textButton}
-        >
-          <Text style={[styles.textButtonLabel, secondaryColor]}>
-            {explicitHa ? '← Connect to a Haus Hub instead' : 'Add or import Home Assistant'}
-          </Text>
-        </Pressable>
-        {error ? <Text style={[styles.inlineError, styles.errorText]}>{error}</Text> : null}
-        <Text style={[styles.privacy, secondaryColor]}>
-          Sign-in opens securely in your browser. Haus never asks for your password.
-        </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  dashboard: { flex: 1, width: '100%', maxWidth: 860, alignSelf: 'center' },
-  stackedHeader: { alignItems: 'stretch', flexDirection: 'column', gap: 6 },
-  bottomNavigation: {
-    flexDirection: 'row',
-    gap: 6,
-    padding: 8,
-    marginHorizontal: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  navBorderDark: { borderColor: 'rgba(255,255,255,0.2)' },
-  navBorderLight: { borderColor: 'rgba(0,0,0,0.2)' },
-  navigationItem: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 6,
-  },
-  navigationLabel: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  pressed: { opacity: 0.72 },
-  dark: { backgroundColor: '#000' },
-  light: { backgroundColor: '#f5f5f7' },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  signInContent: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    maxWidth: 620,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  brandMark: {
-    width: 62,
-    height: 62,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 22,
-    backgroundColor: 'rgba(127,127,132,0.14)',
-  },
-  brandIcon: { width: 48, height: 48, borderRadius: 16 },
-  title: { fontSize: 34, fontWeight: '600', letterSpacing: -0.8 },
-  message: { marginTop: 10, fontSize: 17, lineHeight: 24, maxWidth: 420 },
-  urlInput: {
-    height: 54,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 28,
-    paddingHorizontal: 16,
-    fontSize: 16,
-  },
-  discoveryButton: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    marginTop: 4,
-  },
-  discoveryButtonLabel: { fontSize: 14, fontWeight: '500' },
-  discoveredHome: {
-    minHeight: 58,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    marginTop: 8,
-  },
-  discoveredHomeName: { fontSize: 15, fontWeight: '600' },
-  discoveredHomeAddress: { fontSize: 12, marginTop: 3 },
-  discoveryEmpty: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 4 },
-  inputDark: { borderColor: 'rgba(255,255,255,0.16)', backgroundColor: '#151516' },
-  inputLight: { borderColor: 'rgba(0,0,0,0.14)', backgroundColor: '#fff' },
-  button: {
-    minHeight: 52,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonDark: { backgroundColor: '#29292b' },
-  buttonLight: { backgroundColor: '#e3e3e8' },
-  connectButton: { marginTop: 12 },
-  buttonLabel: { fontSize: 16, fontWeight: '600' },
-  privacy: { fontSize: 13, lineHeight: 19, marginTop: 20, textAlign: 'center' },
-  inlineError: { marginTop: 14, fontSize: 14, lineHeight: 20 },
-  errorText: { color: '#ff453a' },
-  textLight: { color: '#f5f5f7' },
-  textDark: { color: '#1d1d1f' },
-  secondaryDark: { color: '#a1a1a6' },
-  secondaryLight: { color: '#6e6e73' },
-  homeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 22,
-    paddingTop: 12,
-    paddingBottom: 14,
-    gap: 16,
-  },
-  headingGroup: { flex: 1, minWidth: 0 },
-  status: { fontSize: 13, lineHeight: 18, marginTop: 4 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  textButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 4 },
-  textButtonLabel: { fontSize: 14, fontWeight: '500' },
-  listContent: { paddingHorizontal: 20, paddingBottom: 28 },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.4,
-    paddingHorizontal: 2,
-    paddingTop: 18,
-    paddingBottom: 8,
-  },
-  entityRow: {
-    minHeight: 68,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    gap: 12,
-    borderRadius: 16,
-    marginBottom: 8,
-  },
-  rowDark: { backgroundColor: '#151516' },
-  rowLight: { backgroundColor: '#fff' },
-  entityLabel: { flex: 1, minWidth: 0 },
-  entityName: { fontSize: 16, fontWeight: '500' },
-  entityId: { fontSize: 12, marginTop: 4 },
-  entityState: { fontSize: 14, maxWidth: 130 },
-  empty: { paddingHorizontal: 4, paddingTop: 14, fontSize: 15 },
-});

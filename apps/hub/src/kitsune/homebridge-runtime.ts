@@ -1,10 +1,4 @@
-/*
- * Haus — A thoughtful home.
- * Copyright © 2026 Andrii Vynohradov. All rights reserved.
- * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
- * SPDX-License-Identifier: GPL-3.0-or-later.
- */
-
+/* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { Logger } from '@nestjs/common';
@@ -107,10 +101,11 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
   }
 
   isRunning(appId: string): boolean {
-    const active = this.bridges.get(appId);
-    return Boolean(active?.bridge.isRunning);
+    return Boolean(this.bridges.get(appId)?.bridge.isRunning);
   }
-
+  async configure(options: { dataDirectory: string }): Promise<void> {
+    this.dataDirectory = options.dataDirectory;
+  }
   async ensureRunning(appId: string): Promise<boolean> {
     if (this.closed) return false;
     if (this.isRunning(appId)) return true;
@@ -121,12 +116,8 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     }
     const entry = this.homeService?.appManager.getInstalledApp(appId);
     if (!entry || !this.supports(entry.manifest)) return false;
-    if (this.homeService && !this.homeService.appManager.canExecuteAppLocally(appId)) {
-      return false;
-    }
-    if (entry.state !== 'running' && !this.desiredRunning.has(appId)) {
-      return false;
-    }
+    if (this.homeService && !this.homeService.appManager.canExecuteAppLocally(appId)) return false;
+    if (entry.state !== 'running' && !this.desiredRunning.has(appId)) return false;
     try {
       await this.startBridge(appId, entry.manifest, entry.config);
       return this.isRunning(appId);
@@ -137,10 +128,6 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
       this.scheduleAutoRestart(appId);
       return false;
     }
-  }
-
-  async configure(options: { dataDirectory: string }): Promise<void> {
-    this.dataDirectory = options.dataDirectory;
   }
 
   async restore(entries: readonly InstalledAppEntry[]): Promise<void> {
@@ -168,23 +155,33 @@ export class HomebridgeAppSupervisor implements StandaloneRuntimeBridge {
     onProgress?: (update: AppInstallProgressUpdate) => void,
   ): Promise<{ logs?: readonly string[] }> {
     const appId = entry.manifest.id;
-    onProgress?.({ stage: 'pulling' });
-    onProgress?.({ stage: 'creating' });
-    onProgress?.({ stage: 'starting' });
+    onProgress?.({
+      stage: 'pulling',
+      detail: `Preparing Homebridge plugin ${appId}…`,
+      logLine: `Resolving Homebridge package for ${entry.manifest.name}`,
+    });
+    onProgress?.({
+      stage: 'creating',
+      detail: 'Allocating isolated Homebridge bridge workspace…',
+      logLine: `Created isolated bridge configuration for ${appId}`,
+    });
+    onProgress?.({
+      stage: 'starting',
+      detail: 'Starting Homebridge child runner…',
+      logLine: `Launching Homebridge runner for ${entry.manifest.name}…`,
+    });
     await this.startBridge(appId, entry.manifest, entry.config);
-    return { logs: this.getLogs(appId) };
+    const logs = this.getLogs(appId);
+    if (logs && logs.length > 0) {
+      onProgress?.({ stage: 'starting', logs: logs.slice(-20) });
+    }
+    return { logs };
   }
 
   async execute(entry: InstalledAppEntry, action: AppAction): Promise<void> {
     const appId = entry.manifest.id;
-    if (action === 'start') {
-      await this.startBridge(appId, entry.manifest, entry.config);
-      return;
-    }
-    if (action === 'stop') {
-      await this.stopBridge(appId, true);
-      return;
-    }
+    if (action === 'start') return this.startBridge(appId, entry.manifest, entry.config);
+    if (action === 'stop') return this.stopBridge(appId, true);
     if (action === 'restart') {
       await this.stopBridge(appId, false);
       await this.startBridge(appId, entry.manifest, entry.config);

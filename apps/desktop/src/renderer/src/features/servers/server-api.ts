@@ -9,23 +9,36 @@ import type { ServersStatus } from './types';
 import { serverErrorMessage } from './server-errors';
 import type { NativeProviderRequest } from '../../../../shared/providers';
 
-import { HausClient } from '@haus/ha/helper-client';
+import {
+  HausHubClient,
+  type ClusterNodeDrainPlan,
+  type ClusterStatus,
+  type ClusterTransferSummary,
+  type ClusterWorkloadSummary,
+  type HubServicePort,
+  type RemoveClusterNodeOptions,
+} from '@haus/core/hub';
+import { HaHelperClient } from '@haus/ha/helper-client';
 export type {
   ClusterNodeDrainPlan,
   ClusterStatus,
   ClusterTransferSummary,
   ClusterWorkloadSummary,
   RemoveClusterNodeOptions,
-} from '@haus/ha/helper-client';
-const client = new HausClient(
-  {
-    request: (request) => {
-      if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
-      return window.hausNative.helper(request);
-    },
+};
+
+const port: HubServicePort = {
+  request: (request) => {
+    if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
+    return window.hausNative.helper(request);
   },
-  (diagnostic) => window.hausNative?.logHelperDiagnostic?.(diagnostic),
-);
+};
+const reportDiagnostic = (
+  diagnostic: Parameters<NonNullable<ConstructorParameters<typeof HausHubClient>[1]>>[0],
+) => window.hausNative?.logHelperDiagnostic?.(diagnostic);
+
+const hubClient = new HausHubClient(port, reportDiagnostic);
+const haClient = new HaHelperClient(port, reportDiagnostic);
 
 export async function serverRequest<T>(
   method: 'GET' | 'POST' | 'PATCH',
@@ -34,15 +47,16 @@ export async function serverRequest<T>(
 ) {
   if (!window.hausNative) throw new Error('Connect your home in the desktop app first.');
   try {
-    if (path.startsWith('/api/providers')) {
-      const session = await window.hausNative.getSession();
-      if (session?.kind === 'haus-hub') {
-        const request = providerRequest(method, path, data);
-        if (!request) throw new Error('Unsupported camera bridge operation.');
-        return await window.hausNative.nativeProviders<T>(request);
-      }
+    const session = await window.hausNative.getSession();
+    if (path.startsWith('/api/providers') && session?.kind === 'haus-hub') {
+      const request = providerRequest(method, path, data);
+      if (!request) throw new Error('Unsupported camera bridge operation.');
+      return await window.hausNative.nativeProviders<T>(request);
     }
-    return await client.request<T>({ method, path, ...(data ? { data } : {}) });
+    const payload = { method, path, ...(data ? { data } : {}) };
+    return session && session.kind !== 'haus-hub'
+      ? await haClient.request<T>(payload)
+      : await hubClient.request<T>(payload);
   } catch (error) {
     throw new Error(
       serverErrorMessage(error, { serverApi: method === 'GET' && path === '/api/servers' }),

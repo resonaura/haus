@@ -12,7 +12,7 @@ import type {
   UnifiedUpdatesSummary,
 } from '@haus/core/transport';
 import { colorToken, insets, pct, px } from '../../ir/geometry.js';
-import { HausButton, Row, Stack, Text, useHausUi } from '../../primitives/index.js';
+import { HausButton, Pressable, Row, Stack, Text, useHausUi } from '../../primitives/index.js';
 import {
   BrandIcon,
   ManagementEmptyCard,
@@ -347,77 +347,91 @@ export function IntegrationsOverviewView({
                     },
                   }}
                 >
-                  <Row
-                    align="start"
-                    justify="between"
-                    gapPx={10}
-                    style={{ layout: { width: pct(100) } }}
+                  <Pressable
+                    id={`integration-open-${card.domain}`}
+                    ariaLabel={`Open ${card.displayName}`}
+                    onActivate={() => onSelectDomain(card.domain)}
+                    style={{
+                      layout: {
+                        display: 'flex',
+                        direction: 'column',
+                        gap: px(12),
+                        width: pct(100),
+                      },
+                    }}
                   >
                     <Row
-                      align="center"
-                      gapPx={12}
-                      style={{ layout: { flexGrow: 1, minWidth: px(0) } }}
+                      align="start"
+                      justify="between"
+                      gapPx={10}
+                      style={{ layout: { width: pct(100) } }}
                     >
-                      <BrandIcon
-                        kind={card.iconKind ?? 'integration'}
-                        id={card.domain}
-                        size={44}
-                        hint={{
-                          name: card.iconName ?? card.displayName,
-                          ...(card.iconCategory ? { category: card.iconCategory } : {}),
-                        }}
-                      />
-                      <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                        <Text
-                          size={14.5}
-                          weight={600}
-                          style={{
-                            typography: { size: 14.5, weight: 600, maxLines: 1, truncate: true },
+                      <Row
+                        align="center"
+                        gapPx={12}
+                        style={{ layout: { flexGrow: 1, minWidth: px(0) } }}
+                      >
+                        <BrandIcon
+                          kind={card.iconKind ?? 'integration'}
+                          id={card.domain}
+                          size={46}
+                          hint={{
+                            name: card.iconName ?? card.displayName,
+                            ...(card.iconCategory ? { category: card.iconCategory } : {}),
                           }}
+                        />
+                        <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+                          <Text
+                            size={14.5}
+                            weight={600}
+                            style={{
+                              typography: { size: 14.5, weight: 600, maxLines: 1, truncate: true },
+                            }}
+                          >
+                            {card.displayName}
+                          </Text>
+                          <Text
+                            size={12}
+                            tone="muted"
+                            style={{ typography: { size: 12, maxLines: 1, truncate: true } }}
+                          >
+                            {card.summary}
+                          </Text>
+                        </Stack>
+                      </Row>
+                      {card.hasAttention ? (
+                        <ManagementStatusPill label={card.attentionLabel} tone="warning" />
+                      ) : card.hasUpdate ? (
+                        <ManagementStatusPill label="Update" tone="accent" />
+                      ) : card.allDisabled ? (
+                        <ManagementStatusPill label="Disabled" tone="neutral" />
+                      ) : null}
+                    </Row>
+
+                    <Stack gapPx={3} style={{ layout: { width: pct(100) } }}>
+                      {card.firstEntryTitle && (
+                        <Text
+                          size={12.5}
+                          tone="muted"
+                          style={{ typography: { size: 12.5, maxLines: 1, truncate: true } }}
                         >
-                          {card.displayName}
+                          {card.firstEntryTitle}
                         </Text>
+                      )}
+                      {card.secondEntryTitle && (
                         <Text
                           size={12}
                           tone="muted"
                           style={{ typography: { size: 12, maxLines: 1, truncate: true } }}
                         >
-                          {card.summary}
+                          {card.secondEntryTitle}
                         </Text>
-                      </Stack>
-                    </Row>
-                    {card.hasAttention ? (
-                      <ManagementStatusPill label={card.attentionLabel} tone="warning" />
-                    ) : card.hasUpdate ? (
-                      <ManagementStatusPill label="Update" tone="accent" />
-                    ) : card.allDisabled ? (
-                      <ManagementStatusPill label="Disabled" tone="neutral" />
-                    ) : null}
-                  </Row>
-
-                  <Stack gapPx={3} style={{ layout: { width: pct(100) } }}>
-                    {card.firstEntryTitle && (
-                      <Text
-                        size={12.5}
-                        tone="muted"
-                        style={{ typography: { size: 12.5, maxLines: 1, truncate: true } }}
-                      >
-                        {card.firstEntryTitle}
-                      </Text>
-                    )}
-                    {card.secondEntryTitle && (
-                      <Text
-                        size={12}
-                        tone="muted"
-                        style={{ typography: { size: 12, maxLines: 1, truncate: true } }}
-                      >
-                        {card.secondEntryTitle}
-                      </Text>
-                    )}
-                    {card.extraEntries > 0 && (
-                      <Text size={11} tone="muted">{`+${card.extraEntries} more`}</Text>
-                    )}
-                  </Stack>
+                      )}
+                      {card.extraEntries > 0 && (
+                        <Text size={11} tone="muted">{`+${card.extraEntries} more`}</Text>
+                      )}
+                    </Stack>
+                  </Pressable>
 
                   <Row
                     align="center"

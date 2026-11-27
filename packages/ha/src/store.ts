@@ -1,10 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 import { createHomeStore, type HomeStore, type HomeState } from '@haus/state';
-import { OptimisticState } from './optimistic.js';
+import {
+  OptimisticState,
+  actionQueueKey,
+  coalesceHausActions,
+  extractContextId,
+  isStatelessAction,
+} from './optimistic.js';
 import type { HaTransport } from './ha-client.js';
 import type { Snapshot, HassEntity, HausAction } from './types.js';
+
 export type HausHomeStore = HomeStore<Snapshot, HassEntity, HausAction>;
 export type HausHomeState = HomeState<Snapshot, HassEntity, HausAction>;
+
 function copySnapshot(snapshot: Snapshot): Snapshot {
   const confirmed = { ...snapshot };
   delete confirmed.pendingEntityIds;
@@ -21,19 +29,13 @@ function copySnapshot(snapshot: Snapshot): Snapshot {
   };
 }
 
-function contextIdFrom(value: unknown): string | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
-  const context = (value as Record<string, unknown>).context;
-  if (!context || typeof context !== 'object' || Array.isArray(context)) return;
-  const id = (context as Record<string, unknown>).id;
-  return typeof id === 'string' && id.length > 0 ? id : undefined;
-}
-
 export function createHausHomeStore(options: {
   openTransport(homeId: string): Promise<HaTransport>;
+  optimistic?: OptimisticState;
   now?(): number;
 }): HausHomeStore {
-  return createHomeStore({
+  const optimistic = options.optimistic ?? new OptimisticState();
+  return createHomeStore<Snapshot, HassEntity, HausAction>({
     now: options.now,
     openTransport: async (homeId) => {
       const transport = await options.openTransport(homeId);
@@ -44,6 +46,7 @@ export function createHausHomeStore(options: {
         close: () => transport.close(),
         watchState: transport.watchState.bind(transport),
         watchValues: transport.watchEntities.bind(transport),
+        watchObservations: transport.watchObservations?.bind(transport),
         async execute(action: HausAction) {
           const response = await transport.request({
             type: 'call_service',
@@ -52,18 +55,21 @@ export function createHausHomeStore(options: {
             target: action.target,
             service_data: action.service_data ?? {},
           });
-          return { status: 'accepted' as const, correlationId: contextIdFrom(response) };
+          return { status: 'accepted' as const, correlationId: extractContextId(response) };
         },
       };
     },
     projection: {
       copy: copySnapshot,
       copyValue: (value: HassEntity) => ({ ...value, attributes: { ...value.attributes } }),
+      valueId: (value: HassEntity) => value.entity_id,
       values: (snapshot: Snapshot) => snapshot.states,
       withValues: (snapshot, values) => ({ ...snapshot, states: [...values] }),
       pending: (snapshot) => snapshot.pendingEntityIds ?? [],
-      subject: (action) => action.target.entity_id,
-      optimistic: new OptimisticState(),
+      subject: actionQueueKey,
+      coalesce: coalesceHausActions,
+      isStateless: isStatelessAction,
+      optimistic,
     },
   });
 }

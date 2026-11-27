@@ -6,7 +6,7 @@
  */
 
 import * as React from 'react';
-import { px } from '../ir/geometry.js';
+import type { ColorValue } from '../ir/geometry.js';
 import type { UiStyleSpec } from '../ir/node.js';
 import {
   buttonStyles,
@@ -111,6 +111,7 @@ export interface HausSwitchProps {
   readonly disabled?: boolean;
   readonly isDisabled?: boolean;
   readonly size?: HausControlSize;
+  readonly accentColor?: ColorValue;
   readonly label?: React.ReactNode;
   readonly description?: string;
   readonly 'aria-label'?: string;
@@ -126,6 +127,7 @@ export function HausSwitch({
   disabled,
   isDisabled,
   size = 'md',
+  accentColor,
   label,
   description,
   'aria-label': ariaLabel,
@@ -139,6 +141,7 @@ export function HausSwitch({
     checked: active,
     disabled: effectiveDisabled,
     size,
+    accentColor,
   });
 
   const control = (
@@ -176,6 +179,8 @@ export interface HausSliderProps {
   readonly min?: number;
   readonly max?: number;
   readonly step?: number;
+  readonly size?: HausControlSize;
+  readonly accentColor?: ColorValue;
   readonly disabled?: boolean;
   readonly label?: string;
   readonly valueLabel?: string;
@@ -194,6 +199,8 @@ export function HausSlider({
   min = 0,
   max = 100,
   step = 1,
+  size = 'md',
+  accentColor,
   disabled,
   label,
   valueLabel,
@@ -208,7 +215,7 @@ export function HausSlider({
   const span = Math.max(1e-9, max - min);
   const clamped = Math.max(min, Math.min(max, value));
   const ratioPct = ((clamped - min) / span) * 100;
-  const styles = useHausStyles(sliderStyles, { ratioPct, disabled });
+  const styles = useHausStyles(sliderStyles, { ratioPct, disabled, size, accentColor });
 
   return (
     <Box id={id} className={className} style={composeStyles(styles.root, style)}>
@@ -220,15 +227,11 @@ export function HausSlider({
       )}
       <Box style={styles.trackHost}>
         <Box style={styles.track}>
-          <Box style={styles.fill} />
+          <Box style={styles.fill}>
+            <Box style={styles.thumb} />
+          </Box>
+          <Box style={styles.spacer} />
         </Box>
-        <Row style={styles.thumbRow}>
-          <Box style={{ layout: { flexGrow: ratioPct, flexShrink: 1, width: px(0) } }} />
-          <Box style={styles.thumb} />
-          <Box
-            style={{ layout: { flexGrow: Math.max(0, 100 - ratioPct), flexShrink: 1, width: px(0) } }}
-          />
-        </Row>
         <RangeInput
           id={id && `${id}-input`}
           ariaLabel={ariaLabel ?? label}

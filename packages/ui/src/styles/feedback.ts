@@ -91,7 +91,7 @@ export const toastStyles = defineStyleSheet('toast', (theme, tone: HausToastTone
       cursor: 'pointer',
       states: {
         hover: {
-          material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.1) : rgba(15, 23, 42, 0.08)),
+          material: new SolidMaterial(theme.color('controlFill')),
           textColor: colorToken('textPrimary'),
         },
       },
@@ -173,7 +173,7 @@ export const popoverStyles = defineStyleSheet(
         transitionMs: 120,
         states: {
           hover: {
-            material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.1) : rgba(15, 23, 42, 0.07)),
+            material: new SolidMaterial(theme.color('controlFill')),
           },
         },
       },

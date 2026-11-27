@@ -7,7 +7,8 @@
 
 export {
   LightOutputMemory,
-  sanitizeLightMemory,
   sanitizeHomeLightMemories,
-} from '@haus/ha/light-memory';
-export type { LightMemory, HomeLightMemories } from '@haus/ha/light-memory';
+  sanitizeLightMemory,
+  type HomeLightMemories,
+  type LightMemory,
+} from '@haus/core/optimistic';

@@ -3,13 +3,8 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type {
-  ServerDiskRecord,
-  ServerNvrSummary,
-  ServerServiceRow,
-  ServerSummaryRecord,
-} from '@haus/core/transport';
-import type { HomeServer, ServersStatus } from '@haus/ha/server-types';
+import type { ServerKind, ServerSummaryRecord } from '@haus/core/transport';
+import type { ServersStatus } from '@haus/core/servers';
 import {
   HausTerminalClient,
   type HausTerminalEvent,
@@ -17,13 +12,31 @@ import {
   type TerminalAccessCredentials,
   type TerminalKeyStorePort,
 } from '@haus/ipc/client';
+import type {
+  AddClusterHubSubmitInput,
+  AddClusterHubSubmitResult,
+  ClusterMeshStatusView,
+  DiscoveredClusterHubCandidate,
+} from '@haus/ui/components';
+import { discoverServers } from '../../main/discovery.js';
 import type { HausHelper } from '../../main/helper.js';
 import { gpuiStateDirectory } from '../../platform/credentials.js';
 import type { GpuiRpcRequest } from './integrations.js';
+import { normalizeHomeServer } from './servers/normalize.js';
+
+export { normalizeHomeServer };
 
 export interface GpuiServersPort {
   loadServers(): Promise<ServerSummaryRecord[]>;
   setServerEnabled(serverId: string, enabled: boolean): Promise<void>;
+  setStorageLimit?(serverId: string, local: boolean, limitBytes: number | null): Promise<void>;
+  removeServer?(serverId: string, kind: ServerKind): Promise<void>;
+  loadCluster?(): Promise<ClusterMeshStatusView | undefined>;
+  transferLeadership?(targetHubId: string): Promise<void>;
+  rebalanceCluster?(): Promise<void>;
+  reconcileCluster?(): Promise<void>;
+  discoverCandidateHubs?(): Promise<DiscoveredClusterHubCandidate[]>;
+  enrollHub?(input: AddClusterHubSubmitInput): Promise<AddClusterHubSubmitResult>;
 }
 
 export interface GpuiTerminalPort {
@@ -99,126 +112,6 @@ export class GpuiTerminalKeyStore implements TerminalKeyStorePort {
   }
 }
 
-export function normalizeHomeServer(server: HomeServer): ServerSummaryRecord {
-  const host = server.host;
-  const osLabel =
-    [host?.operatingSystem?.name ?? host?.osName ?? host?.distribution, host?.release, host?.arch]
-      .filter(Boolean)
-      .join(' · ') ||
-    host?.platform ||
-    'Linux';
-  const loadValues =
-    host?.cpu?.loadAverage?.filter(
-      (value): value is number => typeof value === 'number' && Number.isFinite(value),
-    ) ?? [];
-
-  const disks: ServerDiskRecord[] = (host?.disks ?? []).map((disk) => ({
-    id: disk.id,
-    name: disk.name,
-    mountpoint: disk.mountpoint,
-    filesystem: disk.filesystem,
-    totalBytes: disk.totalBytes,
-    usedBytes: disk.usedBytes,
-    availableBytes: disk.availableBytes,
-  }));
-
-  const services: ServerServiceRow[] = [
-    ...(host?.docker?.containers ?? []).map((c) => ({
-      id: `docker:${c.id}`,
-      name: c.name,
-      manager: 'docker' as const,
-      running: c.state === 'running',
-      status: c.status || c.state,
-      cpuPercent: c.cpuPercent,
-      memoryBytes: c.memoryUsedBytes,
-      uptimeSeconds: null,
-    })),
-    ...(host?.pm2?.processes ?? []).map((p) => ({
-      id: `pm2:${p.id}`,
-      name: p.name,
-      manager: 'pm2' as const,
-      running: p.status === 'online',
-      status: p.status,
-      cpuPercent: p.cpuPercent,
-      memoryBytes: p.memoryBytes,
-      uptimeSeconds: p.uptimeSeconds,
-    })),
-    ...(host?.systemServices?.services ?? []).map((s) => ({
-      id: `sys:${s.id}`,
-      name: s.name,
-      manager: 'systemServices' as const,
-      running: s.status === 'active' || s.status === 'running',
-      status: s.status,
-      cpuPercent: s.cpuPercent,
-      memoryBytes: s.memoryBytes,
-      uptimeSeconds: s.uptimeSeconds,
-    })),
-  ];
-
-  const hasNvr =
-    server.kind === 'nvr' ||
-    Boolean(server.roles?.some((r) => r === 'storage' || r === 'stream')) ||
-    Boolean(
-      server.streams || server.playback || server.analysis || server.backupCopies !== undefined,
-    );
-  const nvr: ServerNvrSummary | undefined = hasNvr
-    ? {
-        hasNvr: true,
-        storageAssigned: Boolean(server.roles?.includes('storage')),
-        streamingAssigned: Boolean(server.roles?.includes('stream')),
-        ...(server.streams
-          ? { activeStreams: `${server.streams.active} / ${server.streams.max}` }
-          : {}),
-        ...(server.playback
-          ? { playbackPrep: `${server.playback.active} / ${server.playback.max}` }
-          : {}),
-        ...(server.analysis
-          ? { activityAssist: `${server.analysis.active} / ${server.analysis.max}` }
-          : {}),
-        ...(server.backupCopies !== undefined ? { backupCopies: server.backupCopies } : {}),
-        usedBytes: server.storage?.usedBytes ?? null,
-        limitBytes: server.settings?.storageLimitBytes ?? server.storage?.limitBytes ?? null,
-      }
-    : undefined;
-
-  return {
-    id: server.id,
-    ...(server.managedId ? { managedId: server.managedId } : {}),
-    name: server.name,
-    kind: server.kind,
-    ...(host?.hostname ? { hostname: host.hostname } : {}),
-    ...(host?.platform ? { platform: host.platform } : {}),
-    ...(host?.arch ? { architecture: host.arch } : {}),
-    ...(host?.scope ? { reportingScope: host.scope } : {}),
-    online: server.online,
-    enabled: server.enabled !== false,
-    local: server.local,
-    ...(server.url ? { url: server.url } : {}),
-    ...(server.lastSeen !== undefined ? { lastSeen: server.lastSeen } : {}),
-    osLabel,
-    cpuModel: host?.cpu?.model?.replace(/\bGfx\b/g, 'GFX') || 'Not reported',
-    cpuCores: host?.cpu?.logicalCores ?? null,
-    cpuUsage: host?.cpu?.usage ?? null,
-    loadAverageLabel: loadValues.length
-      ? loadValues.map((value) => value.toFixed(2)).join(' · ')
-      : 'Not available',
-    memoryUsedBytes: host?.memory?.usedBytes ?? null,
-    memoryTotalBytes: host?.memory?.totalBytes ?? null,
-    memoryInstalledBytes: host?.memory?.installedBytes ?? host?.memory?.totalBytes ?? null,
-    swapSupported: host?.swap?.supported ?? false,
-    swapUsedBytes: host?.swap?.usedBytes ?? null,
-    swapTotalBytes: host?.swap?.totalBytes ?? null,
-    uptimeSeconds: host?.uptimeSeconds ?? null,
-    ...(host?.battery
-      ? { batteryLevel: host.battery.level, batteryCharging: Boolean(host.battery.charging) }
-      : {}),
-    disks,
-    services,
-    ...(nvr ? { nvr } : {}),
-    ...(server.error ? { error: server.error } : {}),
-  };
-}
-
 export function createGpuiTerminalPort(
   getHubAccess: () => TerminalAccessCredentials | null,
   stateDirectory: string = gpuiStateDirectory(),
@@ -254,16 +147,168 @@ export function createGpuiServersPort(getHelper: () => HausHelper | null): GpuiS
         method: 'GET',
         path: '/api/servers',
       })) as ServersStatus;
-      return Array.isArray(payload?.servers) ? payload.servers.map(normalizeHomeServer) : [];
+      const now = Date.now();
+      return Array.isArray(payload?.servers)
+        ? payload.servers.map((s) => normalizeHomeServer(s, now))
+        : [];
     },
     async setServerEnabled(serverId: string, enabled: boolean): Promise<void> {
       const helper = getHelper();
       if (!helper) throw new Error('Connect to a Haus Hub to manage servers.');
       await helper.request({
         method: 'PATCH',
-        path: `/api/servers/${encodeURIComponent(serverId)}`,
+        path: `/api/cluster/nodes/${encodeURIComponent(serverId)}`,
         data: { enabled },
       });
+    },
+    async setStorageLimit(
+      serverId: string,
+      local: boolean,
+      storageLimitBytes: number | null,
+    ): Promise<void> {
+      const helper = getHelper();
+      if (!helper) throw new Error('Connect to a Haus Hub to update storage limits.');
+      await helper.request({
+        method: 'PATCH',
+        path: local
+          ? '/api/servers/home-assistant'
+          : `/api/cluster/nodes/${encodeURIComponent(serverId)}`,
+        data: { storageLimitBytes },
+      });
+    },
+    async removeServer(serverId: string): Promise<void> {
+      const helper = getHelper();
+      if (!helper) throw new Error('Connect to a Haus Hub to disconnect servers.');
+      await helper.request({
+        method: 'POST',
+        path: `/api/cluster/nodes/${encodeURIComponent(serverId)}/remove`,
+        data: {},
+      });
+    },
+    async loadCluster(): Promise<ClusterMeshStatusView | undefined> {
+      const helper = getHelper();
+      if (!helper) return undefined;
+      const raw = (await helper.request({ method: 'GET', path: '/api/cluster' })) as {
+        id?: string;
+        coordinatorId?: string;
+        role?: string;
+        epoch?: number;
+        fenced?: boolean;
+        members?: ClusterMeshStatusView['members'];
+        nodes?: Array<{
+          id: string;
+          name: string;
+          url?: string;
+          enabled: boolean;
+          online?: boolean;
+        }>;
+      };
+      const coordinatorId = raw?.coordinatorId ?? raw?.id;
+      if (!coordinatorId) return undefined;
+      const members =
+        Array.isArray(raw.members) && raw.members.length > 0
+          ? raw.members
+          : (raw.nodes ?? []).map((n) => ({
+              id: n.id,
+              name: n.name,
+              url: n.url,
+              role: n.id === coordinatorId ? 'coordinator' : 'node',
+              online: n.online !== false,
+              enabled: n.enabled !== false,
+            }));
+      return {
+        coordinatorId,
+        role: raw.role ?? 'coordinator',
+        epoch: raw.epoch ?? 1,
+        fenced: Boolean(raw.fenced),
+        members,
+      };
+    },
+    async transferLeadership(targetHubId: string): Promise<void> {
+      const helper = getHelper();
+      if (!helper) throw new Error('Connect to a Haus Hub to transfer leadership.');
+      const init = (await helper.request({
+        method: 'POST',
+        path: '/api/cluster/transfer/initiate',
+        data: { targetHubId, preservePairing: true },
+      })) as { transferId: string };
+      try {
+        await helper.request({
+          method: 'POST',
+          path: `/api/cluster/transfer/${init.transferId}/prepare`,
+          data: {},
+        });
+        await helper.request({
+          method: 'POST',
+          path: `/api/cluster/transfer/${init.transferId}/fence`,
+          data: {},
+        });
+        await helper.request({
+          method: 'POST',
+          path: `/api/cluster/transfer/${init.transferId}/commit`,
+          data: {},
+        });
+      } catch (err) {
+        await helper
+          .request({
+            method: 'POST',
+            path: `/api/cluster/transfer/${init.transferId}/rollback`,
+            data: { reason: err instanceof Error ? err.message : 'gpui_transfer_aborted' },
+          })
+          .catch(() => undefined);
+        throw err;
+      }
+    },
+    async rebalanceCluster(): Promise<void> {
+      const helper = getHelper();
+      if (!helper) return;
+      await helper.request({ method: 'POST', path: '/api/cluster/rebalance', data: {} });
+    },
+    async reconcileCluster(): Promise<void> {
+      const helper = getHelper();
+      if (!helper) return;
+      await helper.request({ method: 'POST', path: '/api/cluster/reconcile', data: {} });
+    },
+    async discoverCandidateHubs(): Promise<DiscoveredClusterHubCandidate[]> {
+      const found = await discoverServers({ rawHubsOnly: true });
+      return found
+        .filter((item) => item.kind !== 'home-assistant' && (item.hubCount ?? 1) <= 1)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          url: item.url,
+          ...(item.hubId ? { hubId: item.hubId } : {}),
+          ...(item.homeId ? { homeId: item.homeId } : {}),
+          ...(item.onboarded !== undefined ? { onboarded: item.onboarded } : {}),
+        }));
+    },
+    async enrollHub(input: AddClusterHubSubmitInput): Promise<AddClusterHubSubmitResult> {
+      const helper = getHelper();
+      if (!helper) throw new Error('Connect to a Haus Hub first.');
+      const res = (await helper.request({
+        method: 'POST',
+        path: '/api/cluster/enroll-hub',
+        data: {
+          targetUrl: input.targetUrl,
+          ...(input.name ? { name: input.name } : {}),
+          roles: [...input.roles],
+          ...(input.pairingCode ? { pairingCode: input.pairingCode } : {}),
+          ...(input.challengeSessionId ? { challengeSessionId: input.challengeSessionId } : {}),
+        },
+      })) as {
+        status?: string;
+        challengeSessionId?: string;
+        targetName?: string;
+        node?: { name?: string };
+      };
+      if (res.status === 'pairing_code_required' && res.challengeSessionId) {
+        return {
+          status: 'pairing_code_required',
+          challengeSessionId: res.challengeSessionId,
+          targetName: res.targetName,
+        };
+      }
+      return { status: 'joined', hubName: res.node?.name };
     },
   };
 }
@@ -275,14 +320,22 @@ export function createGpuiRuntimeSystem(options: {
   readonly getSessionKind: () => 'haus-hub' | 'home-assistant';
 }) {
   const terminal = createGpuiTerminalPort(options.getHubAccess);
-  const servers = createGpuiServersPort(options.getHelper);
+  const hubServers = createGpuiServersPort(options.getHelper);
+  const haVideoServers: GpuiServersPort = {
+    loadServers: hubServers.loadServers,
+    setServerEnabled: hubServers.setServerEnabled,
+    setStorageLimit: hubServers.setStorageLimit,
+    removeServer: hubServers.removeServer,
+  };
   const ports: GpuiSystemPorts = {
     requestRpc: <T = unknown>(message: Record<string, unknown>) =>
       options.getRequestRpc()<T>(message),
     get sessionKind() {
       return options.getSessionKind();
     },
-    servers,
+    get servers() {
+      return options.getSessionKind() === 'home-assistant' ? haVideoServers : hubServers;
+    },
     terminal,
   };
   return {

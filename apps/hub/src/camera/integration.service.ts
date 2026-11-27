@@ -391,11 +391,12 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
 
     if (this.homeService) {
       const existing = this.homeService.getDevice(config.id);
+      const resolvedName = existing?.name || config.name;
       const epId = `ep_${config.id}`;
       const device: HausDevice = {
         id: config.id,
         source: { instanceId: 'haus-cameras', externalId: config.id },
-        name: config.name,
+        name: resolvedName,
         category: 'cameras',
         roomId: existing?.roomId ?? 'unassigned',
         ...(existing?.areaId ? { areaId: existing.areaId } : {}),
@@ -442,7 +443,12 @@ export class CameraIntegrationService implements OnApplicationBootstrap, OnAppli
     const activeIds = new Set((await this.cameraService.listCameras()).map((cam) => cam.id));
     for (const device of this.homeService.listDevices()) {
       if (device.source.instanceId !== 'haus-cameras' || activeIds.has(device.id)) continue;
-      if (!this.isCameraSourceConfigured(device)) {
+      const hasUserPlacement = Boolean(
+        (device.roomId && device.roomId !== 'unassigned' && device.roomId !== 'default') ||
+        device.opaqueMetadata?.roomAssignment ||
+        device.opaqueMetadata?.nameAssignment,
+      );
+      if (!this.isCameraSourceConfigured(device) && !hasUserPlacement) {
         this.homeService.removeDevice(device.id);
         continue;
       }

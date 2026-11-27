@@ -1,11 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { randomUUID } from 'node:crypto';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { isRecord } from '@haus/core/record';
 import { nodeAddress } from '@haus/servers';
 import { In, type DataSource, type EntityManager } from 'typeorm';
+import type { HubAuthService } from '../auth/service.js';
 import { ClusterNodeEntity, type ClusterNodeRow } from '../storage/entities/domains.js';
 import type { Transactions } from '../storage/transactions.js';
+import { assertValidClusterRoles } from './attach.js';
+import type { AddNodeDto, ClusterNodeRecordDto, UpdateNodeDto } from './cluster.dto.js';
 import type { Cluster } from './cluster.js';
+import { validateClusterPeerUrl } from './crypto/transport.js';
 
 export const validSshServerId = (value: unknown): value is string =>
   typeof value === 'string' &&
@@ -225,4 +231,85 @@ export function applyClusterNodePatch<
   };
   if (patch.sshServerId === null) delete next.sshServerId;
   return next;
+}
+
+export async function addClusterNodeRecord(params: {
+  readonly node: AddNodeDto;
+  readonly nodesMap: Map<string, ClusterNodeRecordDto>;
+  readonly authService?: HubAuthService;
+  readonly transactions?: Transactions;
+}): Promise<ClusterNodeRecordDto> {
+  const { node } = params;
+  if (!node.url || typeof node.url !== 'string') {
+    throw new HttpException({ error: 'invalid_node_url' }, HttpStatus.BAD_REQUEST);
+  }
+  let validatedUrl: string;
+  try {
+    validatedUrl = validateClusterPeerUrl(node.url, true);
+  } catch {
+    throw new HttpException({ error: 'invalid_node_address' }, HttpStatus.BAD_REQUEST);
+  }
+  const roles = node.roles ?? ['storage', 'stream'];
+  assertValidClusterRoles(roles);
+  const coordinatorHomeId = params.authService?.getIdentitySummary().homeId ?? 'home-default';
+  if (node.homeId && node.homeId !== coordinatorHomeId) {
+    throw new HttpException({ error: 'wrong_home' }, HttpStatus.FORBIDDEN);
+  }
+  const id = node.nodeId?.trim() || randomUUID();
+  const record: ClusterNodeRecordDto = {
+    id,
+    name: node.name ?? `Node ${id.slice(0, 6)}`,
+    url: validatedUrl,
+    enabled: true,
+    roles,
+    online: true,
+    homeId: coordinatorHomeId,
+    ...(typeof node.allowHttp === 'boolean' ? { allowHttp: node.allowHttp } : {}),
+    ...(node.sshServerId !== undefined ? { sshServerId: node.sshServerId } : {}),
+  };
+  if (params.transactions) {
+    await params.transactions.run((manager) =>
+      manager.upsert(ClusterNodeEntity, { id, value: JSON.stringify(record) }, ['id']),
+    );
+  }
+  params.nodesMap.set(id, record);
+  const nodeToken = node.token ?? node.key;
+  if (nodeToken && params.authService) {
+    params.authService.registerToken(nodeToken, {
+      clientId: id,
+      clientRole: 'node',
+      clientName: record.name,
+    });
+  }
+  return { ...record, pairedNodeId: id };
+}
+
+export async function updateClusterNodeRecord(params: {
+  readonly id: string;
+  readonly patch: UpdateNodeDto;
+  readonly nodesMap: Map<string, ClusterNodeRecordDto>;
+  readonly transactions?: Transactions;
+  readonly recordingCluster?: Cluster;
+}): Promise<ClusterNodeRecordDto> {
+  const { id, patch } = params;
+  const cached = params.nodesMap.get(id);
+  if (!cached) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
+  let updated = applyClusterNodePatch(cached, patch);
+  let serialized: string | undefined;
+  await forwardNodeStoragePolicy(id, patch.storageLimitBytes, params.recordingCluster);
+  if (params.transactions) {
+    updated = await params.transactions.run(async (manager) => {
+      const saved = await manager.findOneBy(ClusterNodeEntity, { id });
+      if (!saved) throw new HttpException({ error: 'node_not_found' }, HttpStatus.NOT_FOUND);
+      const current = JSON.parse(saved.value) as ClusterNodeRecordDto;
+      const next = applyClusterNodePatch({ ...current, id }, patch);
+      serialized = JSON.stringify(next);
+      await manager.update(ClusterNodeEntity, { id }, { value: serialized });
+      return stripNodeSecrets(next);
+    });
+  }
+  const clean = stripNodeSecrets(updated);
+  params.nodesMap.set(id, clean);
+  await syncUpdatedNodeToRecordingCluster(id, serialized, params.recordingCluster);
+  return clean;
 }

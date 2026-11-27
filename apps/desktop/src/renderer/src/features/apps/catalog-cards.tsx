@@ -74,7 +74,7 @@ export const CatalogAppCard = memo(function CatalogAppCard({
           <BrandIcon
             kind={catalogIconKind(entry.runtimeType)}
             id={brand.iconId || entry.packageName || entry.id}
-            size={44}
+            size={46}
             hint={hint}
           />
           <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
@@ -153,7 +153,7 @@ export const CatalogVendorGroupCard = memo(function CatalogVendorGroupCard({
     >
       <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
         <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(220) } }}>
-          <BrandIcon kind="integration" id={group.iconId} size={44} hint={hint} />
+          <BrandIcon kind="integration" id={group.iconId} size={46} hint={hint} />
           <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
             <Row align="center" gapPx={7} wrap>
               <Heading level={3} size={14.5} weight={600}>

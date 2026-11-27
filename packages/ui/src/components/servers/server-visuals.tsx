@@ -11,17 +11,23 @@
 
 import { memo } from 'react';
 import {
+  computeDuoBarGaugeMetrics,
+  computeServerDiskSpace,
+  computeServiceUsageScore,
   formatBytes,
-  formatRatio,
+  formatServiceCpuPercent,
   type ServerDiskRecord,
+  type ServerDiskSpaceSegment,
   type ServerResourceSample,
 } from '@haus/core/transport';
-import { colorToken, corners, pct, px, rgba } from '../../ir/geometry.js';
+import { colorToken, corners, insets, pct, px, rgba, transparentColor } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import { useHausUi } from '../../primitives/context.js';
-import { Box, Pressable, Row, Stack, Text } from '../../primitives/elements.js';
+import { Box, Heading, Pressable, Row, Stack, Text } from '../../primitives/elements.js';
 import { VectorGraphic } from '../../primitives/media.js';
 import { resolveColorToCss } from '../../renderers/contract.js';
+
+export { computeServiceUsageScore };
 
 const GAUGE_DIAMETER = 26.5;
 const GAUGE_STROKE = GAUGE_DIAMETER * (18 / 230);
@@ -54,20 +60,10 @@ export const DUO_USAGE_GEOMETRY = {
   inactiveOpacity: 0.3,
 } as const;
 
-export function computeServiceUsageScore(
-  cpuPercent: number | null,
-  memoryBytes: number | null,
-  totalMemoryBytes: number | null,
-): number | null {
-  const cpuRatio = formatRatio(cpuPercent, 100);
-  const memRatio = formatRatio(memoryBytes, totalMemoryBytes);
-  if (cpuRatio === null && memRatio === null) return null;
-  return Math.min(1, Math.max(cpuRatio ?? 0, (memRatio ?? 0) * 0.85));
-}
-
 /**
- * Electron-matched rolling 60-second sparkline rendered identically in DOM and GPUI.
- * Uses the newest sample timestamp to gently slide incoming points from the right edge.
+ * Rolling 60-second sparkline rendered identically in DOM and GPUIX.
+ * Scales slide distance and linear tween duration to the exact sample interval
+ * so the curve glides continuously at `(200 / 60) px/s` without freezing between ticks.
  */
 export const ServerSparkline = memo(function ServerSparkline({
   history,
@@ -77,14 +73,21 @@ export const ServerSparkline = memo(function ServerSparkline({
   readonly field: 'cpu' | 'memory' | 'swap';
 }) {
   const { theme } = useHausUi();
-  const lastTime = history.at(-1)?.time;
+  const lastSample = history.at(-1);
+  const prevSample = history.length >= 2 ? history[history.length - 2] : undefined;
+  const lastTime = lastSample?.time;
   const step = 200 / 60;
+  const rawElapsed =
+    lastTime !== undefined && prevSample !== undefined ? lastTime - prevSample.time : 1000;
+  const elapsedMs = Math.min(3000, Math.max(400, rawElapsed));
+  const slideOffset = (elapsedMs / 1000) * step;
+
   const parts: string[] = [];
   let continuous = false;
   let previousSampleTime: number | undefined;
 
   for (const sample of history) {
-    if (lastTime === undefined || sample.time < lastTime - 62_000) continue;
+    if (lastTime === undefined || sample.time < lastTime - 63_000) continue;
     const value = sample[field];
     if (value === null) {
       continuous = false;
@@ -93,7 +96,7 @@ export const ServerSparkline = memo(function ServerSparkline({
     if (previousSampleTime !== undefined && sample.time - previousSampleTime > 10_000) {
       continuous = false;
     }
-    const x = 200 + step - ((lastTime - sample.time) / 1000) * step;
+    const x = 200 + slideOffset - ((lastTime - sample.time) / 1000) * step;
     const y = 36 - Math.min(1, Math.max(0, value)) * 31;
     parts.push(`${continuous ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`);
     previousSampleTime = sample.time;
@@ -120,9 +123,9 @@ export const ServerSparkline = memo(function ServerSparkline({
       <Box
         key={lastTime}
         motion={{
-          initial: { x: step },
+          initial: { x: slideOffset },
           animate: { x: 0 },
-          durationMs: 950,
+          durationMs: elapsedMs,
           ease: 'linear',
         }}
         style={{ layout: { width: pct(100), height: pct(100) }, pointerEvents: 'none' }}
@@ -132,6 +135,7 @@ export const ServerSparkline = memo(function ServerSparkline({
           viewHeight={42}
           width="100%"
           height={32}
+          fill="none"
           preserveAspectRatio="none"
           ariaHidden
           stroke={strokeColor}
@@ -153,25 +157,33 @@ export const ServerSparkline = memo(function ServerSparkline({
   );
 });
 
-/** DuoBar-inspired compact gauge: independent CPU arc, 4 memory dots, and centered readout. */
+/** DuoBar-inspired compact gauge: independent CPU arc, 4 memory dots, and $L_4$ norm readout. */
 export function ServerUsageGauge({
   cpuPercent,
   memoryBytes,
   totalMemoryBytes,
   inactive = false,
+  system = false,
+  cpuIncomplete = false,
+  memoryIncomplete = false,
   size = 44,
 }: {
   readonly cpuPercent: number | null;
   readonly memoryBytes: number | null;
   readonly totalMemoryBytes: number | null;
   readonly inactive?: boolean;
+  readonly system?: boolean;
+  readonly cpuIncomplete?: boolean;
+  readonly memoryIncomplete?: boolean;
   readonly size?: number;
 }) {
   const { theme } = useHausUi();
-  const cpuRatio = formatRatio(cpuPercent, 100);
-  const memRatio = formatRatio(memoryBytes, totalMemoryBytes);
-  const usage = computeServiceUsageScore(cpuPercent, memoryBytes, totalMemoryBytes);
-  const pressure = Math.max(cpuRatio ?? 0, memRatio ?? 0);
+  const { cpuRatio, memoryRatio, usage, pressure } = computeDuoBarGaugeMetrics({
+    cpuPercent,
+    memoryBytes,
+    totalMemoryBytes,
+    system,
+  });
   const muted = inactive || usage === null;
 
   const gaugeColorToken = muted
@@ -183,12 +195,12 @@ export function ServerUsageGauge({
         : colorToken('textPrimary');
   const strokeColor = resolveColorToCss(gaugeColorToken, theme, false);
 
-  const percentageLabel =
-    usage === null ? '' : usage > 0 && usage < 0.01 ? '<1%' : `${Math.round(usage * 100)}%`;
+  const prefix = cpuIncomplete || memoryIncomplete ? '≥' : '';
+  const percentageLabel = usage === null ? '—' : `${prefix}${Math.round(usage * 100)}%`;
 
   return (
     <Box
-      ariaLabel={`CPU ${cpuRatio === null ? 'not reported' : `${Math.round(cpuRatio * 100)}%`} · Memory ${formatBytes(memoryBytes)}`}
+      ariaLabel={`CPU arc: ${cpuRatio === null ? 'not reported' : `${Math.round(cpuRatio * 100)}% of host capacity`} · Memory dots: ${memoryRatio === null ? 'not reported' : `${Math.round(memoryRatio * 100)}% · ${formatBytes(memoryBytes)}`}`}
       style={{
         layout: {
           position: 'relative',
@@ -199,7 +211,7 @@ export function ServerUsageGauge({
           alignItems: 'center',
           justifyContent: 'center',
         },
-        opacity: muted ? 0.36 : 1,
+        opacity: muted ? 0.35 : 1,
       }}
     >
       <VectorGraphic
@@ -207,6 +219,7 @@ export function ServerUsageGauge({
         viewHeight={32}
         width={size}
         height={size}
+        fill="none"
         ariaHidden
         stroke={strokeColor}
         strokeWidth={DUO_USAGE_GEOMETRY.stroke}
@@ -237,7 +250,7 @@ export function ServerUsageGauge({
                   d: 'M10 15h3l2-5 3 10 2-5h2',
                   fill: 'none',
                   stroke: strokeColor,
-                  strokeWidth: 1.3,
+                  strokeWidth: 1.25,
                   strokeLinecap: 'round' as const,
                   strokeLinejoin: 'round' as const,
                   opacity: 0.9,
@@ -253,7 +266,7 @@ export function ServerUsageGauge({
           opacity:
             DUO_USAGE_GEOMETRY.inactiveOpacity +
             (1 - DUO_USAGE_GEOMETRY.inactiveOpacity) *
-              Math.min(1, Math.max(0, (memRatio ?? 0) * 4 - index)),
+              Math.min(1, Math.max(0, (memoryRatio ?? 0) * 4 - index)),
         }))}
       />
       {!muted && (
@@ -295,20 +308,20 @@ export function ServerServiceUsage({
   memoryBytes,
   totalMemoryBytes,
   inactive = false,
+  system = false,
+  cpuIncomplete = false,
+  memoryIncomplete = false,
   gaugeSize = 44,
 }: {
   readonly cpuPercent: number | null;
   readonly memoryBytes: number | null;
   readonly totalMemoryBytes: number | null;
   readonly inactive?: boolean;
+  readonly system?: boolean;
+  readonly cpuIncomplete?: boolean;
+  readonly memoryIncomplete?: boolean;
   readonly gaugeSize?: number;
 }) {
-  const cpuText =
-    cpuPercent === null
-      ? '—'
-      : cpuPercent < 0.1 && cpuPercent > 0
-        ? '<0.1%'
-        : `${cpuPercent.toFixed(1)}%`;
   return (
     <Row align="center" gapPx={12} style={{ layout: { flexShrink: 0 } }}>
       <ServerUsageGauge
@@ -316,15 +329,18 @@ export function ServerServiceUsage({
         memoryBytes={memoryBytes}
         totalMemoryBytes={totalMemoryBytes}
         inactive={inactive}
+        system={system}
+        cpuIncomplete={cpuIncomplete}
+        memoryIncomplete={memoryIncomplete}
         size={gaugeSize}
       />
-      <Stack gapPx={4} style={{ layout: { width: px(138) } }}>
+      <Stack gapPx={4} style={{ layout: { width: px(146) } }}>
         <Row align="center" justify="between" gapPx={8}>
           <Text size={10} tone="muted">
             CPU
           </Text>
           <Text size={11.5} weight={500} style={{ typography: { tabularNums: true } }}>
-            {cpuText}
+            {`${cpuIncomplete ? '≥ ' : ''}${formatServiceCpuPercent(cpuPercent)}`}
           </Text>
         </Row>
         <Row align="center" justify="between" gapPx={8}>
@@ -332,7 +348,7 @@ export function ServerServiceUsage({
             Memory
           </Text>
           <Text size={11.5} weight={500} style={{ typography: { tabularNums: true } }}>
-            {formatBytes(memoryBytes)}
+            {`${memoryIncomplete ? '≥ ' : ''}${formatBytes(memoryBytes)}`}
           </Text>
         </Row>
       </Stack>
@@ -340,107 +356,131 @@ export function ServerServiceUsage({
   );
 }
 
-/** Proportional multi-segment disk allocation bar with legend matching Electron's DiskSpaceBar. */
+function segmentColor(tone: ServerDiskSpaceSegment['tone'], index: number, isDark: boolean) {
+  if (tone === 'used') return isDark ? rgba(255, 255, 255, 0.86) : rgba(24, 24, 27, 0.84);
+  if (tone === 'other') return isDark ? rgba(255, 255, 255, 0.36) : rgba(24, 24, 27, 0.3);
+  if (tone === 'available') return isDark ? rgba(255, 255, 255, 0.11) : rgba(24, 24, 27, 0.08);
+  if (tone === 'allocation') {
+    const alpha = 0.28 + (index % 4) * 0.14;
+    return isDark ? rgba(255, 255, 255, alpha) : rgba(24, 24, 27, alpha);
+  }
+  return isDark ? rgba(255, 255, 255, 0.2) : rgba(24, 24, 27, 0.16);
+}
+
+/**
+ * Proportional multi-segment disk / partition / pool bar matching Electron's `DiskSpaceBar` 1:1.
+ * Supports clickable partition/volume allocation segments (`targetId`) and space-usage legends.
+ */
 export function ServerDiskSpaceBar({
   disk,
+  disks,
   onSelectVolume,
 }: {
   readonly disk: ServerDiskRecord;
+  readonly disks?: readonly ServerDiskRecord[];
   readonly onSelectVolume?: (id: string) => void;
 }) {
   const { theme } = useHausUi();
   const isDark = theme.mode === 'dark';
-  const total = disk.totalBytes ?? 0;
-  const used = Math.max(0, disk.usedBytes ?? 0);
-  const avail = Math.max(0, disk.availableBytes ?? Math.max(0, total - used));
-  const reserved = Math.max(0, total - used - avail);
-
-  const usedPct = total > 0 ? Math.round((used / total) * 100) : 0;
-  const reservedPct = total > 0 ? Math.round((reserved / total) * 100) : 0;
-  const availPct = Math.max(0, 100 - usedPct - reservedPct);
-
-  const usedColor = isDark ? rgba(255, 255, 255, 0.86) : rgba(24, 24, 27, 0.84);
-  const reservedColor = isDark ? rgba(255, 255, 255, 0.34) : rgba(24, 24, 27, 0.28);
-  const freeColor = isDark ? rgba(255, 255, 255, 0.1) : rgba(24, 24, 27, 0.08);
-
-  const segments = [
-    { id: 'used', label: 'Used', bytes: used, pctVal: usedPct, color: usedColor },
-    ...(reserved > total * 0.01
-      ? [
-          {
-            id: 'reserved',
-            label: 'System / reserved',
-            bytes: reserved,
-            pctVal: reservedPct,
-            color: reservedColor,
-          },
-        ]
-      : []),
-    { id: 'free', label: 'Available', bytes: avail, pctVal: availPct, color: freeColor },
-  ];
+  const space = computeServerDiskSpace(disk, disks ?? [disk]);
 
   return (
-    <Stack gapPx={10} style={{ layout: { width: pct(100) } }}>
+    <Stack gapPx={10} style={{ layout: { width: pct(100) } }} ariaLabel={space.title}>
       <Row align="center" justify="between" style={{ layout: { width: pct(100) } }}>
-        <Text size={11.5} weight={600}>
-          Space usage
-        </Text>
+        <Heading level={5} size={11.5} weight={600}>
+          {space.title}
+        </Heading>
         <Text size={11.5} tone="muted" style={{ typography: { tabularNums: true } }}>
-          {`${usedPct}% of ${formatBytes(disk.totalBytes)}`}
+          {formatBytes(space.totalBytes)}
         </Text>
       </Row>
+
       <Row
         gapPx={2}
+        role="group"
+        ariaLabel={space.title}
         style={{
-          layout: { width: pct(100), height: px(10), overflow: 'hidden' },
+          layout: { width: pct(100), height: px(12), overflow: 'hidden' },
           material: new SolidMaterial(colorToken('soft')),
           corners: corners(999, 'round'),
         }}
       >
-        {segments.map((segment) =>
-          segment.pctVal > 0 ? (
-            onSelectVolume ? (
+        {space.proportional &&
+          space.segments.map((segment, index) => {
+            if (!segment.bytes || !space.totalBytes) return null;
+            const pctWidth = Math.max(0.5, (segment.bytes / space.totalBytes) * 100);
+            const color = segmentColor(segment.tone, index, isDark);
+            const label = `${segment.label}: ${formatBytes(segment.bytes)}`;
+            return segment.targetId && onSelectVolume ? (
               <Pressable
                 key={segment.id}
-                ariaLabel={`${segment.label}: ${formatBytes(segment.bytes)}`}
-                onActivate={() => onSelectVolume(disk.id)}
+                ariaLabel={`Show ${label}`}
+                title={label}
+                onActivate={() => onSelectVolume(segment.targetId!)}
                 style={{
-                  layout: { width: pct(segment.pctVal), height: pct(100) },
-                  material: new SolidMaterial(segment.color),
+                  layout: { width: pct(pctWidth), height: pct(100) },
+                  material: new SolidMaterial(color),
+                  border: { width: 0, style: 'none', color: transparentColor },
                 }}
               />
             ) : (
               <Box
                 key={segment.id}
+                ariaLabel={label}
+                title={label}
                 style={{
-                  layout: { width: pct(segment.pctVal), height: pct(100) },
-                  material: new SolidMaterial(segment.color),
+                  layout: { width: pct(pctWidth), height: pct(100) },
+                  material: new SolidMaterial(color),
                 }}
               />
-            )
-          ) : null,
-        )}
+            );
+          })}
       </Row>
-      <Row gapPx={16} wrap style={{ layout: { width: pct(100) } }}>
-        {segments.map((segment) => (
-          <Row key={segment.id} align="center" gapPx={6}>
-            <Box
-              ariaHidden
+
+      <Row gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
+        {space.segments.map((segment, index) => {
+          const color = segmentColor(segment.tone, index, isDark);
+          const content = (
+            <Row align="center" gapPx={6}>
+              <Box
+                ariaHidden
+                style={{
+                  layout: { width: px(8), height: px(8), flexShrink: 0 },
+                  material: new SolidMaterial(color),
+                  corners: corners(999, 'round'),
+                }}
+              />
+              <Text size={11} tone="muted">
+                {segment.label}
+              </Text>
+              <Text size={11} weight={600} style={{ typography: { tabularNums: true } }}>
+                {formatBytes(segment.bytes)}
+              </Text>
+            </Row>
+          );
+          return segment.targetId && onSelectVolume ? (
+            <Pressable
+              key={segment.id}
+              ariaLabel={`Show ${segment.label}`}
+              onActivate={() => onSelectVolume(segment.targetId!)}
               style={{
-                layout: { width: px(8), height: px(8) },
-                material: new SolidMaterial(segment.color),
-                corners: corners(999, 'round'),
+                layout: { padding: insets(2, 4) },
+                material: new SolidMaterial(transparentColor),
+                border: { width: 0, style: 'none', color: transparentColor },
+                corners: corners(8),
               }}
-            />
-            <Text size={11} tone="muted">
-              {segment.label}
-            </Text>
-            <Text size={11} weight={600} style={{ typography: { tabularNums: true } }}>
-              {formatBytes(segment.bytes)}
-            </Text>
-          </Row>
-        ))}
+            >
+              {content}
+            </Pressable>
+          ) : (
+            <Box key={segment.id}>{content}</Box>
+          );
+        })}
       </Row>
+
+      <Text size={11} tone="muted" style={{ typography: { lineHeight: 1.45 } }}>
+        {space.note}
+      </Text>
     </Stack>
   );
 }

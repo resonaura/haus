@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Box, HausLabel as Label, Text } from '@haus/ui';
+import { Box, HausLabel as Label, Row, Text } from '@haus/ui';
 import { HapticSlider as Slider } from '../../../components/ui/HapticSlider';
 import { sliderHasDetents, triggerHaptic } from '../../../components/ui/haptics';
 import { Glyph } from './ControlGlyph';
@@ -108,10 +108,10 @@ export function ControlRange({
             <Text semantic="output">{unknown ? '—' : `${draft}${unit}`}</Text>
           </Box>
         ) : (
-          <>
+          <Row justify="between" align="center" gapPx={8}>
             <Label>{label}</Label>
             <Slider.Output>{unknown ? '—' : `${draft}${unit}`}</Slider.Output>
-          </>
+          </Row>
         )}
         <Slider.Track>
           <Slider.Fill />

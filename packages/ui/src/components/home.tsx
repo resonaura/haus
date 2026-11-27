@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { ReactNode } from 'react';
-import { colorToken, corners, insets, px } from '../ir/geometry.js';
+import { Children, isValidElement, type ReactNode } from 'react';
+import { colorToken, corners, insets, pct, px } from '../ir/geometry.js';
 import { SolidMaterial } from '../ir/materials.js';
 import { Box, Grid, Heading, Pressable, Text } from '../primitives/elements.js';
 import { UiIcon } from './icon.js';
@@ -16,9 +16,25 @@ export {
 } from './cameras/preview-tile.js';
 
 export function DashboardGrid({ columns, children }: { columns: number; children: ReactNode }) {
+  const items = Children.toArray(children);
+  const keys = items.map((item) =>
+    isValidElement(item) && item.key !== null ? String(item.key) : '',
+  );
+  const canAnimateLayout = keys.length > 0 && keys.every((key) => key.length > 0);
+  const layoutSignature = canAnimateLayout ? `${columns}:${keys.join('|')}` : undefined;
   return (
     <Grid columns={columns} gapPx={11}>
-      {children}
+      {layoutSignature
+        ? items.map((item, idx) => (
+            <Box
+              key={keys[idx]}
+              layoutTransition={layoutSignature}
+              style={{ layout: { width: pct(100), minWidth: px(0) } }}
+            >
+              {item}
+            </Box>
+          ))
+        : children}
     </Grid>
   );
 }

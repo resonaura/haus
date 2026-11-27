@@ -16,6 +16,13 @@ import { dialogStyles, fieldStyles } from '../styles/overlays.js';
 import { composeStyles } from '../styles/sheet.js';
 import { useHausStyles, useHausUi } from './context.js';
 import {
+  dialogBackdropMotion,
+  dialogPanelMotion,
+  HausDialogCloseContext,
+  useDialogTransition,
+  useHausDialogClose,
+} from './dialog-motion.js';
+import {
   Box,
   Divider,
   Heading,
@@ -26,8 +33,11 @@ import {
   Stack,
   Text,
   TextInput,
+  VectorGraphic,
 } from './elements.js';
 import { GlassRim, type GlassRimProps } from './glass-rim.js';
+
+const CLOSE_X_PATHS = [{ d: 'M18 6 6 18' }, { d: 'm6 6 12 12' }] as const;
 
 export interface HausScrollAreaProps {
   readonly id?: string;
@@ -88,10 +98,15 @@ export function HausScrollArea({
   );
 }
 
+export { useHausDialogClose };
+
 export interface HausDialogProps {
   readonly open?: boolean;
   readonly title: string;
   readonly subtitle?: string;
+  readonly eyebrow?: string;
+  readonly headerLeading?: React.ReactNode;
+  readonly headerActions?: React.ReactNode;
   readonly size?: 'sm' | 'md' | 'lg' | 'xl' | 'adaptive' | 'cover';
   readonly backdrop?: 'blur' | 'liquid-glass' | 'dim';
   readonly scrollable?: boolean;
@@ -108,6 +123,9 @@ export function HausDialog({
   open = true,
   title,
   subtitle,
+  eyebrow,
+  headerLeading,
+  headerActions,
   size = 'md',
   backdrop = 'blur',
   scrollable = true,
@@ -121,35 +139,71 @@ export function HausDialog({
 }: HausDialogProps): React.ReactElement | null {
   const ctx = useHausUi();
   const styles = useHausStyles(dialogStyles, { size, backdrop });
+  const { mounted, closing, requestClose } = useDialogTransition({
+    open,
+    reducedMotion: ctx.viewport.reducedMotion,
+    onClose,
+  });
 
   React.useEffect(() => {
-    if (!open || ctx.contentHost.renderDialogFrame) return undefined;
-    return ctx.host.subscribeEscape?.(onClose);
-  }, [open, onClose, ctx.host, ctx.contentHost]);
+    if (!mounted || closing || ctx.contentHost.renderDialogFrame) return undefined;
+    return ctx.host.subscribeEscape?.(requestClose);
+  }, [mounted, closing, requestClose, ctx.host, ctx.contentHost]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   const context = (
     <>
-      <Row style={styles.header} className="modal__header">
-        <Stack gapPx={4}>
-          <Heading level={2} className="modal__heading">
-            {title}
-          </Heading>
-          {subtitle && (
-            <Text tone="muted" size={13}>
-              {subtitle}
-            </Text>
-          )}
-        </Stack>
-        <Pressable
-          id="dialog-close"
-          ariaLabel="Close dialog"
-          style={styles.closeButton}
-          onActivate={onClose}
-        >
-          ×
-        </Pressable>
+      <Row
+        style={styles.header}
+        className="modal__header"
+        align="center"
+        justify="between"
+        gapPx={12}
+      >
+        <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+          {headerLeading}
+          <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
+            {eyebrow && (
+              <Text
+                size={10.5}
+                weight={700}
+                tone="muted"
+                style={{ typography: { size: 10.5, weight: 700, letterSpacing: 0.7 } }}
+              >
+                {eyebrow}
+              </Text>
+            )}
+            <Heading level={2} className="modal__heading">
+              {title}
+            </Heading>
+            {subtitle && (
+              <Text tone="muted" size={13}>
+                {subtitle}
+              </Text>
+            )}
+          </Stack>
+        </Row>
+        <Row align="center" gapPx={6} style={{ layout: { flexShrink: 0 } }}>
+          {headerActions}
+          <Pressable
+            id="dialog-close"
+            ariaLabel="Close dialog"
+            style={styles.closeButton}
+            onActivate={requestClose}
+          >
+            <VectorGraphic
+              viewWidth={24}
+              viewHeight={24}
+              width={14}
+              height={14}
+              stroke="currentColor"
+              strokeWidth={2}
+              paths={CLOSE_X_PATHS}
+              ariaHidden
+            />
+          </Pressable>
+        </Row>
       </Row>
       <Box
         className="modal__body"
@@ -202,20 +256,35 @@ export function HausDialog({
       />
     );
   const content = (
-    <>
+    <HausDialogCloseContext.Provider value={requestClose}>
       {chromeless ? children : context}
       {rimLayer}
-    </>
+    </HausDialogCloseContext.Provider>
   );
   if (ctx.contentHost.renderDialogFrame) {
     return ctx.contentHost.renderDialogFrame(
-      { title, onClose, backdrop: styles.backdrop, panel, children: content },
+      {
+        title,
+        onClose: requestClose,
+        closing,
+        backdrop: styles.backdrop,
+        panel,
+        children: content,
+      },
       ctx,
     );
   }
 
   const dialog = (
-    <Box style={styles.backdrop} onBackdropPress={onClose} dataKind="dialog-backdrop">
+    <Box
+      style={styles.backdrop}
+      motion={dialogBackdropMotion(closing)}
+      onBackdropPress={() => {
+        if (!closing) requestClose();
+      }}
+      stopPropagation
+      dataKind="dialog-backdrop"
+    >
       <Box
         role="dialog"
         ariaModal
@@ -224,6 +293,8 @@ export function HausDialog({
         dataAttrs={{ 'data-haus-glass-rim': 'managed' }}
         className={['haus-dialog', className].filter(Boolean).join(' ')}
         style={panel}
+        motion={dialogPanelMotion(closing)}
+        stopPropagation
       >
         {content}
       </Box>

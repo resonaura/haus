@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { createCanvas, ImageData as SkiaImageData, loadImage } from '@napi-rs/canvas';
+import { createCanvas, ImageData as SkiaImageData, loadImage, type Canvas } from '@napi-rs/canvas';
 import {
   decodeBase64Bytes,
   ICON_CACHE_VERSION,
@@ -13,7 +13,10 @@ import {
   renderEnclosureTileToRgba,
   type ResolvedIconStyle,
 } from '@haus/icons';
-import { registerBrandTileCacheClearHook } from '../components/brand/brand-cache.js';
+import {
+  computeBrandIconShadowLayout,
+  registerBrandTileCacheClearHook,
+} from '../components/brand/brand-cache.js';
 import type {
   BrandIconPort,
   DecoratedBrandTile,
@@ -21,11 +24,10 @@ import type {
 } from '../primitives/brand-port.js';
 
 /**
- * Symmetrical per-side canvas bleed fraction reserved for alpha-following outer
- * drop-shadows on GPUIX (`1 + 2 * 0.22 = 1.44` total canvas scale around the tile).
+ * Baseline per-side shadow bleed fraction relative to the visible squircle body (`>= 12pt` per side).
  * Matches Electron's `overflow: visible` CSS `filter: drop-shadow(...)` without clipping.
  */
-export const BRAND_ICON_SHADOW_BLEED_FRACTION = 0.22;
+export const BRAND_ICON_SHADOW_BLEED_FRACTION = 0.26;
 
 const CACHE_LIMIT = 400;
 const renderedCache = new Map<string, RenderedBrandTile>();
@@ -111,21 +113,81 @@ export async function rasterizeBrandSource(
   }
 }
 
+interface OpaqueBodyMeasurement {
+  readonly centeredSquare: boolean;
+  readonly span: number;
+  readonly centerX: number;
+  readonly centerY: number;
+}
+
 /**
- * Composites Electron's exact `.brand-icon-tile` alpha-following drop-shadow
- * (`0 1.25px 2.25px rgb(0 0 0 / 26%)` light; `0 1.5px 2.75px rgb(0 0 0 / 42%)` dark)
- * onto a symmetrically bleed-padded PNG for GPUIX (which has no CSS `filter: drop-shadow`).
- * Works identically for Hub-rendered tiles, C++20 `IconRenderService` tiles, clear/tinted tiles,
- * and protocol vectors without clipping the continuous-supercircle shadow silhouette.
+ * Measures the visible enclosure body (`alpha >= 90`, covering `default`, `dark`, `tinted`,
+ * and `clear` light/dark plates while excluding outer anti-aliasing fringe) so tiles with
+ * different source dimensions or margins (`0.8`, `0.9`, `1.0`) normalize to the exact same
+ * visible squircle size on screen.
+ */
+function measureOpaqueTileBody(
+  img: Awaited<ReturnType<typeof loadImage>>,
+  srcW: number,
+  srcH: number,
+): OpaqueBodyMeasurement | null {
+  const probeCanvas = createCanvas(srcW, srcH);
+  const probeCtx = probeCanvas.getContext('2d');
+  probeCtx.clearRect(0, 0, srcW, srcH);
+  probeCtx.drawImage(img, 0, 0, srcW, srcH);
+  const { data } = probeCtx.getImageData(0, 0, srcW, srcH);
+
+  let minX = srcW;
+  let minY = srcH;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < srcH; y += 1) {
+    const row = y * srcW;
+    for (let x = 0; x < srcW; x += 1) {
+      if ((data[(row + x) * 4 + 3] ?? 0) >= 90) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return null;
+
+  const bodyW = maxX - minX + 1;
+  const bodyH = maxY - minY + 1;
+  const span = Math.max(bodyW, bodyH);
+  const centerX = (minX + maxX + 1) * 0.5;
+  const centerY = (minY + maxY + 1) * 0.5;
+  const squareness = Math.min(bodyW, bodyH) / Math.max(1, span);
+  const centeredX = Math.abs(centerX - srcW * 0.5) <= srcW * 0.06;
+  const centeredY = Math.abs(centerY - srcH * 0.5) <= srcH * 0.06;
+  const largeEnough = span >= Math.max(srcW, srcH) * 0.5;
+
+  return {
+    centeredSquare: squareness >= 0.92 && centeredX && centeredY && largeEnough,
+    span,
+    centerX,
+    centerY,
+  };
+}
+
+/**
+ * Normalizes any brand tile to an exact deterministic physical Retina visible body (`displaySize * dpr`)
+ * via progressive 2:1 box prefiltering + Skia high-quality resampling (eliminating minification
+ * aliasing on GPUI's single-mip Metal/WGPU atlas AND guaranteeing identical rendered icon sizes
+ * across mixed source resolutions or tile margins), then composites Electron's exact
+ * `.brand-icon-tile` alpha-following drop-shadow onto a symmetrically bleed-padded PNG.
  */
 export function applyBrandIconDropShadow(
   dataUrl: string,
   displaySize = 44,
   dark = false,
+  dpr = 2,
 ): Promise<DecoratedBrandTile | null> {
   if (!dataUrl) return Promise.resolve(null);
-  const clampedDisplay = Math.max(16, Math.min(256, Math.round(displaySize)));
-  const cacheKey = `${ICON_CACHE_VERSION}:shadow:${dark ? 'd' : 'l'}:${clampedDisplay}:${dataUrl}`;
+  const layout = computeBrandIconShadowLayout(displaySize, dpr);
+  const cacheKey = `${ICON_CACHE_VERSION}:shadow-aa-v2:${dark ? 'd' : 'l'}:${layout.displaySize}@${layout.dpr}x:${dataUrl}`;
   const cached = shadowCache.get(cacheKey);
   if (cached) return Promise.resolve(cached);
 
@@ -136,22 +198,55 @@ export function applyBrandIconDropShadow(
     try {
       const payload = decodeDataUrlBytes(dataUrl);
       const img = payload ? await loadImage(payload) : await loadImage(dataUrl);
-      const tileW = Math.max(64, Math.min(320, img.width || 256));
-      const tileH = Math.max(64, Math.min(320, img.height || 256));
-      const tileDim = Math.max(tileW, tileH);
-      const pad = Math.round(tileDim * BRAND_ICON_SHADOW_BLEED_FRACTION);
-      const outDim = tileDim + pad * 2;
-      const scale = tileDim / clampedDisplay;
+      const srcW = Math.max(1, img.width || 256);
+      const srcH = Math.max(1, img.height || 256);
+
+      const measured = measureOpaqueTileBody(img, srcW, srcH);
+      let drawW: number;
+      let drawH: number;
+      let drawX: number;
+      let drawY: number;
+      if (measured?.centeredSquare) {
+        const scaleToBody = layout.bodyPx / measured.span;
+        drawW = srcW * scaleToBody;
+        drawH = srcH * scaleToBody;
+        drawX = layout.outPx * 0.5 - measured.centerX * scaleToBody;
+        drawY = layout.outPx * 0.5 - measured.centerY * scaleToBody;
+      } else {
+        const fitScale = layout.bodyPx / Math.max(srcW, srcH);
+        drawW = srcW * fitScale;
+        drawH = srcH * fitScale;
+        drawX = (layout.outPx - drawW) * 0.5;
+        drawY = (layout.outPx - drawH) * 0.5;
+      }
+
+      // Progressive 2x halving prefilter eliminates high-frequency aliasing before final draw.
+      let mipSource: Canvas | typeof img = img;
+      let curW = srcW;
+      let curH = srcH;
+      while (curW >= drawW * 2 && curH >= drawH * 2 && curW > 4 && curH > 4) {
+        const nextW = Math.max(Math.ceil(drawW), Math.round(curW / 2));
+        const nextH = Math.max(Math.ceil(drawH), Math.round(curH / 2));
+        const stepCanvas = createCanvas(nextW, nextH);
+        const stepCtx = stepCanvas.getContext('2d');
+        stepCtx.clearRect(0, 0, nextW, nextH);
+        stepCtx.imageSmoothingEnabled = true;
+        stepCtx.imageSmoothingQuality = 'high';
+        stepCtx.drawImage(mipSource, 0, 0, nextW, nextH);
+        mipSource = stepCanvas;
+        curW = nextW;
+        curH = nextH;
+      }
 
       // In Skia/Chromium, CSS `filter: drop-shadow(0 y blur color)` uses Gaussian sigma = blur,
       // while Canvas 2D `ctx.shadowBlur` uses sigma = shadowBlur / 2.
-      const offsetY = (dark ? 1.5 : 1.25) * scale;
-      const shadowBlur = (dark ? 2.75 : 2.25) * 2 * scale;
+      const offsetY = (dark ? 1.5 : 1.25) * layout.dpr;
+      const shadowBlur = (dark ? 2.75 : 2.25) * 2 * layout.dpr;
       const shadowColor = dark ? 'rgba(0, 0, 0, 0.42)' : 'rgba(0, 0, 0, 0.26)';
 
-      const canvas = createCanvas(outDim, outDim);
+      const canvas = createCanvas(layout.outPx, layout.outPx);
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, outDim, outDim);
+      ctx.clearRect(0, 0, layout.outPx, layout.outPx);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.save();
@@ -159,14 +254,15 @@ export function applyBrandIconDropShadow(
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = offsetY;
       ctx.shadowBlur = shadowBlur;
-      ctx.drawImage(img, pad, pad, tileDim, tileDim);
+      ctx.drawImage(mipSource, drawX, drawY, drawW, drawH);
       ctx.restore();
 
       const outUrl = canvas.toDataURL('image/png');
       if (!outUrl || outUrl === 'data:,') return null;
       return rememberLru(shadowCache, cacheKey, {
         dataUrl: outUrl,
-        bleedFraction: BRAND_ICON_SHADOW_BLEED_FRACTION,
+        bleedFraction: layout.bleedFraction,
+        displaySizePt: layout.displaySizePt,
       });
     } catch {
       return null;

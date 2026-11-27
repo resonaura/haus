@@ -7,6 +7,45 @@ export {
   type SetupCodeBadgeTone,
   type SetupCodeDetectionKind,
 } from './onboarding-codes.js';
+export {
+  createFlowLocalization,
+  extractTranslationResources,
+  flowEyebrowLabel,
+  humanizeFlowIdentifier,
+  normalizeLocalizedMenuOptions,
+  parseOAuthCallbackInput,
+  resolveIntegrationDisplayTitle,
+  resolveStepDocumentationUrl,
+  type FlowLocalizationHelpers,
+  type NormalizedFlowMenuOption,
+  type ParsedOAuthCallbackInput,
+} from './onboarding/flow.js';
+export {
+  buildBrandIntegrationCatalog,
+  CAMERA_SETUP_DOMAINS,
+  compareBrandCatalogItems,
+  countBrandCatalogEcosystems,
+  filterBrandIntegrationCatalog,
+  formatStabilityMedal,
+  getBrandCatalogLetter,
+  GOVEE_BUILTIN_DRIVERS,
+  HAUS_GOVEE_WHY_GROUPED,
+  INTEGRATION_CATALOG_ALPHABET,
+  isGoveeAppId,
+  parseEcosystemCatalogPayload,
+  resolveBrandIdentity,
+  stabilityTierFromScore,
+  stabilityTierRank,
+  VENDOR_GROUP_WHY_DEFAULT,
+  type BrandCatalogItem,
+  type BrandIdentity,
+  type EcosystemCatalogSourceItem,
+  type EcosystemRuntimeKind,
+  type IntegrationEcosystem,
+  type StabilityMedalInfo,
+  type StabilityTier,
+} from './onboarding/catalog.js';
+import type { EcosystemCatalogSourceItem } from './onboarding/catalog.js';
 
 export interface OnboardingDiscoveredFlow {
   readonly flowId: string;
@@ -30,9 +69,11 @@ export interface FlowFormFieldRecord {
   readonly type?: string;
   readonly label?: string;
   readonly placeholder?: string;
+  readonly translation_key?: string;
   readonly required?: boolean;
   readonly optional?: boolean;
   readonly expanded?: boolean;
+  readonly multiple?: boolean;
   readonly default?: unknown;
   readonly suggested_value?: unknown;
   readonly description?: string | Readonly<{ suggested_value?: unknown }>;
@@ -48,6 +89,8 @@ export interface FlowStepRecord {
   readonly flow_id: string;
   readonly handler: string;
   readonly step_id?: string;
+  readonly translation_domain?: string;
+  readonly supported_by?: string;
   readonly data_schema?: readonly FlowFormFieldRecord[];
   readonly errors?: Readonly<Record<string, string>>;
   readonly reason?: string;
@@ -56,12 +99,14 @@ export interface FlowStepRecord {
   readonly submit_label?: string;
   readonly field_labels?: Readonly<Record<string, string>>;
   readonly data_descriptions?: Readonly<Record<string, string>>;
+  readonly selector_translations?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly url?: string;
   readonly documentation_url?: string;
   readonly menu_options?: readonly string[] | Readonly<Record<string, string>>;
   readonly menu_descriptions?: Readonly<Record<string, string>>;
   readonly description_placeholders?: Readonly<Record<string, string>>;
   readonly progress_action?: string;
+  readonly last_step?: boolean | null;
   readonly result?: Readonly<{ entry_id?: string; title?: string; device_id?: string }>;
 }
 
@@ -74,11 +119,16 @@ export interface FlowStartTarget {
   readonly reauth?: boolean;
   readonly reconfigure?: boolean;
   readonly repair?: Readonly<{ domain: string; issue_id: string; translation_key?: string }>;
+  readonly appCatalogId?: string;
+  readonly appRuntime?: 'hacs' | 'homebridge' | 'scrypted' | 'docker';
+  readonly hacsRepositoryId?: string;
+  readonly hacsDomain?: string;
 }
 
 export interface DemoOnboardingState {
   readonly discovered: readonly OnboardingDiscoveredFlow[];
   readonly catalog: readonly IntegrationCatalogChoice[];
+  readonly ecosystemApps: readonly EcosystemCatalogSourceItem[];
 }
 
 export function formatDiscoverySource(source?: string): string {
@@ -138,7 +188,10 @@ export function schemaDefaultsForFlow(
       }
       continue;
     }
-    if (field.required && (field.type === 'boolean' || Boolean(field.selector && 'boolean' in field.selector))) {
+    if (
+      field.required &&
+      (field.type === 'boolean' || Boolean(field.selector && 'boolean' in field.selector))
+    ) {
       result[field.name] = false;
       continue;
     }
@@ -168,17 +221,19 @@ export function validateFlowFormValues(
       }
       continue;
     }
-    const isBool = field.type === 'boolean' || Boolean(field.selector && 'boolean' in field.selector);
+    const isBool =
+      field.type === 'boolean' || Boolean(field.selector && 'boolean' in field.selector);
     const isRequired = field.required === true && field.optional !== true;
     const isEmpty =
-      val === undefined ||
-      val === null ||
-      (typeof val === 'string' && val.trim().length === 0);
+      val === undefined || val === null || (typeof val === 'string' && val.trim().length === 0);
     if (isRequired && !isBool && isEmpty) {
       errors[field.name] = 'required';
       continue;
     }
-    if (!isEmpty && (field.type === 'integer' || field.type === 'float' || field.type === 'number')) {
+    if (
+      !isEmpty &&
+      (field.type === 'integer' || field.type === 'float' || field.type === 'number')
+    ) {
       const num = typeof val === 'number' ? val : Number(val);
       if (!Number.isFinite(num)) {
         errors[field.name] = 'invalid_number';
@@ -266,156 +321,23 @@ export function filterIntegrationChoices(
 }
 
 export function extractFlowErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message || 'The integration flow failed.';
-  if (typeof err === 'string' && err.trim()) return err;
+  const message =
+    err instanceof Error ? err.message.trim() : typeof err === 'string' ? err.trim() : '';
+  if (message.includes('integration_entity_conflict')) {
+    return 'A Home Assistant entity ID is already owned by another integration. Haus left the configuration unchanged; resolve the registry conflict before retrying.';
+  }
+  if (message.includes('ha_runtime_unavailable')) {
+    return 'The Hub could not start its Home Assistant compatibility runtime. Haus left the configuration unchanged; retry when the runtime is available.';
+  }
+  if (message.includes('discovery_flow_unavailable')) {
+    return 'This discovered device is no longer waiting for automatic pairing. Retry, pair using a setup code, or configure the integration directly.';
+  }
+  if (message) return message;
   return 'The integration flow failed.';
 }
 
-const DEMO_DISCOVERED_FLOWS: readonly OnboardingDiscoveredFlow[] = [
-  {
-    flowId: 'demo-flow-hue',
-    domain: 'hue',
-    title: 'Philips Hue',
-    label: 'Philips Hue Bridge',
-    source: 'zeroconf',
-    sourceLabel: 'mDNS',
-  },
-  {
-    flowId: 'demo-flow-matter',
-    domain: 'matter',
-    title: 'Matter',
-    label: 'Matter Smart Plug',
-    source: 'matter',
-    sourceLabel: 'Matter',
-  },
-  {
-    flowId: 'demo-flow-homekit',
-    domain: 'homekit_controller',
-    title: 'Apple HomeKit Device',
-    label: 'Aqara Presence FP2',
-    source: 'homekit',
-    sourceLabel: 'HomeKit',
-  },
-];
-
-const DEMO_INTEGRATION_CATALOG: readonly IntegrationCatalogChoice[] = [
-  { domain: 'hue', title: 'Philips Hue', subtitle: 'Bridges & local lights', category: 'Lighting', popular: true },
-  { domain: 'matter', title: 'Matter', subtitle: 'Thread & Wi-Fi Matter accessories', category: 'Protocol', popular: true },
-  { domain: 'homekit_controller', title: 'HomeKit Device', subtitle: 'Local HAP accessories over IP & BLE', category: 'Protocol', popular: true },
-  { domain: 'tuya', title: 'Tuya', subtitle: 'Smart Life & local LAN pairing', category: 'Ecosystem', popular: true },
-  { domain: 'shelly', title: 'Shelly', subtitle: 'Gen1–Gen3 switches & energy meters', category: 'Switches', popular: true },
-  { domain: 'esphome', title: 'ESPHome', subtitle: 'Native API sensors & relays', category: 'DIY', popular: true },
-  { domain: 'sonos', title: 'Sonos', subtitle: 'Speakers & rooms', category: 'Media', popular: true },
-  { domain: 'unifiprotect', title: 'UniFi Protect', subtitle: 'Cameras, doorbells & NVR', category: 'Cameras', popular: true },
-  { domain: 'zha', title: 'Zigbee Home Automation', subtitle: 'Direct coordinator mesh', category: 'Protocol', popular: false },
-  { domain: 'mqtt', title: 'MQTT', subtitle: 'Broker discovery & devices', category: 'Protocol', popular: false },
-  { domain: 'govee', title: 'Govee', subtitle: 'LAN light strips & lamps', category: 'Lighting', popular: false },
-  { domain: 'reolink', title: 'Reolink', subtitle: 'IP cameras & NVR streams', category: 'Cameras', popular: false },
-];
-
-export function buildDemoOnboardingState(): DemoOnboardingState {
-  return {
-    discovered: DEMO_DISCOVERED_FLOWS,
-    catalog: DEMO_INTEGRATION_CATALOG,
-  };
-}
-
-export function startDemoConfigFlow(domain: string, title?: string): FlowStepRecord {
-  const display =
-    title ??
-    DEMO_INTEGRATION_CATALOG.find((item) => item.domain === domain)?.title ??
-    humanizeSlug(domain);
-  const flowId = `demo-flow-${domain}`;
-
-  if (domain === 'hue') {
-    return {
-      type: 'form',
-      flow_id: flowId,
-      handler: 'hue',
-      step_id: 'link',
-      title: display,
-      description: 'Press the link button on your Hue Bridge, or confirm its local IP address to pair.',
-      submit_label: 'Connect Bridge',
-      data_schema: [
-        { name: 'host', type: 'string', label: 'Bridge IP / Hostname', default: '192.168.1.42', required: true },
-        { name: 'allow_insecure', type: 'boolean', label: 'Allow local self-signed TLS certificate', default: true },
-      ],
-    };
-  }
-
-  if (domain === 'tuya') {
-    return {
-      type: 'menu',
-      flow_id: flowId,
-      handler: 'tuya',
-      step_id: 'user',
-      title: display,
-      description: 'Choose how Haus should pair your Tuya devices.',
-      menu_options: ['cloud', 'local'],
-      menu_descriptions: {
-        cloud: 'Smart Life / Tuya Cloud QR & app credentials',
-        local: 'Local LAN key pairing on your home subnet',
-      },
-    };
-  }
-
-  return {
-    type: 'form',
-    flow_id: flowId,
-    handler: domain,
-    step_id: 'user',
-    title: display,
-    description: `Enter connection details for ${display} on your local network.`,
-    submit_label: 'Set up',
-    data_schema: [
-      { name: 'host', type: 'string', label: 'Host or IP address', default: '192.168.1.50', required: true },
-      { name: 'name', type: 'string', label: 'Display name', default: display },
-    ],
-  };
-}
-
-export function advanceDemoConfigFlow(
-  step: FlowStepRecord,
-  input: Readonly<Record<string, unknown>>,
-): FlowStepRecord {
-  const display = step.title ?? humanizeSlug(step.handler);
-
-  if (step.type === 'menu' && step.handler === 'tuya') {
-    const mode = String(input.next_step_id ?? 'cloud');
-    return {
-      type: 'form',
-      flow_id: step.flow_id,
-      handler: 'tuya',
-      step_id: 'credentials',
-      title: display,
-      description:
-        mode === 'local'
-          ? 'Enter the local LAN device ID and key to pair without cloud dependency.'
-          : 'Confirm your Smart Life account code to link discovered Tuya devices.',
-      submit_label: 'Pair Tuya',
-      data_schema:
-        mode === 'local'
-          ? [
-              { name: 'host', type: 'string', label: 'Device IP', default: '192.168.1.78', required: true },
-              { name: 'local_key', type: 'password', label: 'Local key', default: 'demo-local-key', required: true },
-            ]
-          : [{ name: 'user_code', type: 'string', label: 'User code', default: 'HAUS-DEMO-88', required: true }],
-    };
-  }
-
-  const chosenTitle =
-    typeof input.name === 'string' && input.name.trim()
-      ? input.name.trim()
-      : display;
-  return {
-    type: 'create_entry',
-    flow_id: step.flow_id,
-    handler: step.handler,
-    title: chosenTitle,
-    description: `${chosenTitle} is configured and ready in Haus.`,
-    result: {
-      entry_id: `demo-entry-${step.handler}`,
-      title: chosenTitle,
-    },
-  };
-}
+export {
+  advanceDemoConfigFlow,
+  buildDemoOnboardingState,
+  startDemoConfigFlow,
+} from './onboarding/demo.js';

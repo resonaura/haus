@@ -1,12 +1,11 @@
 # Home Assistant compatibility adapter (`@haus/ha`)
 
-`@haus/ha` is Haus's optional external Home Assistant compatibility adapter. It owns the HA REST/WebSocket wire protocol, OAuth transport, raw registry/entity types, service/feature mapping, Supervisor apps/ingress adapter, brand icon resolver, and pinned integration catalog utilities.
+`@haus/ha` is Haus's external Home Assistant Hub compatibility package. It owns the HA REST/WebSocket wire protocol, OAuth transport, raw registry/entity types, service/feature mapping, Supervisor apps/ingress adapter, HA-authenticated brand icon endpoints, and pinned HA integration catalog utilities.
 
-It depends on provider-neutral `@haus/core` and `@haus/state`; neither core package nor standalone Haus Hub requires Home Assistant to operate.
+All Haus Hub domain contracts, Hub mesh/coordinator clustering (`@haus/core/hub`), neutral server/storage types (`@haus/core/servers`), shared `Preferences` & `PreferenceSync` (`@haus/core/preferences`), `OptimisticState` / `OptimisticSessionController` (`@haus/core/optimistic`), and platform-neutral brand catalog resolution (`@haus/core/brands`) live in `@haus/core`.
 
-- `HaHomeAdapter` and `HaProvider` adapt external HA sessions behind neutral core ports, normalizing capabilities and returning explicit `accepted` command receipts without claiming physical confirmation.
+- `HaHomeAdapter` and `HaProvider` adapt external Home Assistant hubs behind neutral core ports, normalizing capabilities and returning explicit `accepted` command receipts without claiming physical confirmation.
+- `HaHelperClient` (`helper-client.ts`) and `HaIngressHelperPort` (`helper-ingress.ts`) scope Home Assistant helper clustering strictly to optional NVR video nodes (`storage | stream`) plus `/api/ha-integration` for sharing cameras and entities back into Home Assistant.
 - `SupervisorApps` implements `@haus/apps` strictly when an actual Supervisor is present; Supervisor capabilities are never inferred merely because HA is reachable.
-- `native/brand-icons.ts` resolves integration, add-on, HACS, Homebridge, and Scrypted brand assets across local directories, upstream catalogs, GitHub (`?size=512`), and bundled vector fallbacks.
-- Platform-specific entry points stay isolated so mobile/browser bundles never pull in Node or Electron dependencies.
 
 See [platform architecture](../../docs/architecture/platform.md) and [`PLAN.md`](../../PLAN.md).

@@ -19,6 +19,8 @@ export interface DockerImageInspection {
 export interface DockerImageProgress {
   readonly current?: number;
   readonly total?: number;
+  readonly detail?: string;
+  readonly logLine?: string;
 }
 
 export interface DockerImageEngine {
@@ -55,6 +57,8 @@ export interface AppImageProgress {
   readonly stage: AppImageStage;
   readonly current?: number;
   readonly total?: number;
+  readonly detail?: string;
+  readonly logLine?: string;
 }
 
 export class AppImageAcquisitionError extends Error {

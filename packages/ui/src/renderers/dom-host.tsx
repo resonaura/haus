@@ -43,7 +43,7 @@ import {
 import { DomCheckbox, DomFileInput, DomSelect, DomTextArea, DomTextInput } from './dom-inputs.js';
 import { DomGlassRim } from './dom-glass-rim.js';
 import { DomCanvas, DomVector, DomVideo } from './dom-media.js';
-import { DomMotionBox } from './dom-motion.js';
+import { DomLayoutBox, DomMotionBox } from './dom-motion.js';
 import { DomPopover } from './dom-popover.js';
 import { DomScrollView } from './dom-scroll.js';
 import { compileStyleToReactCss, renderSvgShaderDefs } from './react-dom.js';
@@ -72,6 +72,17 @@ export class DomHostAdapter implements UiHostAdapter {
         <DomMotionBox
           props={props}
           motion={props.motion}
+          mergedStyle={mergedStyle}
+          shaderId={shaderId}
+          reducedMotion={context.viewport.reducedMotion}
+        />
+      );
+    }
+    if (props.layoutTransition !== undefined) {
+      return (
+        <DomLayoutBox
+          props={props}
+          layoutTransition={props.layoutTransition}
           mergedStyle={mergedStyle}
           shaderId={shaderId}
           reducedMotion={context.viewport.reducedMotion}

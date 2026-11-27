@@ -7,6 +7,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Box, HausButton, Heading, Text } from '@haus/ui';
+import {
+  OperationProgressPanel,
+  computeInstallProgressPercent,
+  formatByteProgress,
+  formatInstallStageTitle,
+} from '@haus/ui/components';
 import { ArrowLeft, Check, Download, ExternalLink, LoaderCircle } from 'lucide-react';
 import { nativeApi } from '../../../ha/management';
 import { appRequest } from '../../apps/api';
@@ -21,18 +27,6 @@ import {
 } from '../../apps/catalog-api';
 import { AppConfigFields } from '../../apps/config-form';
 import { formatHacsRepositoryError, hacs } from '../../community/hacs';
-
-const STAGE_LABELS: Readonly<Record<string, string>> = {
-  validating: 'Validating manifest…',
-  'checking-local': 'Checking local packages…',
-  pulling: 'Downloading package…',
-  building: 'Installing dependencies…',
-  ready: 'Package ready…',
-  creating: 'Initializing runtime…',
-  starting: 'Starting runtime…',
-  complete: 'Installed and ready',
-  failed: 'Installation failed',
-};
 
 export function PluginInstallStep({
   appId,
@@ -118,11 +112,25 @@ export function PluginInstallStep({
       }
       setBusy(true);
       setError('');
-      setProgress({ appId, stage: 'pulling' });
+      setProgress({
+        appId,
+        stage: 'pulling',
+        detail: `Downloading HACS repository ${String(targetRepo)}…`,
+        logs: [`[PULL] Requesting HACS download for ${String(targetRepo)}…`],
+      });
       try {
         await hacs('repository/download', { repository: String(targetRepo) });
         if (!mounted.current) return;
-        setProgress({ appId, stage: 'complete' });
+        setProgress({
+          appId,
+          stage: 'complete',
+          percent: 100,
+          detail: 'HACS extension downloaded and registered.',
+          logs: [
+            `[PULL] Requesting HACS download for ${String(targetRepo)}…`,
+            `[OK] Installed ${String(targetRepo)} into custom_components.`,
+          ],
+        });
         setInstalled(true);
         const resolvedDomain = hacsDomain ?? detail?.domain;
         if (resolvedDomain && onConfigureHacsDomain) {
@@ -132,8 +140,15 @@ export function PluginInstallStep({
         }
       } catch (reason: unknown) {
         if (mounted.current) {
-          setError(formatHacsRepositoryError(reason));
-          setProgress({ appId, stage: 'failed' });
+          const msg = formatHacsRepositoryError(reason);
+          setError(msg);
+          setProgress({
+            appId,
+            stage: 'failed',
+            percent: 100,
+            detail: msg,
+            logs: [`[PULL] Requesting HACS download for ${String(targetRepo)}…`, `[ERROR] ${msg}`],
+          });
         }
       } finally {
         if (mounted.current) setBusy(false);
@@ -144,7 +159,11 @@ export function PluginInstallStep({
     if (!detail) return;
     setBusy(true);
     setError('');
-    setProgress({ appId: detail.manifest.id, stage: 'validating' });
+    setProgress({
+      appId: detail.manifest.id,
+      stage: 'validating',
+      logs: [`[INFO] Preparing ${detail.manifest.name} (${runtimeLabel})…`],
+    });
     try {
       const grantedPermissions = requiredManifestPermissions(detail.manifest);
       const config = sanitizeOptionsSubmission(detail.manifest, values);
@@ -274,11 +293,30 @@ export function PluginInstallStep({
             </Box>
           )}
 
-          {busy && progress && (
-            <Box className="management-loading" ariaLive="polite">
-              <LoaderCircle className="spin" />
-              <Text>{STAGE_LABELS[progress.stage] ?? `${progress.stage}…`}</Text>
-            </Box>
+          {progress && (
+            <OperationProgressPanel
+              id="plugin-install-progress"
+              title={formatInstallStageTitle(progress.stage)}
+              detail={
+                progress.detail ??
+                formatByteProgress(progress.current, progress.total) ??
+                (progress.errorCode ? `Error code: ${progress.errorCode}` : undefined)
+              }
+              percent={computeInstallProgressPercent(
+                progress.stage,
+                progress.current,
+                progress.total,
+                progress.percent,
+              )}
+              state={
+                progress.stage === 'failed'
+                  ? 'failed'
+                  : progress.stage === 'complete'
+                    ? 'complete'
+                    : 'running'
+              }
+              logs={progress.logs}
+            />
           )}
         </>
       )}

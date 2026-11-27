@@ -47,12 +47,17 @@ export function detectLocalCapacity(overrides?: Partial<HubCapacityMetrics>): Hu
   const hostCores = Math.max(1, cpus().length);
   const hostMem = Math.max(512 * 1024 * 1024, totalmem());
   const freeDiskFallback = Math.max(freemem(), 16 * 1024 * 1024 * 1024);
+  const detectedArch =
+    process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : undefined;
   return {
     cpuCores: overrides?.cpuCores ?? hostCores,
     memoryBytes: overrides?.memoryBytes ?? hostMem,
     storageAvailableBytes: overrides?.storageAvailableBytes ?? freeDiskFallback,
     hasHardwareTranscoder: overrides?.hasHardwareTranscoder ?? false,
     attachedRadios: overrides?.attachedRadios ?? [],
+    ...((overrides?.cpuArch ?? detectedArch)
+      ? { cpuArch: overrides?.cpuArch ?? detectedArch }
+      : {}),
   };
 }
 
@@ -60,20 +65,29 @@ export function deriveRequirementsFromWorkloadMeta(meta: {
   readonly kind: PlacementWorkload['kind'];
   readonly id: string;
   readonly name?: string;
+  readonly image?: string;
   readonly requirements?: Partial<WorkloadRequirements>;
 }): WorkloadRequirements {
   if (meta.requirements && Object.keys(meta.requirements).length > 0) {
     return { ...meta.requirements };
   }
   const normalized = `${meta.id} ${meta.name ?? ''}`.toLowerCase();
+  const imageHint = (meta.image ?? '').toLowerCase();
   const req: {
     minCores?: number;
     minMemoryMb?: number;
     minStorageGb?: number;
     requiresHardwareTranscoder?: boolean;
     requiredRadio?: ClusterRadioKind;
+    requiredArch?: 'arm64' | 'x64';
     forbiddenOnWeakHub?: boolean;
   } = {};
+
+  if (/(?:^|[-/:_])(aarch64|arm64)(?:$|[-/:@_])/.test(imageHint)) {
+    req.requiredArch = 'arm64';
+  } else if (/(?:^|[-/:_])(amd64|x86_64)(?:$|[-/:@_])/.test(imageHint)) {
+    req.requiredArch = 'x64';
+  }
 
   if (normalized.includes('zigbee')) req.requiredRadio = 'zigbee';
   else if (normalized.includes('zwave') || normalized.includes('z-wave'))
@@ -101,6 +115,9 @@ function canNodeHost(node: NodeCapacityInput, workload: PlacementWorkload): bool
   if (req.forbiddenOnWeakHub && node.isWeakHub) return false;
   if (req.requiredRadio && !node.capacity.attachedRadios.includes(req.requiredRadio)) return false;
   if (req.requiresHardwareTranscoder && !node.capacity.hasHardwareTranscoder) return false;
+  if (req.requiredArch && node.capacity.cpuArch && req.requiredArch !== node.capacity.cpuArch) {
+    return false;
+  }
   if (req.minCores && node.capacity.cpuCores < req.minCores) return false;
   if (req.minMemoryMb) {
     const totalMb = Math.round(node.capacity.memoryBytes / (1024 * 1024));

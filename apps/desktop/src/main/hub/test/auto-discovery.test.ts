@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { IntegrationFlowEngine, type DiscoveredCandidate } from '@haus/core';
-import { validateRequest } from '@haus/ha/native/validation';
+import { validateRequest } from '../../validation.js';
 import { HubIntegrationFlowManager } from '../flows.js';
 import { normalizeCoreStepToHaStep } from '../management/normalize.js';
 
@@ -164,5 +164,85 @@ describe('Hub desktop auto-discovery dispatch, dedup, scan, and ignore', () => {
     const hkFlow = afterIgnore[0] as { flow_id: string };
     await manager.ignoreFlow(hkFlow.flow_id);
     expect(await manager.listFlowProgress()).toEqual([]);
+  });
+
+  it('falls back to native HomeKit PIN form or user flow when discovery_flow_unavailable is returned', async () => {
+    const startedSources: Array<{ domain: unknown; source: unknown }> = [];
+    const manager = new HubIntegrationFlowManager(
+      async (path, init) => {
+        if (path === '/api/commissioning/discoveries') {
+          return [
+            {
+              id: 'homekit:aa:bb:cc:dd:ee:ff',
+              protocol: 'homekit',
+              domain: 'homekit_controller',
+              name: 'Indoor Cam E220-6CBC',
+              addresses: ['192.168.1.99'],
+              port: 49152,
+              durableIdentities: [{ kind: 'hap', value: 'AA:BB:CC:DD:EE:FF' }],
+              status: 'discovered',
+              discoveredAt: '2026-04-04T00:00:00.000Z',
+              lastSeenAt: '2026-04-04T00:00:00.000Z',
+            },
+            {
+              id: 'shelly:192.168.1.105',
+              protocol: 'zeroconf',
+              domain: 'shelly',
+              name: 'Shelly Plus 1',
+              addresses: ['192.168.1.105'],
+              durableIdentities: [],
+              status: 'discovered',
+              discoveredAt: '2026-04-04T00:00:00.000Z',
+              lastSeenAt: '2026-04-04T00:00:00.000Z',
+            },
+          ];
+        }
+        if (path === '/api/commissioning/flows' && init?.method === 'POST') {
+          const body = init.body as { domain?: string; source?: string };
+          startedSources.push({ domain: body.domain, source: body.source });
+          if (body.source === 'discovery') {
+            throw new Error('The Hub request failed (400: discovery_flow_unavailable).');
+          }
+          return {
+            type: 'form',
+            flowId: `ha_${body.domain}_user`,
+            handler: body.domain,
+            stepId: 'user',
+            title: 'Shelly',
+            dataSchema: [{ name: 'host', type: 'string', required: true }],
+          };
+        }
+        return {};
+      },
+      async () => {},
+      async () => [],
+    );
+
+    await manager.scanDiscovery();
+    const progress = await manager.listFlowProgress();
+    const hkFlow = progress.find((p) => p.handler === 'homekit_controller') as { flow_id: string };
+    const shellyFlow = progress.find((p) => p.handler === 'shelly') as { flow_id: string };
+
+    const hkStep = (await manager.handleManagement({
+      method: 'GET',
+      path: `config/config_entries/flow/${hkFlow.flow_id}`,
+    })) as Record<string, unknown>;
+    expect(hkStep.type).toBe('form');
+    expect(hkStep.step_id).toBe('pair');
+    expect(Array.isArray(hkStep.data_schema)).toBe(true);
+    expect((hkStep.data_schema as Array<{ name: string }>)[0]?.name).toBe('pairing_code');
+
+    const shellyStep = (await manager.handleManagement({
+      method: 'GET',
+      path: `config/config_entries/flow/${shellyFlow.flow_id}`,
+    })) as Record<string, unknown>;
+    expect(shellyStep.type).toBe('form');
+    expect(shellyStep.handler).toBe('shelly');
+    expect(shellyStep.step_id).toBe('user');
+    expect(startedSources).toEqual([
+      { domain: 'homekit_controller', source: 'discovery' },
+      { domain: 'shelly', source: 'discovery' },
+      { domain: 'shelly', source: 'user' },
+    ]);
   });
 });

@@ -23,10 +23,12 @@ import {
   DeviceSettingsTab,
   UiIcon,
   parseCssColor,
+  useDelayedPending,
   type DeviceDetailTabKey,
   type SecondaryEntityControlItem,
   type TrendPoint,
 } from '@haus/ui/components';
+import { DEVICE_FEEDBACK_DELAY_MS } from '@haus/ha/view/pending-feedback';
 import { HausButton, HausDialog, Row, Stack, Text, type GlassRimProps } from '@haus/ui/primitives';
 import { isRecord } from '../../main/hub/types.js';
 import type { DeviceControl } from './cards.js';
@@ -241,19 +243,38 @@ export function DeviceDetailsModal({
   const hiddenHome = preferences ? preferences.hiddenHome.includes(device.id) : false;
   const hiddenApp = preferences ? preferences.hiddenApp.includes(device.id) : false;
   const canEdit = Boolean(registry && snapshot.user.is_admin && !lightGroup);
+  const slowPending = useDelayedPending(
+    Boolean(device.pending),
+    device.pendingSince,
+    DEVICE_FEEDBACK_DELAY_MS,
+  );
 
   const controlsContent = (
     <Stack gapPx={12}>
-      <Row justify="between" align="center">
+      <Row justify="between" align="center" gapPx={8}>
         <Row gapPx={8} align="center">
-          <DeviceBrandIcon device={device.deviceIcon} size={17} color={device.accent} />
+          <DeviceBrandIcon device={device.deviceIcon} size={18} color={device.accent} />
           <Text tone="muted" size={12}>
-            State
+            {`${area?.name ?? 'Home'} · ${device.categoryLabel ?? 'Accessory'}`}
           </Text>
         </Row>
-        <Text size={12} weight={500}>
-          {device.state}
-        </Text>
+        <Row gapPx={8} align="center">
+          {slowPending && (
+            <Text size={11} tone="muted">
+              Updating…
+            </Text>
+          )}
+          <HausButton
+            id={`device-${device.id}-favorite`}
+            size="sm"
+            variant={device.favorite ? 'secondary' : 'ghost'}
+            disabled={!canFavorite || Boolean(lightGroup)}
+            onPress={() => onFavorite(device.id, !device.favorite)}
+          >
+            <UiIcon name="heart" size={13} />
+            <Text size={11.5}>{device.favorite ? 'Remove favorite' : 'Add to favorites'}</Text>
+          </HausButton>
+        </Row>
       </Row>
       <DeviceControls
         device={device}
@@ -271,23 +292,6 @@ export function DeviceDetailsModal({
         }
         onManage={onManage}
       />
-      <Row gapPx={8} align="center" wrap>
-        <HausButton
-          id={`device-${device.id}-favorite`}
-          size="sm"
-          variant="secondary"
-          disabled={!canFavorite || Boolean(lightGroup)}
-          onPress={() => onFavorite(device.id, !device.favorite)}
-        >
-          <UiIcon name="heart" size={13} />
-          <Text size={11}>{device.favorite ? 'Remove favorite' : 'Add to favorites'}</Text>
-        </HausButton>
-        {accessory.manufacturer && (
-          <Text size={11} tone="muted">
-            {accessory.manufacturer}
-          </Text>
-        )}
-      </Row>
     </Stack>
   );
 

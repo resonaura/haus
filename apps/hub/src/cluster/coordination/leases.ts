@@ -460,6 +460,25 @@ export class ClusterLeaseService {
     });
   }
 
+  async activateOwnedLocalWorkload(workloadId: string): Promise<boolean> {
+    if (!this.stateStore) return true;
+    const state = await this.stateStore.ensureInitialized();
+    if (state.fenced || state.role === 'fenced') return false;
+    const existing = this.stateStore.getWorkloadSync(workloadId);
+    if (!existing) return state.role === 'coordinator' || state.role === 'standalone';
+    if (existing.ownerHubId !== state.hubId) return false;
+    const now = Date.now();
+    await this.stateStore.saveWorkload({
+      ...existing,
+      state: 'active',
+      generation: existing.state === 'active' ? existing.generation : existing.generation + 1,
+      epoch: Math.max(existing.epoch, state.coordinatorEpoch),
+      leaseExpiresAt: now + DEFAULT_LEASE_TTL_MS,
+      updatedAt: now,
+    });
+    return true;
+  }
+
   hasWorkload(workloadId: string): boolean {
     return this.stateStore?.getWorkloadSync(workloadId) !== undefined;
   }

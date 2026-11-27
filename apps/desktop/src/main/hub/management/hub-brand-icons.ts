@@ -5,8 +5,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { validateBrandIconInput, type BrandIconHint } from '@haus/ha/native/brand-fallbacks';
-import { BrandIconCache, resolveBrandIcon } from '@haus/ha/native/brand-icons';
+import {
+  BrandIconCache,
+  resolveCoreBrandIcon,
+  validateBrandIconInput,
+  type BrandIconHint,
+} from '@haus/core/brands';
 import { isIconAppearance, resolveIconTintColor } from '@haus/icons';
 import type { BrandIconTileResult, BrandIconTileStyle, NativeEvent } from '../../../shared/native';
 
@@ -220,7 +224,7 @@ export async function resolveHubBrandIcon(
     // Older Hubs without /api/brands/icon fall through cleanly to direct resolution
   }
 
-  return resolveBrandIcon({
+  return resolveCoreBrandIcon({
     kind: valid.kind,
     id: valid.id,
     dark,
@@ -302,7 +306,7 @@ export async function resolveHubBrandIconTile(
     // Fall back cleanly to direct unrendered source resolution.
   }
 
-  const fallbackSource = await resolveBrandIcon({
+  const fallbackSource = await resolveCoreBrandIcon({
     kind: valid.kind,
     id: valid.id,
     dark:

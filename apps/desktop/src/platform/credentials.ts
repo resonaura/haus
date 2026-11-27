@@ -4,8 +4,9 @@ import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { validateSessionCredentials } from '@haus/core/auth';
+import { normalizeServerUrl } from '@haus/core/hub';
+import { isRecord } from '@haus/core/record';
 import type { CachedCameraSnapshot, CredentialStore, StoredSession } from '@haus/ha/native-types';
-import { isRecord, normalizeServerUrl } from '@haus/ha/native/validation';
 import type { HubSessionManagerDependencies } from '../main/hub-session.js';
 import { acquireHubSessionOwner } from './owner.js';
 

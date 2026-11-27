@@ -7,7 +7,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { HausNative } from '../../../shared/native';
-import { createDemoSnapshot } from '../model';
+import { createDemoSnapshot, normalizeHome } from '../model';
+import { sceneCard } from '@haus/ha/view/scene-presentation';
 import { hueSceneArtwork, loadHueSceneArtwork } from './hue-scenes';
 
 function fixture() {
@@ -124,5 +125,13 @@ describe('Hue scene artwork', () => {
     expect(await loadHueSceneArtwork(snapshot, api)).toEqual({});
     expect(request).not.toHaveBeenCalled();
     expect(management).not.toHaveBeenCalled();
+  });
+
+  it('provides stock and ambient Hue colors when bridge diagnostics are unavailable', () => {
+    const { snapshot } = fixture();
+    const model = normalizeHome(snapshot);
+    const card = sceneCard(snapshot.states[0]!, snapshot, model);
+    expect(card.source).toBe('Hue');
+    expect(card.colors.length).toBeGreaterThanOrEqual(2);
   });
 });

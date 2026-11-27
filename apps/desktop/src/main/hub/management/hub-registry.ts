@@ -242,15 +242,18 @@ export async function handleHubRegistryCommand(
         const view = ctx.getView();
         const current = view.entities.find((item) => item.entity_id === entityId);
         const deviceId =
-          current && typeof current.device_id === 'string' ? current.device_id : undefined;
+          current && typeof current.device_id === 'string'
+            ? current.device_id
+            : view.devices.find((item) => item.id === entityId)?.id;
         const patch: Record<string, unknown> = {};
-        if (typeof message.area_id === 'string' && message.area_id) {
-          patch.roomId = message.area_id;
+        if ('area_id' in message) {
+          patch.roomId =
+            typeof message.area_id === 'string' && message.area_id ? message.area_id : null;
         }
         if (typeof message.name === 'string' && message.name.trim()) {
           patch.name = message.name.trim();
         }
-        if (deviceId && Object.keys(patch).length > 0) {
+        if (typeof deviceId === 'string' && deviceId && Object.keys(patch).length > 0) {
           await ctx.api(`/api/devices/${encodeURIComponent(deviceId)}`, {
             method: 'PATCH',
             body: patch,

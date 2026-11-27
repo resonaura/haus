@@ -5,8 +5,50 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import { resolveNamedScenePalette } from '@haus/core/transport';
 import { lightColor } from '../light-color.js';
 import type { EntityRegistryEntry, HassEntity, HausModel, Snapshot } from './types.js';
+
+function resolveFallbackSceneArtwork(
+  scene: HassEntity,
+  snapshot: Snapshot,
+  title: string,
+  source?: string,
+) {
+  const inline: string[] = [];
+  const rawColors = scene.attributes.colors ?? scene.attributes.palette;
+  if (Array.isArray(rawColors)) {
+    for (const entry of rawColors) {
+      if (typeof entry === 'string' && entry.trim()) inline.push(entry.trim());
+      else if (Array.isArray(entry) && entry.length === 3 && entry.every((n) => typeof n === 'number')) {
+        inline.push(`rgb(${Math.round(entry[0])}, ${Math.round(entry[1])}, ${Math.round(entry[2])})`);
+      }
+    }
+  }
+  const direct = lightColor({
+    entity_id: 'light.scene_preview',
+    state: 'on',
+    attributes: scene.attributes,
+    last_changed: '',
+  });
+  if (direct) inline.push(direct);
+  if (inline.length > 0) return { colors: [...new Set(inline)].slice(0, 5) };
+
+  const entry = snapshot.entities.find((item) => item.entity_id === scene.entity_id);
+  const entryConfigId =
+    typeof entry?.config_entry_id === 'string' ? entry.config_entry_id : undefined;
+  const device = entry?.device_id
+    ? snapshot.devices.find((item) => item.id === entry.device_id)
+    : undefined;
+  const isHue =
+    source?.toLowerCase() === 'hue' ||
+    typeof scene.attributes.group_name === 'string' ||
+    typeof scene.attributes.is_dynamic === 'boolean' ||
+    entry?.platform === 'hue' ||
+    Boolean(entryConfigId?.includes('hue')) ||
+    /philips|signify|\bhue\b/i.test(`${device?.manufacturer ?? ''} ${device?.model ?? ''}`);
+  return resolveNamedScenePalette(title, scene.entity_id, isHue);
+}
 
 export function sceneLightingIsDark(
   settings: Record<string, unknown> | undefined,
@@ -32,7 +74,10 @@ export function scenePresentation(scene: HassEntity, room?: string, entry?: Enti
   const raw = String(
     scene.attributes.friendly_name ?? scene.entity_id.split('.')[1].replaceAll('_', ' '),
   );
-  const hue = /\(\s*hue\s*\)/i.test(raw) || entry?.platform?.toLowerCase() === 'hue';
+  const hue =
+    /\(\s*hue\s*\)/i.test(raw) ||
+    entry?.platform?.toLowerCase() === 'hue' ||
+    typeof scene.attributes.group_name === 'string';
   const name =
     raw
       .replace(/\(\s*hue\s*\)/gi, '')
@@ -81,7 +126,11 @@ export function sceneCard(scene: HassEntity, snapshot: Snapshot, model: HausMode
     });
     if (color) swatches.add(color);
   }
-  const artwork = snapshot.sceneArtwork?.[id];
+  const artwork =
+    snapshot.sceneArtwork?.[id] ??
+    (swatches.size === 0
+      ? resolveFallbackSceneArtwork(scene, snapshot, presentation.title, presentation.source)
+      : undefined);
   const colors = artwork?.colors.length ? artwork.colors : [...swatches].slice(0, 5);
   return {
     ...presentation,

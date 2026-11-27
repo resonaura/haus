@@ -16,7 +16,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { BrandIconHint } from '@haus/ha/native/brand-icons';
+import type { BrandIconHint } from '@haus/core/brands';
 import {
   isIconAppearance,
   resolveIconTintColor,

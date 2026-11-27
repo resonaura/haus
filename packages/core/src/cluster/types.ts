@@ -30,12 +30,15 @@ export enum ResourceKindEnum {
 export const ResourceKind = ResourceKindEnum;
 export type ResourceKind = ResourceKindEnum | `${ResourceKindEnum}`;
 
+export type CpuArchitecture = 'arm64' | 'x64';
+
 export interface HubCapacityMetrics {
   readonly cpuCores: number;
   readonly memoryBytes: number;
   readonly storageAvailableBytes: number;
   readonly hasHardwareTranscoder: boolean;
   readonly attachedRadios: readonly ('zigbee' | 'matter' | 'thread' | 'zwave')[];
+  readonly cpuArch?: CpuArchitecture;
 }
 
 export interface HubTopologyNode {

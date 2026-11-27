@@ -12,7 +12,8 @@ import { StandaloneHomeService } from '../../../src/home/home.service.js';
 import { mapTuyaDeviceToHaus } from '../../../src/commissioning/tuya/mapper.js';
 import { syncMappedTuyaDevice } from '../../../src/commissioning/tuya/cameras.js';
 import { syncKitsuneDevicesToHome } from '../../../src/kitsune/homebridge-runtime.js';
-import { normalizeHaDevice } from '../../../src/commissioning/ha-flow/projection.js';
+import { normalizeHaDevice, pruneSupersededHaDevices } from '../../../src/commissioning/ha-flow/projection.js';
+import { isMqttGoveeOutletSuppressionActive } from '../../../src/mqtt/govee-hybrid.js';
 import { MqttDiscovery } from '../../../src/mqtt/discovery.js';
 import { DiscoveryBindings } from '../../../src/mqtt/bindings.js';
 import { MemoryMqttIdentities, MqttIdentities } from '../../../src/mqtt/identity.js';
@@ -263,5 +264,157 @@ describe('Device room assignment persistence across periodic re-registrations', 
     expect(home.getDevice(device!.id)?.roomId).toBe('unassigned');
     await discovery.handle(discoveryMsg);
     expect(home.getDevice(device!.id)?.roomId).toBe('unassigned');
+  });
+
+  it('keeps Homebridge devices and their room/name assignments intact across add-on restarts', async () => {
+    const home = new StandaloneHomeService();
+    await home.roomManager.createRoom({ id: 'bedroom', name: 'Bedroom' });
+
+    const hbOutlet: HausDevice = {
+      id: 'homebridge:homebridge-govee:BC3A31F1-446D-5F58-B972-6DF99153B8D9',
+      source: {
+        instanceId: 'homebridge:homebridge-govee',
+        externalId: 'BC3A31F1-446D-5F58-B972-6DF99153B8D9',
+      },
+      name: 'H5080',
+      model: 'H5080',
+      manufacturer: 'Govee',
+      category: 'power',
+      availability: 'online',
+      connectivity: { protocol: 'local_ip' },
+      endpoints: [
+        {
+          id: 'outlet',
+          name: 'Outlet',
+          capabilities: [{ id: 'on_off', kind: 'binary', readable: true, operations: ['set'] }],
+          readings: {},
+        },
+      ],
+    };
+
+    const syncedIds = new Set<string>();
+    const pendingAliases = new Set<Promise<void>>();
+    syncKitsuneDevicesToHome({
+      homeService: home,
+      syncedDeviceIds: syncedIds,
+      pendingAliases,
+      devices: [hbOutlet],
+    });
+    await home.roomManager.updateDevice(
+      hbOutlet.id,
+      { roomId: 'bedroom', name: 'Bedroom Xbox Power' },
+      ADMIN_ACTOR,
+    );
+
+    // Bridge stops during add-on restart -> devices temporarily empty
+    syncKitsuneDevicesToHome({
+      homeService: home,
+      syncedDeviceIds: syncedIds,
+      pendingAliases,
+      devices: [],
+    });
+    const whileStopped = home.getDevice(hbOutlet.id);
+    expect(whileStopped).toBeDefined();
+    expect(whileStopped?.availability).toBe('offline');
+    expect(whileStopped?.roomId).toBe('bedroom');
+    expect(whileStopped?.name).toBe('Bedroom Xbox Power');
+
+    // Bridge comes back up -> custom room and name remain intact
+    syncKitsuneDevicesToHome({
+      homeService: home,
+      syncedDeviceIds: syncedIds,
+      pendingAliases,
+      devices: [{ ...hbOutlet, roomId: 'default', name: 'H5080' }],
+    });
+    const afterRestart = home.getDevice(hbOutlet.id);
+    expect(afterRestart?.availability).toBe('online');
+    expect(afterRestart?.roomId).toBe('bedroom');
+    expect(afterRestart?.name).toBe('Bedroom Xbox Power');
+  });
+
+  it('prunes duplicate HA devices even when endpoint index pointed to stale duplicate, preserving user assignments', async () => {
+    const home = new StandaloneHomeService();
+    await home.roomManager.createRoom({ id: 'guinea_pigs', name: 'Guinea Pigs' });
+
+    const activeId = 'ha:entry-yeelight:new-hash';
+    const staleId = 'ha:entry-yeelight:old-hash';
+
+    // Active device registered first with default raw name and unassigned room
+    home.registerDevice({
+      id: activeId,
+      source: { instanceId: 'ha:entry-yeelight', externalId: 'new-hash' },
+      name: 'Yeelight Ct Bulb 0x7f002ac',
+      category: 'lighting',
+      roomId: 'unassigned',
+      availability: 'online',
+      connectivity: { protocol: 'local_ip' },
+      endpoints: [
+        {
+          id: 'light.yeelight_ct_bulb_0x7f002ac',
+          name: 'Light',
+          capabilities: [{ id: 'on_off', kind: 'binary', readable: true, operations: ['set'] }],
+          readings: {},
+        },
+      ],
+    });
+
+    // Stale duplicate registered later (e.g. from cluster sync), hijacking byEndpointId, carrying user customization
+    home.registerDevice({
+      id: staleId,
+      source: { instanceId: 'ha:entry-yeelight', externalId: 'old-hash' },
+      name: 'Yeelight Ct Bulb 0x7f002ac',
+      category: 'lighting',
+      roomId: 'unassigned',
+      availability: 'offline',
+      connectivity: { protocol: 'local_ip' },
+      endpoints: [
+        {
+          id: 'light.yeelight_ct_bulb_0x7f002ac',
+          name: 'Light',
+          capabilities: [{ id: 'on_off', kind: 'binary', readable: true, operations: ['set'] }],
+          readings: {},
+        },
+      ],
+    });
+    await home.roomManager.updateDevice(
+      staleId,
+      { roomId: 'guinea_pigs', name: 'Guinea Pigs Stairs Lamp' },
+      ADMIN_ACTOR,
+    );
+    expect(home.devices.getDeviceByEndpointId('light.yeelight_ct_bulb_0x7f002ac')?.id).toBe(
+      staleId,
+    );
+
+    const pruned = pruneSupersededHaDevices(
+      home,
+      new Set(['entry-yeelight']),
+      new Set([activeId]),
+      new Set(),
+    );
+    expect(pruned).toBe(1);
+    expect(home.getDevice(staleId)).toBeUndefined();
+    const survivor = home.getDevice(activeId);
+    expect(survivor?.roomId).toBe('guinea_pigs');
+    expect(survivor?.name).toBe('Guinea Pigs Stairs Lamp');
+    expect(home.devices.getDeviceByEndpointId('light.yeelight_ct_bulb_0x7f002ac')?.id).toBe(
+      activeId,
+    );
+  });
+
+  it('does not suppress govee2mqtt outlets when homebridge-govee app is stopped', () => {
+    const home = new StandaloneHomeService();
+    // Stale offline homebridge-govee device row still present in DB
+    home.registerDevice({
+      id: 'homebridge:homebridge-govee:93C23C05',
+      source: { instanceId: 'homebridge:homebridge-govee', externalId: '93C23C05' },
+      name: 'Narnia Garland',
+      model: 'H5083',
+      manufacturer: 'Govee',
+      category: 'power',
+      availability: 'offline',
+      connectivity: { protocol: 'local_ip' },
+      endpoints: [],
+    });
+    expect(isMqttGoveeOutletSuppressionActive(home)).toBe(false);
   });
 });

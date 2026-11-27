@@ -202,6 +202,7 @@ export class HomeClusterCoordinator {
         kind: 'app',
         id: appId,
         name: entry.manifest.name,
+        image: entry.manifest.image,
       }),
       getLocalStatus: () =>
         (
@@ -261,6 +262,7 @@ export class HomeClusterCoordinator {
             kind: 'app',
             id: appId,
             name: entry.manifest.name,
+            image: entry.manifest.image,
           }),
           active: entry.state === 'running',
         });
@@ -285,7 +287,7 @@ export class HomeClusterCoordinator {
   }
 
   async forwardAppExecution(appId: string, action: AppAction): Promise<boolean> {
-    if (!this.leaseService || !this.orchestrator) return false;
+    if (!this.leaseService) return false;
     const workloadId = `app:${appId}`;
     if (
       !this.leaseService.hasWorkload(workloadId) ||
@@ -293,6 +295,18 @@ export class HomeClusterCoordinator {
     ) {
       return false;
     }
+    if (await this.leaseService.activateOwnedLocalWorkload(workloadId)) {
+      if (this.bindings) {
+        if (action === 'start') await this.bindings.startLocalApp(appId);
+        else if (action === 'stop') await this.bindings.stopLocalApp(appId);
+        else {
+          await this.bindings.stopLocalApp(appId);
+          await this.bindings.startLocalApp(appId);
+        }
+        return true;
+      }
+    }
+    if (!this.orchestrator) return false;
     await this.orchestrator.forwardWorkloadCommand(workloadId, 'execute_app', { action });
     return true;
   }
@@ -302,7 +316,7 @@ export class HomeClusterCoordinator {
     operation: AppOperation,
     options?: Record<string, unknown>,
   ): Promise<AppOperationResult | undefined> {
-    if (!this.leaseService || !this.orchestrator) return undefined;
+    if (!this.leaseService) return undefined;
     const workloadId = `app:${appId}`;
     if (
       !this.leaseService.hasWorkload(workloadId) ||
@@ -310,6 +324,10 @@ export class HomeClusterCoordinator {
     ) {
       return undefined;
     }
+    if ((await this.leaseService.activateOwnedLocalWorkload(workloadId)) && this.bindings) {
+      return this.bindings.operateLocalApp(appId, operation, options);
+    }
+    if (!this.orchestrator) return undefined;
     return (await this.orchestrator.forwardWorkloadCommand(workloadId, 'operate_app', {
       operation,
       options,

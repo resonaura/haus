@@ -28,12 +28,14 @@ import {
   AttachClusterDto,
   ClusterNodeRecordDto,
   ClusterStatusResponseDto,
+  EnrollHubRequestDto,
   JoinClusterDto,
   JoinClusterResponseDto,
   RebalanceClusterDto,
   RemoveNodeOptionsDto,
   UpdateNodeDto,
 } from './cluster.dto.js';
+import type { EnrollHubResponse } from './coordination/enroll.js';
 import type { RebalanceResult } from './coordination/orchestrator.js';
 import type { ReconciliationOutcome } from './coordination/reconcile.js';
 import type { NodeDrainPlan, NodeDrainResult } from './drain/service.js';
@@ -51,6 +53,7 @@ export interface IClusterService {
   add(node: AddNodeDto): Promise<ClusterNodeRecordDto>;
   join?(joinRequest: JoinClusterDto): Promise<JoinClusterResponseDto>;
   attach?(dto: AttachClusterDto): Promise<JoinClusterResponseDto>;
+  enrollHub?(dto: EnrollHubRequestDto): Promise<EnrollHubResponse>;
   getNode?(id: string): Promise<ClusterNodeRecordDto>;
   update(id: string, patch: UpdateNodeDto): Promise<ClusterNodeRecordDto>;
   remove(id: string, options?: RemoveNodeOptionsDto): Promise<{ removed: boolean; id: string }>;
@@ -215,6 +218,23 @@ export class ClusterController {
       throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
     }
     return service.attach(body);
+  }
+
+  @ApiOperation({
+    summary: 'Enroll a standalone or secondary Hub into this Home cluster from the Coordinator',
+  })
+  @HttpCode(200)
+  @Post('enroll-hub')
+  async enrollHub(
+    @Req() req: object,
+    @Body() body: EnrollHubRequestDto,
+  ): Promise<EnrollHubResponse> {
+    assertClusterAdmin(req);
+    const service = this.requireService();
+    if (!service.enrollHub) {
+      throw new HttpException({ error: 'not_implemented' }, HttpStatus.NOT_IMPLEMENTED);
+    }
+    return service.enrollHub(body);
   }
 
   @ApiOperation({ summary: 'Get cluster node details' })

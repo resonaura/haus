@@ -340,9 +340,46 @@ export class RebalanceClusterDto {
   preferences?: Record<string, string>;
 }
 
+export class EnrollHubRequestDto {
+  @ApiProperty({ example: 'http://192.168.5.115:8790', description: 'Target Hub LAN URL' })
+  @IsString()
+  targetUrl!: string;
+
+  @ApiProperty({ example: 'Black Laptop', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ example: ['storage', 'stream'], required: false })
+  @IsOptional()
+  @IsArray()
+  roles?: string[];
+
+  @ApiProperty({
+    required: false,
+    description: '8-char pairing code if target Hub is already onboarded',
+  })
+  @IsOptional()
+  @IsString()
+  pairingCode?: string;
+
+  @ApiProperty({ required: false, description: 'Active pairing challenge session ID' })
+  @IsOptional()
+  @IsString()
+  challengeSessionId?: string;
+}
+
 export class ClusterStatusResponseDto {
   @ApiProperty({ example: 'hub-0123456789', description: 'Cluster coordinator hub ID' })
   id!: string;
+
+  @ApiProperty({ example: 'hub-standalone-01', required: false })
+  @IsOptional()
+  selfHubId?: string;
+
+  @ApiProperty({ example: 'http://192.168.4.44:8790', required: false })
+  @IsOptional()
+  coordinatorUrl?: string;
 
   @ApiProperty({
     example: 'hub-0123456789',
@@ -369,6 +406,19 @@ export class ClusterStatusResponseDto {
 
   @ApiProperty({ type: [ClusterNodeRecordDto], description: 'Registered nodes' })
   nodes!: ClusterNodeRecordDto[];
+
+  @ApiProperty({ required: false, description: 'All cluster Hub members including local Hub' })
+  @IsOptional()
+  members?: Array<{
+    readonly id: string;
+    readonly name: string;
+    readonly url?: string;
+    readonly role: string;
+    readonly online: boolean;
+    readonly enabled: boolean;
+    readonly isSelf: boolean;
+    readonly isCoordinator: boolean;
+  }>;
 
   @ApiProperty({ required: false, description: 'Whether cluster peers are optional' })
   @IsOptional()

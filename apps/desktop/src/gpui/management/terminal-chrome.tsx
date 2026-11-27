@@ -134,7 +134,15 @@ export function GpuiTerminalFooter({
             id="console-pause-toggle"
             ariaLabel={paused ? 'Resume live output' : 'Pause live output'}
             onActivate={onTogglePause}
-            style={{ layout: { padding: insets(4, 6) }, corners: corners(6) }}
+            style={{
+              layout: {
+                direction: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: insets(4, 6),
+              },
+              corners: corners(6),
+            }}
           >
             <UiIcon name={paused ? 'play' : 'pause'} size={14} />
           </Pressable>
@@ -144,7 +152,15 @@ export function GpuiTerminalFooter({
             id="console-switch-to-logs"
             ariaLabel="Open Live logs"
             onActivate={onSwitchToLogs}
-            style={{ layout: { padding: insets(4, 6) }, corners: corners(6) }}
+            style={{
+              layout: {
+                direction: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: insets(4, 6),
+              },
+              corners: corners(6),
+            }}
           >
             <UiIcon name="file-text" size={14} />
           </Pressable>
@@ -153,7 +169,15 @@ export function GpuiTerminalFooter({
           id="console-copy"
           ariaLabel="Copy terminal output"
           onActivate={onCopy}
-          style={{ layout: { padding: insets(4, 6) }, corners: corners(6) }}
+          style={{
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
+            corners: corners(6),
+          }}
         >
           <UiIcon name={copied ? 'check' : 'copy'} size={14} />
         </Pressable>
@@ -161,7 +185,15 @@ export function GpuiTerminalFooter({
           id="console-clear"
           ariaLabel="Clear output"
           onActivate={onClear}
-          style={{ layout: { padding: insets(4, 6) }, corners: corners(6) }}
+          style={{
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
+            corners: corners(6),
+          }}
         >
           <UiIcon name="trash-2" size={14} />
         </Pressable>
@@ -169,7 +201,15 @@ export function GpuiTerminalFooter({
           id="console-reconnect"
           ariaLabel="Reconnect"
           onActivate={onReconnect}
-          style={{ layout: { padding: insets(4, 6) }, corners: corners(6) }}
+          style={{
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
+            corners: corners(6),
+          }}
         >
           <UiIcon name="rotate-cw" size={14} />
         </Pressable>
@@ -177,7 +217,15 @@ export function GpuiTerminalFooter({
           id="console-search-toggle"
           ariaLabel="Find in output"
           onActivate={onToggleSearch}
-          style={{ layout: { padding: insets(4, 6) }, corners: corners(6) }}
+          style={{
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
+            corners: corners(6),
+          }}
         >
           <UiIcon name="search" size={14} />
         </Pressable>

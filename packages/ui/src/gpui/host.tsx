@@ -11,15 +11,16 @@ import type {
   PublicInstance,
 } from '@gpuix/react';
 import { Button } from '@gpuix/react/button';
-import { Dialog, DialogBackdrop, DialogPopup, DialogPortal } from '@gpuix/react/dialog';
 import { colorToken } from '../ir/geometry.js';
 import type { UiMotionEase, UiMotionSpec, UiMotionTarget, UiMotionValue } from '../ir/motion.js';
 import { resolveColorToCss } from '../renderers/contract.js';
 import type { HostKeyEvent, UiContentHost } from '../renderers/host.js';
 import { assignRef } from '../renderers/scroll-handle.js';
 import { GpuiCanvas } from './canvas/index.js';
+import { renderGpuiDialogFrame } from './dialog-frame.js';
 import { GpuiSelect } from './select.js';
 import { GpuiGlassRim } from './glass-rim.js';
+import { GpuiLayoutBox } from './layout-motion.js';
 import { GpuiPopover } from './popover.js';
 import { GpuiScrollView } from './scroll-view.js';
 import { styleFor } from './style.js';
@@ -58,8 +59,18 @@ function gpuiMotionEase(ease: UiMotionEase | undefined): MotionEase | undefined 
   return Array.isArray(ease) ? [ease[0], ease[1], ease[2], ease[3]] : (ease as MotionEase);
 }
 
-function gpuiMotionValue(value: UiMotionValue): MotionTargetValue {
-  return typeof value === 'number' ? value : [...value];
+function gpuiMotionValue(value: UiMotionValue, scale = 1): MotionTargetValue {
+  if (typeof value === 'number') return value * scale;
+  return value.map((item) => (typeof item === 'number' ? item * scale : item));
+}
+
+function gpuiMotionInitial(initial: UiMotionSpec['initial']): MotionStyle | false | undefined {
+  if (initial === undefined) return false;
+  if (initial === false) return false;
+  return {
+    ...initial,
+    ...(initial.blur !== undefined ? { blur: initial.blur * 0.5 } : {}),
+  };
 }
 
 function gpuiMotionTarget(animate: UiMotionTarget): MotionTargetStyle {
@@ -72,7 +83,7 @@ function gpuiMotionTarget(animate: UiMotionTarget): MotionTargetStyle {
   if (animate.scaleX !== undefined) out.scaleX = gpuiMotionValue(animate.scaleX);
   if (animate.scaleY !== undefined) out.scaleY = gpuiMotionValue(animate.scaleY);
   if (animate.rotate !== undefined) out.rotate = gpuiMotionValue(animate.rotate);
-  if (animate.blur !== undefined) out.blur = gpuiMotionValue(animate.blur);
+  if (animate.blur !== undefined) out.blur = gpuiMotionValue(animate.blur, 0.5);
   return out;
 }
 
@@ -85,6 +96,7 @@ function gpuiStaticMotionStyle(motion: UiMotionSpec): MotionStyle {
     }
     return undefined;
   };
+  const endBlur = end(motion.animate.blur);
   return {
     opacity: end(motion.animate.opacity),
     left: end(motion.animate.left),
@@ -94,7 +106,7 @@ function gpuiStaticMotionStyle(motion: UiMotionSpec): MotionStyle {
     scaleX: end(motion.animate.scaleX),
     scaleY: end(motion.animate.scaleY),
     rotate: end(motion.animate.rotate),
-    blur: end(motion.animate.blur),
+    blur: endBlur !== undefined ? endBlur * 0.5 : undefined,
   };
 }
 
@@ -103,41 +115,7 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
   renderProgressiveBlur,
   renderGlassRim: (props, context) => <GpuiGlassRim props={props} context={context} />,
   renderPopover: (props, context) => <GpuiPopover {...props} context={context} />,
-  renderDialogFrame: ({ title, onClose, backdrop, panel, children }, context) => {
-    const backdropStyle = styleFor(backdrop, context);
-    return (
-      <Dialog
-        open
-        onOpenChange={(open) => {
-          if (!open) onClose();
-        }}
-      >
-        <DialogPortal
-          style={{
-            paddingTop: backdropStyle.paddingTop,
-            paddingRight: backdropStyle.paddingRight,
-            paddingBottom: backdropStyle.paddingBottom,
-            paddingLeft: backdropStyle.paddingLeft,
-            alignItems: backdropStyle.alignItems,
-            justifyContent: backdropStyle.justifyContent,
-          }}
-        >
-          <DialogBackdrop
-            testId="dialog-backdrop"
-            style={{
-              backgroundColor: backdropStyle.backgroundColor,
-              ...(backdropStyle.backdropBlur !== undefined
-                ? { backdropBlur: backdropStyle.backdropBlur }
-                : {}),
-            }}
-          />
-          <DialogPopup testId="dialog-panel" aria-label={title} style={styleFor(panel, context)}>
-            {children}
-          </DialogPopup>
-        </DialogPortal>
-      </Dialog>
-    );
-  },
+  renderDialogFrame: renderGpuiDialogFrame,
   renderScrollView: (props, context) => <GpuiScrollView props={props} context={context} />,
   renderRangeInput: (props) => <GpuiRange {...props} />,
   renderSelect: (props, context) => (
@@ -166,6 +144,7 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
       children,
       style,
       motion: boxMotion,
+      layoutTransition,
       id,
       ariaLabel,
       ariaLevel,
@@ -234,15 +213,16 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
           />
         );
       }
+      const effectiveEase = boxMotion.ease ?? boxMotion.propertyEases?.transform;
       return (
         <motion.div
           {...props}
-          initial={boxMotion.initial === undefined ? false : boxMotion.initial}
+          initial={gpuiMotionInitial(boxMotion.initial)}
           animate={gpuiMotionTarget(boxMotion.animate)}
           transition={{
             duration: boxMotion.durationMs / 1000,
             ...(boxMotion.delayMs !== undefined ? { delay: boxMotion.delayMs / 1000 } : {}),
-            ...(boxMotion.ease ? { ease: gpuiMotionEase(boxMotion.ease) } : {}),
+            ...(effectiveEase ? { ease: gpuiMotionEase(effectiveEase) } : {}),
             ...(boxMotion.times ? { times: [...boxMotion.times] } : {}),
             ...(boxMotion.repeat !== undefined ? { repeat: boxMotion.repeat } : {}),
             ...(boxMotion.repeatType ? { repeatType: boxMotion.repeatType } : {}),
@@ -250,13 +230,38 @@ export const GPUIX_CONTENT_HOST: UiContentHost = {
         />
       );
     }
-    if (style?.transitionMs && style.opacity !== undefined && !context.viewport.reducedMotion) {
+    const hasAnimatableTransform =
+      style?.transform?.translateX !== undefined ||
+      style?.transform?.translateY !== undefined ||
+      style?.transform?.scale !== undefined;
+    if (
+      style?.transitionMs &&
+      (style.opacity !== undefined || hasAnimatableTransform) &&
+      !context.viewport.reducedMotion
+    ) {
       return (
         <motion.div
           {...props}
           initial={false}
-          animate={{ opacity: style.opacity }}
+          animate={{
+            ...(style.opacity !== undefined ? { opacity: style.opacity } : {}),
+            ...(style.transform?.translateX !== undefined ? { x: style.transform.translateX } : {}),
+            ...(style.transform?.translateY !== undefined ? { y: style.transform.translateY } : {}),
+            ...(style.transform?.scale !== undefined ? { scale: style.transform.scale } : {}),
+          }}
           transition={{ duration: style.transitionMs / 1000, ease: [0.22, 1, 0.36, 1] }}
+        />
+      );
+    }
+    if (layoutTransition !== undefined) {
+      const { ref: _unusedRef, style: elementStyle, ...elementProps } = props;
+      return (
+        <GpuiLayoutBox
+          layoutTransition={layoutTransition}
+          reducedMotion={context.viewport.reducedMotion}
+          boxRef={boxRef}
+          style={elementStyle}
+          elementProps={elementProps}
         />
       );
     }

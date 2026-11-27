@@ -33,6 +33,8 @@ export interface HubTransferManifest {
   readonly transferId: string;
   readonly homeId: string;
   readonly sourceHubId: string;
+  readonly sourceHubUrl?: string;
+  readonly sourceHubName?: string;
   readonly targetHubId: string;
   readonly epoch: number;
   readonly timestamp: number;

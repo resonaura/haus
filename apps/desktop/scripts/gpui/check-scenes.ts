@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { createElement, type ReactElement } from 'react';
 import type { ManagementPort, ManagementRequest } from '@haus/core/transport';
 import { createDemoSnapshot } from '@haus/ha/view/demo/snapshot';
-import { defaults } from '@haus/ha/view/preferences';
+import { defaults } from '@haus/core/preferences';
 import { createTestRoot, hasNativeTestRenderer, type TestRenderer } from '@gpuix/react/testing';
 import { GPUIX_CONTENT_HOST } from '@haus/ui/gpui';
 import { pct } from '@haus/ui/ir';
@@ -322,4 +322,37 @@ async function checkNativeFilePickerFlow(): Promise<void> {
 await checkDemoScenesSampleImport();
 await checkLiveHubScenesImportAndErrors();
 await checkNativeFilePickerFlow();
+
+// Verify unified DeviceTile SceneEditorModal opens and toggles accessory cards natively in GPUIX
+{
+  const snapshot = createDemoSnapshot();
+  const home = homeDashboard(snapshot, defaults);
+  const scenes = home.sceneGroups.flatMap((g) => g.items);
+  await withRoot(
+    createElement(GpuiScenesView, {
+      snapshot,
+      scenes,
+      home,
+      demo: true,
+      renderScenes: (items) =>
+        createElement(Text, undefined, items.map((s) => s.entity_id).join(',')),
+      onApplyScene: () => undefined,
+    }),
+    async (renderer) => {
+      click(renderer, 'scenes-create');
+      await flushMicrotasks(renderer);
+      assert(renderer.findByTestId('scene-toggle-picker'), 'Rich SceneEditorModal must open');
+      click(renderer, 'scene-toggle-picker');
+      await flushMicrotasks(renderer);
+      const texts = renderer.getAllText();
+      assert(
+        texts.some((t) => t.includes('Choose accessories')),
+        'SceneEditorModal picker mode should show Choose accessories with DeviceTile cards',
+      );
+      click(renderer, 'config-editor-cancel');
+      await flushMicrotasks(renderer);
+    },
+  );
+}
+
 console.log('GPUIX Scenes HA Transfer & Import integration check passed.');

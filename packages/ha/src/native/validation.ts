@@ -5,58 +5,22 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import {
+  isLocalServerHostname as isLocalHostname,
+  normalizeServerUrl,
+  validateExternalUrl,
+  validatePreferences,
+} from '@haus/core/hub';
+import { isRecord } from '@haus/core/record';
 import { HACS_COMMANDS, validateHacsRequest } from './hacs-validation.js';
-import { isIP } from 'node:net';
 
-/** Allow cleartext only for local Home Assistant installations. Never accept URL credentials. */
-export function normalizeServerUrl(input: unknown, serverName = 'Home Assistant'): string {
-  if (typeof input !== 'string' || input.length > 2048) {
-    throw new Error(`Enter a valid ${serverName} URL.`);
-  }
-  const candidate = input.trim();
-  let url: URL;
-  try {
-    url = new URL(candidate.includes('://') ? candidate : `http://${candidate}`);
-  } catch {
-    throw new Error(`Enter a valid ${serverName} URL.`);
-  }
-  if (
-    !['http:', 'https:'].includes(url.protocol) ||
-    !url.hostname ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname !== '/'
-  ) {
-    throw new Error(`Use the ${serverName} base URL without credentials, a path, or query.`);
-  }
-  if (url.protocol === 'http:' && !isLocalHostname(url.hostname)) {
-    throw new Error(`Use HTTPS for ${serverName} outside your local network.`);
-  }
-  return url.origin;
-}
-
-export function isLocalHostname(value: string): boolean {
-  const host = value
-    .toLowerCase()
-    .replace(/^\[|\]$/g, '')
-    .replace(/\.$/, '');
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
-  if (isIP(host) === 4) {
-    const octets = host.split('.').map(Number);
-    return (
-      octets[0] === 10 ||
-      octets[0] === 127 ||
-      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-      (octets[0] === 192 && octets[1] === 168) ||
-      (octets[0] === 169 && octets[1] === 254) ||
-      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127)
-    );
-  }
-  if (isIP(host) === 6) return host === '::1' || /^(fc|fd|fe[89ab])/.test(host);
-  return /^[a-z0-9][a-z0-9-]*$/.test(host) || host.endsWith('.lan') || host.endsWith('.home.arpa');
-}
+export {
+  isLocalHostname,
+  isRecord,
+  normalizeServerUrl,
+  validateExternalUrl,
+  validatePreferences,
+};
 
 const REQUEST_TYPES = new Set([
   ...HACS_COMMANDS,
@@ -74,7 +38,6 @@ const REQUEST_TYPES = new Set([
   'haus/updates/install',
   'haus/discovery/scan',
   'haus/integration_meta',
-  'apps/logs',
   'config_entries/get',
   'config_entries/get_single',
   'config_entries/update',
@@ -130,18 +93,6 @@ export function validateRequest(input: unknown): Record<string, unknown> {
     throw new Error('Native transport owns command identifiers and authentication.');
   }
   if (input.type === 'ha/config_entries/import') validateHaEntryImportRequest(input);
-  if (
-    input.type === 'apps/logs' &&
-    (typeof input.appId !== 'string' ||
-      !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(input.appId) ||
-      (input.tail !== undefined &&
-        (typeof input.tail !== 'number' ||
-          !Number.isInteger(input.tail) ||
-          input.tail < 1 ||
-          input.tail > 2000)) ||
-      Object.keys(input).some((key) => !['type', 'appId', 'tail'].includes(key)))
-  )
-    throw new Error('Choose a valid App log stream.');
   if (
     input.type === 'generic_camera/start_preview' &&
     (typeof input.flow_id !== 'string' ||
@@ -408,48 +359,6 @@ export function validateManagement(input: unknown): {
     path,
     ...(data !== undefined ? { data } : {}),
   };
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function validatePreferences(input: unknown): Record<string, unknown> {
-  if (!isRecord(input) || JSON.stringify(input).length > 100_000) {
-    throw new Error('Invalid preferences.');
-  }
-  if (Object.keys(input).some((key) => ['__proto__', 'prototype', 'constructor'].includes(key))) {
-    throw new Error('Invalid preference key.');
-  }
-  return JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
-}
-
-export function validateExternalUrl(input: unknown, serverUrl?: string): string {
-  if (typeof input !== 'string' || input.length > 2048) throw new Error('Invalid external URL.');
-  const url = new URL(input);
-  const documentationHosts = new Set([
-    'github.com',
-    'www.home-assistant.io',
-    'home-assistant.io',
-    'developers.home-assistant.io',
-    'www.nabucasa.com',
-    'www.electronjs.org',
-  ]);
-  const sameServer = serverUrl && url.origin === new URL(serverUrl).origin;
-  const localDevice = isLocalHostname(url.hostname);
-  if (
-    url.username ||
-    url.password ||
-    !['http:', 'https:'].includes(url.protocol) ||
-    (!sameServer &&
-      !localDevice &&
-      !(url.protocol === 'https:' && documentationHosts.has(url.hostname)))
-  ) {
-    throw new Error(
-      'Haus can only open local network devices, your Home Assistant server, or supported documentation links.',
-    );
-  }
-  return url.href;
 }
 
 export async function boundedBody(response: Response, limit: number): Promise<Buffer> {

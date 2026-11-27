@@ -16,7 +16,6 @@
   background: var(--card);
 }
 .scene-card:hover {
-  transform: translateY(-2px);
   background: var(--soft);
 }
 .scene-icon,
@@ -42,7 +41,6 @@
   box-shadow: 0 1px 2px #00000004;
 }
 .accessory-tile:hover {
-  transform: translateY(-2px);
   border-color: #cacaca;
   box-shadow: 0 10px 24px #11111109;
 }

@@ -39,11 +39,14 @@ export interface RenderedBrandTile {
   readonly layout: 'fill' | 'inset';
   /** Symmetrical per-side canvas bleed fraction when an outer alpha drop-shadow is composited into `dataUrl`. */
   readonly shadowBleedFraction?: number;
+  /** Exact logical point width/height matching the composited physical texture (`outDim / dpr`) for 1:1 sampling. */
+  readonly shadowDisplaySizePt?: number;
 }
 
 export interface DecoratedBrandTile {
   readonly dataUrl: string;
   readonly bleedFraction: number;
+  readonly displaySizePt?: number;
 }
 
 /**
@@ -80,6 +83,7 @@ export interface BrandIconPort {
     dataUrl: string,
     size: number,
     dark: boolean,
+    dpr?: number,
   ): Promise<DecoratedBrandTile | null>;
   /** Optional explicit icon style (defaults to `default` matching active theme mode). */
   readonly iconStyle?: ResolvedIconStyle;

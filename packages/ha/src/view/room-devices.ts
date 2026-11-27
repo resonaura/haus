@@ -5,10 +5,24 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
+import {
+  CAMERA_ORDER_SCOPE,
+  buildCameraMovePreferencePatch,
+  cameraOrderPatch,
+  moveCamera,
+  orderCameras,
+} from '@haus/core/preferences';
+import { lightActiveEffect, lightColor, lightEffects, lightProfile } from '@haus/core/optimistic';
 import type { HausAccessory, HausAction } from './types.js';
-import { lightActiveEffect, lightEffects, lightProfile } from '../light-profile.js';
-import { lightColor } from '../light-color.js';
 import { earliestPending } from './pending-feedback.js';
+
+export {
+  CAMERA_ORDER_SCOPE,
+  buildCameraMovePreferencePatch,
+  cameraOrderPatch,
+  moveCamera,
+  orderCameras,
+};
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 type RoomPreferences = {

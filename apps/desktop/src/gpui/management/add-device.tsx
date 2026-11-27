@@ -1,55 +1,51 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  advanceDemoConfigFlow,
+  buildBrandIntegrationCatalog,
   buildDemoOnboardingState,
-  buildFlowStartPayload,
-  computeCommissioningHint,
-  detectSetupCodeFormat,
   extractFlowErrorMessage,
-  isCompletedFlowStep,
-  schemaDefaultsForFlow,
-  startDemoConfigFlow,
-  validateFlowFormValues,
+  type EcosystemCatalogSourceItem,
   type FlowStartTarget,
-  type FlowStepRecord,
   type IntegrationCatalogChoice,
   type ManagementPort,
   type OnboardingDiscoveredFlow,
 } from '@haus/core/transport';
-import type { CommissioningTransaction } from '@haus/core';
 import type { Snapshot } from '@haus/ha/types';
 import {
   AddDeviceModal,
+  CameraSetupModal,
   CommissioningModal,
   ConfigFlowModal,
-  type CommissioningStage,
+  ManualCameraSetupModal,
 } from '@haus/ui/components';
 import {
-  cancelLiveCommissioningSession,
   fetchLiveOnboardingState,
-  flowBasePath,
-  moveCommissionedDeviceRoom,
-  parseFlowStep,
-  readLiveCommissioningSession,
-  selectLiveCommissioningCandidate,
-  startLiveCommissioningSession,
-  submitLiveCommissioningCredentials,
+  searchLiveEcosystemCatalog,
+  startLiveManualCameraFlow,
+  updateLiveCameraEntity,
 } from './add-device-live.js';
 import type { GpuiRpcRequest } from './integrations.js';
+import { buildCameraDomainSet, buildExistingCameraOptions } from './onboarding/camera-helper.js';
+import { useGpuiCommissioning } from './onboarding/use-commissioning.js';
+import { useGpuiConfigFlow } from './onboarding/use-config-flow.js';
 
 export type GpuiAddDeviceRequest =
   | { readonly mode: 'picker' }
   | { readonly mode: 'code'; readonly initialCode?: string }
+  | { readonly mode: 'camera' }
   | { readonly mode: 'flow'; readonly target: FlowStartTarget };
+
+type ModalViewMode = 'picker' | 'code' | 'camera' | 'camera-manual' | 'camera-existing' | 'flow';
 
 export function GpuiAddDeviceModal({
   snapshot,
   demo,
+  sessionKind,
   management,
   requestRpc,
   openExternal,
+  onCopyText,
   initialRequest,
   onOpenApps,
   onClose,
@@ -57,17 +53,23 @@ export function GpuiAddDeviceModal({
 }: {
   readonly snapshot: Snapshot;
   readonly demo?: boolean;
+  readonly sessionKind?: 'haus-hub' | 'home-assistant';
   readonly management?: ManagementPort;
   readonly requestRpc?: GpuiRpcRequest;
   readonly openExternal?: (url: string) => Promise<void>;
+  readonly onCopyText?: (text: string) => void;
   readonly initialRequest: GpuiAddDeviceRequest;
   readonly onOpenApps: () => void;
   readonly onClose: () => void;
   readonly onSaved?: () => void;
 }) {
-  const [viewMode, setViewMode] = useState<'picker' | 'code' | 'flow'>(initialRequest.mode);
+  const isHubSession = sessionKind === 'haus-hub';
+  const [viewMode, setViewMode] = useState<ModalViewMode>(initialRequest.mode);
   const [searchQuery, setSearchQuery] = useState('');
   const [pickerLoading, setPickerLoading] = useState(false);
+  const [domainFilter, setDomainFilter] = useState<ReadonlySet<string> | null>(null);
+  const [cameraBusy, setCameraBusy] = useState(false);
+  const [cameraError, setCameraError] = useState('');
 
   const demoState = useMemo(() => (demo ? buildDemoOnboardingState() : undefined), [demo]);
   const [discovered, setDiscovered] = useState<readonly OnboardingDiscoveredFlow[]>(
@@ -76,58 +78,48 @@ export function GpuiAddDeviceModal({
   const [catalog, setCatalog] = useState<readonly IntegrationCatalogChoice[]>(
     () => demoState?.catalog ?? [],
   );
+  const [names, setNames] = useState<Readonly<Record<string, string>>>(() =>
+    demoState ? Object.fromEntries(demoState.catalog.map((c) => [c.domain, c.title])) : {},
+  );
+  const [ecosystemApps, setEcosystemApps] = useState<readonly EcosystemCatalogSourceItem[]>(
+    () => demoState?.ecosystemApps ?? [],
+  );
+  const [liveSearchApps, setLiveSearchApps] = useState<readonly EcosystemCatalogSourceItem[]>([]);
 
-  // Commissioning state
-  const [rawCode, setRawCode] = useState(
-    initialRequest.mode === 'code' ? (initialRequest.initialCode ?? '') : '',
+  const rooms = useMemo(
+    () => snapshot.areas.map((a) => ({ id: a.area_id, name: a.name })),
+    [snapshot.areas],
   );
-  const detected = useMemo(() => detectSetupCodeFormat(rawCode), [rawCode]);
-  const [commStage, setCommStage] = useState<CommissioningStage>('code_entry');
-  const [commTx, setCommTx] = useState<CommissioningTransaction | null>(null);
-  const [commBusy, setCommBusy] = useState(false);
-  const [commError, setCommError] = useState<string | null>(null);
-  const [commHint, setCommHint] = useState<string | null>(null);
-  const [selectedRoomId, setSelectedRoomId] = useState('');
-  const [demoPaired, setDemoPaired] = useState<readonly { readonly name: string }[]>([]);
-  const commSessionIdRef = useRef<string | null>(null);
-  const commPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const commHighestSeqRef = useRef(0);
+  const existingCameras = useMemo(() => buildExistingCameraOptions(snapshot), [snapshot]);
 
-  // ConfigFlow state
-  const [flowTarget, setFlowTarget] = useState<FlowStartTarget>(() =>
-    initialRequest.mode === 'flow' ? initialRequest.target : {},
-  );
-  const [flowStep, setFlowStep] = useState<FlowStepRecord | null>(() =>
-    demo && initialRequest.mode === 'flow' && initialRequest.target.domain
-      ? startDemoConfigFlow(initialRequest.target.domain, initialRequest.target.title)
-      : null,
-  );
-  const [flowValues, setFlowValues] = useState<Record<string, unknown>>(() =>
-    flowStep?.data_schema ? schemaDefaultsForFlow(flowStep.data_schema) : {},
-  );
-  const [flowFieldErrors, setFlowFieldErrors] = useState<Record<string, string>>({});
-  const [flowPickerQuery, setFlowPickerQuery] = useState('');
-  const [flowBusy, setFlowBusy] = useState(false);
-  const [flowError, setFlowError] = useState('');
-  const ownsFlowRef = useRef(false);
-  const flowPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flowTargetRef = useRef<FlowStartTarget>(flowTarget);
-  flowTargetRef.current = flowTarget;
-  const flowStepRef = useRef<FlowStepRecord | null>(flowStep);
-  flowStepRef.current = flowStep;
+  const commissioning = useGpuiCommissioning({
+    initialCode: initialRequest.mode === 'code' ? initialRequest.initialCode : '',
+    demo,
+    management,
+    rooms,
+    onSaved,
+    onClose,
+  });
 
-  const stopPolling = useCallback(() => {
-    if (commPollRef.current) clearTimeout(commPollRef.current);
-    if (flowPollRef.current) clearTimeout(flowPollRef.current);
-    commPollRef.current = null;
-    flowPollRef.current = null;
-  }, []);
+  const enterFlowView = useCallback(() => setViewMode('flow'), []);
+  const flow = useGpuiConfigFlow({
+    initialTarget: initialRequest.mode === 'flow' ? initialRequest.target : undefined,
+    autoStartLive: initialRequest.mode === 'flow',
+    demo,
+    isHubSession,
+    management,
+    requestRpc,
+    onEnterFlowView: enterFlowView,
+    onSaved,
+  });
 
   const loadDiscovery = useCallback(async () => {
     if (demo) {
       const next = buildDemoOnboardingState();
       setDiscovered(next.discovered);
       setCatalog(next.catalog);
+      setNames(Object.fromEntries(next.catalog.map((c) => [c.domain, c.title])));
+      setEcosystemApps(next.ecosystemApps);
       return;
     }
     setPickerLoading(true);
@@ -135,6 +127,8 @@ export function GpuiAddDeviceModal({
       const loaded = await fetchLiveOnboardingState({ management, requestRpc });
       setDiscovered(loaded.discovered);
       setCatalog(loaded.catalog);
+      setNames(loaded.names);
+      setEcosystemApps(loaded.ecosystemApps);
     } finally {
       setPickerLoading(false);
     }
@@ -142,304 +136,196 @@ export function GpuiAddDeviceModal({
 
   useEffect(() => {
     void loadDiscovery();
-    return () => {
-      stopPolling();
-      const activeFlow = flowStepRef.current;
-      if (
-        !demo &&
-        management &&
-        activeFlow &&
-        ownsFlowRef.current &&
-        activeFlow.type !== 'create_entry' &&
-        activeFlow.type !== 'abort'
-      ) {
-        const base = flowBasePath(flowTargetRef.current);
-        void management.management({ method: 'DELETE', path: `${base}/${activeFlow.flow_id}` }).catch(() => {});
-      }
-      if (!demo && management && commSessionIdRef.current) {
-        void cancelLiveCommissioningSession(management, commSessionIdRef.current);
-      }
-    };
-  }, [demo, loadDiscovery, management, stopPolling]);
+  }, [loadDiscovery]);
 
-  const applyTransaction = useCallback(
-    (tx: CommissioningTransaction) => {
-      setCommTx(tx);
-      if (Array.isArray(tx.events) && tx.events.length > 0) {
-        commHighestSeqRef.current = Math.max(commHighestSeqRef.current, ...tx.events.map((e) => e.seq));
-      }
-      if (tx.state === 'DONE') {
-        setCommStage('complete');
-        stopPolling();
-        onSaved?.();
-      } else if (tx.state === 'FAILED') {
-        setCommStage('error');
-        setCommError(tx.error ?? 'Commissioning failed.');
-        setCommHint(computeCommissioningHint(tx.error));
-        stopPolling();
-      } else if (tx.state === 'CANCELLED') {
-        setCommStage('code_entry');
-        stopPolling();
-      } else if (tx.state === 'SELECT_CANDIDATE' && tx.candidates?.length && !tx.selectedCandidate) {
-        setCommStage('candidate_selection');
-      } else if (tx.state === 'OBTAIN_NETWORK_CREDENTIALS') {
-        setCommStage('credentials');
-      } else {
-        setCommStage('pairing');
-      }
-    },
-    [onSaved, stopPolling],
-  );
-
-  const pollCommissioning = useCallback(
-    async (sessionId: string) => {
-      if (commSessionIdRef.current !== sessionId || !management) return;
-      try {
-        const tx = await readLiveCommissioningSession(management, sessionId, commHighestSeqRef.current);
-        if (commSessionIdRef.current !== sessionId) return;
-        applyTransaction(tx);
-        if (tx.state !== 'DONE' && tx.state !== 'FAILED' && tx.state !== 'CANCELLED') {
-          commPollRef.current = setTimeout(() => void pollCommissioning(sessionId), 750);
-        }
-      } catch {
-        if (commSessionIdRef.current === sessionId) {
-          commPollRef.current = setTimeout(() => void pollCommissioning(sessionId), 1500);
-        }
-      }
-    },
-    [applyTransaction, management],
-  );
-
-  const handleStartCommissioning = async () => {
-    if (!detected.valid) {
-      setCommError(detected.error ?? detected.description);
-      setCommHint(detected.honestLimitation ?? null);
-      setCommStage('error');
-      return;
-    }
-    if (demo) {
-      if (detected.protocol === 'matter' || detected.protocol === 'improv' || detected.protocol === 'vendor') {
-        setCommStage('credentials');
-      } else {
-        setDemoPaired([{ name: `${detected.label} Accessory` }]);
-        setCommStage('complete');
-      }
-      return;
-    }
-    if (!management) {
-      setCommError('Connect your Haus Hub to commission devices.');
-      setCommStage('error');
-      return;
-    }
-    setCommBusy(true);
-    setCommError(null);
-    setCommHint(null);
-    commHighestSeqRef.current = 0;
-    try {
-      const tx = await startLiveCommissioningSession(management, rawCode.trim(), detected.protocol);
-      commSessionIdRef.current = tx.commissioningId;
-      applyTransaction(tx);
-      void pollCommissioning(tx.commissioningId);
-    } catch (err: unknown) {
-      const msg = extractFlowErrorMessage(err);
-      setCommError(msg);
-      setCommHint(computeCommissioningHint(msg));
-      setCommStage('error');
-    } finally {
-      setCommBusy(false);
-    }
-  };
-
-  const acceptFlowStep = useCallback(
-    (next: FlowStepRecord) => {
-      setFlowStep(next);
-      setFlowFieldErrors({});
-      setFlowValues(schemaDefaultsForFlow(next.data_schema ?? []));
-      if (isCompletedFlowStep(next)) onSaved?.();
-      if ((next.type === 'progress' || next.type === 'external') && !demo && management) {
-        const base = flowBasePath(flowTargetRef.current);
-        flowPollRef.current = setTimeout(() => {
-          void management
-            .management({ method: 'GET', path: `${base}/${next.flow_id}` })
-            .then((res) => acceptFlowStep(parseFlowStep(res)))
-            .catch((err: unknown) => setFlowError(extractFlowErrorMessage(err)));
-        }, 1200);
-      }
-    },
-    [demo, management, onSaved],
-  );
-
-  const openFlowTarget = useCallback(
-    (target: FlowStartTarget) => {
-      setFlowTarget(target);
-      setFlowError('');
-      setViewMode('flow');
-      if (demo) {
-        if (target.domain) {
-          ownsFlowRef.current = true;
-          acceptFlowStep(startDemoConfigFlow(target.domain, target.title));
-        } else {
-          setFlowStep(null);
-        }
-        return;
-      }
-      if (!management) {
-        setFlowError('Connect your Haus Hub to configure integrations.');
-        return;
-      }
-      if (!target.flowId && !target.domain && !target.entryId && !target.repair) {
-        setFlowStep(null);
-        return;
-      }
-      setFlowBusy(true);
-      const base = flowBasePath(target);
-      const req = target.flowId
-        ? management.management({ method: 'GET', path: `${base}/${target.flowId}` })
-        : management.management({
-            method: 'POST',
-            path: base,
-            data: buildFlowStartPayload(target, target.repair?.domain ?? target.domain ?? ''),
-          });
-      void req
-        .then((res) => {
-          ownsFlowRef.current = !target.flowId;
-          acceptFlowStep(parseFlowStep(res));
-        })
-        .catch((err: unknown) => setFlowError(extractFlowErrorMessage(err)))
-        .finally(() => setFlowBusy(false));
-    },
-    [acceptFlowStep, demo, management],
-  );
-
+  const activeQuery = viewMode === 'flow' ? flow.flowPickerQuery : searchQuery;
   useEffect(() => {
-    if (!demo && initialRequest.mode === 'flow') openFlowTarget(initialRequest.target);
-  }, [demo, initialRequest, openFlowTarget]);
-
-  const submitFlow = (payload: Record<string, unknown>) => {
-    if (!flowStep) return;
-    if (demo) {
-      acceptFlowStep(advanceDemoConfigFlow(flowStep, payload));
+    if (demo || !management) return;
+    const trimmed = activeQuery.trim();
+    if (trimmed.length < 2) {
+      setLiveSearchApps([]);
       return;
     }
-    if (!management) return;
-    setFlowBusy(true);
-    setFlowError('');
-    void management
-      .management({ method: 'POST', path: `${flowBasePath(flowTarget)}/${flowStep.flow_id}`, data: payload })
-      .then((res) => acceptFlowStep(parseFlowStep(res)))
-      .catch((err: unknown) => setFlowError(extractFlowErrorMessage(err)))
-      .finally(() => setFlowBusy(false));
-  };
+    let active = true;
+    const timer = setTimeout(() => {
+      void searchLiveEcosystemCatalog(management, trimmed).then((found) => {
+        if (active) setLiveSearchApps(found);
+      });
+    }, 260);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [activeQuery, demo, management]);
 
-  if (viewMode === 'code') {
+  const brandCatalog = useMemo(() => {
+    const mergedEco =
+      liveSearchApps.length > 0
+        ? [
+            ...new Map(
+              [...ecosystemApps, ...liveSearchApps].map((item) => [item.id, item]),
+            ).values(),
+          ]
+        : ecosystemApps;
+    const handlers = catalog
+      .map((c) => c.domain)
+      .filter((d) => !domainFilter || domainFilter.has(d));
+    const filteredEco = domainFilter
+      ? mergedEco.filter(
+          (e) =>
+            (e.domain && domainFilter.has(e.domain)) ||
+            (e.vendorId && domainFilter.has(e.vendorId)) ||
+            e.runtimeType === 'scrypted',
+        )
+      : mergedEco;
+    return buildBrandIntegrationCatalog(handlers, names, filteredEco);
+  }, [catalog, domainFilter, ecosystemApps, liveSearchApps, names]);
+
+  if (viewMode === 'camera') {
     return (
-      <CommissioningModal
-        stage={commStage}
-        rawCode={rawCode}
-        detected={detected}
-        demo={demo}
-        busy={commBusy}
-        candidates={(commTx?.candidates ?? []).map((c) => ({
-          identifier: c.identifier,
-          name: c.name ?? c.identifier,
-          protocol: c.protocol,
-          transport: c.transport,
-          address: c.address,
-          rssi: c.rssi,
-        }))}
-        events={commTx?.events ?? []}
-        pairedDevices={
-          demo
-            ? demoPaired
-            : (commTx?.pairedDevices ?? []).map((d) => ({ id: d.id, name: d.name }))
-        }
-        requiresThread={detected.protocol === 'matter'}
-        rooms={snapshot.areas.map((a) => ({ id: a.area_id, name: a.name }))}
-        selectedRoomId={selectedRoomId}
-        errorMessage={commError}
-        actionableHint={commHint}
-        onCodeChange={(code) => {
-          setRawCode(code);
-          setCommError(null);
-          setCommHint(null);
-        }}
-        onStart={() => void handleStartCommissioning()}
-        onSelectCandidate={(candidateId) => {
-          const sid = commSessionIdRef.current;
-          if (!sid || !management) return;
-          setCommBusy(true);
-          void selectLiveCommissioningCandidate(management, sid, candidateId)
-            .then(applyTransaction)
-            .catch((err: unknown) => setCommError(extractFlowErrorMessage(err)))
-            .finally(() => setCommBusy(false));
-        }}
-        onSubmitCredentials={(input) => {
-          if (demo) {
-            setDemoPaired([{ name: `${detected.label} (${input.ssid})` }]);
-            setCommStage('complete');
-            return;
-          }
-          const sid = commSessionIdRef.current;
-          if (!sid || !management) return;
-          setCommBusy(true);
-          void submitLiveCommissioningCredentials(management, sid, input)
-            .then(applyTransaction)
-            .catch((err: unknown) => setCommError(extractFlowErrorMessage(err)))
-            .finally(() => setCommBusy(false));
-        }}
-        onSelectRoom={setSelectedRoomId}
-        onFinish={() => {
-          const firstId = commTx?.pairedDevices?.[0]?.id;
-          if (!demo && management && selectedRoomId && firstId) {
-            setCommBusy(true);
-            void moveCommissionedDeviceRoom(management, firstId, selectedRoomId).finally(() => {
-              setCommBusy(false);
-              onSaved?.();
-              onClose();
-            });
-            return;
-          }
+      <CameraSetupModal
+        existingCameraCount={existingCameras.length}
+        onChooseApps={() => {
           onClose();
+          onOpenApps();
         }}
-        onRetry={() => {
-          stopPolling();
-          commSessionIdRef.current = null;
-          setCommError(null);
-          setCommHint(null);
-          setCommStage('code_entry');
+        onChooseFindBrand={() => {
+          setDomainFilter(buildCameraDomainSet(snapshot));
+          flow.openFlowTarget({ title: 'Find a camera' });
         }}
-        onCancel={onClose}
+        onChooseExisting={
+          existingCameras.length > 0
+            ? () => {
+                setCameraError('');
+                setViewMode('camera-existing');
+              }
+            : undefined
+        }
+        onChooseManual={() => {
+          setCameraError('');
+          setViewMode('camera-manual');
+        }}
+        onBack={() => setViewMode('picker')}
+        onClose={onClose}
       />
     );
+  }
+
+  if (viewMode === 'camera-manual' || viewMode === 'camera-existing') {
+    return (
+      <ManualCameraSetupModal
+        mode={viewMode === 'camera-existing' ? 'existing' : 'manual'}
+        existingCameras={existingCameras}
+        rooms={rooms}
+        busy={cameraBusy}
+        error={cameraError || undefined}
+        onBack={() => setViewMode('camera')}
+        onSubmitExisting={(input) => {
+          if (demo) {
+            onSaved?.();
+            onClose();
+            return;
+          }
+          if (!requestRpc) {
+            setCameraError('Connect your Hub to update camera settings.');
+            return;
+          }
+          setCameraBusy(true);
+          setCameraError('');
+          void updateLiveCameraEntity(requestRpc, input)
+            .then(() => {
+              onSaved?.();
+              onClose();
+            })
+            .catch((err: unknown) => setCameraError(extractFlowErrorMessage(err)))
+            .finally(() => setCameraBusy(false));
+        }}
+        onSubmitManual={(input) => {
+          if (demo) {
+            flow.openFlowTarget({ domain: 'generic', title: input.name || 'Generic Camera' });
+            return;
+          }
+          if (!management) {
+            setCameraError('Connect your Hub to add a camera.');
+            return;
+          }
+          setCameraBusy(true);
+          setCameraError('');
+          void startLiveManualCameraFlow(management, input)
+            .then((nextStep) => {
+              flow.setFlowTarget({ domain: 'generic', title: input.name || 'Generic Camera' });
+              setViewMode('flow');
+              flow.markOwnedFlow();
+              flow.acceptFlowStep(nextStep);
+            })
+            .catch((err: unknown) => setCameraError(extractFlowErrorMessage(err)))
+            .finally(() => setCameraBusy(false));
+        }}
+        onClose={onClose}
+      />
+    );
+  }
+
+  if (viewMode === 'code') {
+    return <CommissioningModal {...commissioning} />;
   }
 
   if (viewMode === 'flow') {
     return (
       <ConfigFlowModal
-        title={flowTarget.title ?? 'Set up integration'}
-        step={flowStep}
+        title={flow.flowTarget.title ?? 'Connect an integration'}
+        target={flow.flowTarget}
+        step={flow.flowStep}
+        translations={flow.stepTranslations}
         catalog={catalog}
-        pickerQuery={flowPickerQuery}
-        values={flowValues}
-        fieldErrors={flowFieldErrors}
-        busy={flowBusy}
-        error={flowError || undefined}
-        onPickerQueryChange={setFlowPickerQuery}
-        onStartDomain={(c) => openFlowTarget({ ...flowTarget, domain: c.domain, title: c.title })}
-        onChangeValues={setFlowValues}
-        onSubmitForm={() => {
-          const errs = validateFlowFormValues(flowStep?.data_schema ?? [], flowValues);
-          if (Object.keys(errs).length > 0) {
-            setFlowFieldErrors(errs);
-            return;
-          }
-          submitFlow(flowValues);
-        }}
-        onSelectMenu={(optionKey) => submitFlow({ next_step_id: optionKey })}
+        brandCatalog={brandCatalog}
+        selectedBrand={flow.selectedBrand}
+        selectedPlugin={flow.selectedPlugin}
+        pluginLoading={flow.pluginLoading}
+        pluginInstalled={flow.pluginInstalled}
+        pluginStage={flow.pluginStage}
+        unsupported={flow.unsupported}
+        snapshot={snapshot}
+        pickerQuery={flow.flowPickerQuery}
+        values={flow.flowValues}
+        fieldErrors={flow.flowFieldErrors}
+        busy={flow.flowBusy}
+        error={flow.flowError || undefined}
+        isHubSession={isHubSession}
+        onPickerQueryChange={flow.setFlowPickerQuery}
+        onStartDomain={(c) =>
+          flow.openFlowTarget({ ...flow.flowTarget, domain: c.domain, title: c.title })
+        }
+        onSelectBrand={flow.setSelectedBrand}
+        onLaunchDriver={flow.launchDriver}
+        onInstallPlugin={flow.installPlugin}
+        onContinueInstalledPlugin={
+          flow.selectedPlugin?.runtime === 'hacs' && flow.selectedPlugin.hacsDomain
+            ? () =>
+                flow.openFlowTarget({
+                  domain: flow.selectedPlugin!.hacsDomain,
+                  title: flow.selectedPlugin!.title,
+                })
+            : undefined
+        }
+        onBackFromPlugin={flow.clearPlugin}
+        onChangeValues={flow.setFlowValues}
+        onSubmitForm={flow.submitForm}
+        onSelectMenu={flow.selectMenu}
         onOpenExternalUrl={(url) => {
           if (url && openExternal) {
-            void openExternal(url).catch((err: unknown) => setFlowError(extractFlowErrorMessage(err)));
+            void openExternal(url).catch((err: unknown) =>
+              flow.setFlowError(extractFlowErrorMessage(err)),
+            );
           }
+        }}
+        onSubmitOAuthCallback={flow.submitOAuthCallback}
+        onSaveAppCredentials={flow.saveAppCredentials}
+        onCopyText={onCopyText}
+        onRetry={() => flow.openFlowTarget(flow.flowTarget)}
+        onBrowseAll={() => {
+          setDomainFilter(null);
+          flow.openFlowTarget({});
         }}
         onClose={onClose}
       />
@@ -451,15 +337,30 @@ export function GpuiAddDeviceModal({
       query={searchQuery}
       discovered={discovered}
       catalog={catalog}
+      brandCatalog={brandCatalog}
       loading={pickerLoading}
       onQueryChange={setSearchQuery}
       onRescan={() => void loadDiscovery()}
       onSelectDiscovered={(item) =>
-        openFlowTarget({ flowId: item.flowId, domain: item.domain, title: item.label })
+        flow.openFlowTarget({ flowId: item.flowId, domain: item.domain, title: item.label })
       }
-      onSelectCatalog={(choice) => openFlowTarget({ domain: choice.domain, title: choice.title })}
+      onSelectCatalog={(choice) =>
+        flow.openFlowTarget({ domain: choice.domain, title: choice.title })
+      }
+      onSelectBrand={(brand) => {
+        const drivers = brand.groupItems ?? [brand];
+        if (drivers.length > 1 || brand.isCombinedHausGovee) {
+          flow.openFlowTarget({ title: brand.title }, { brand });
+        } else {
+          flow.launchDriver(drivers[0] ?? brand);
+        }
+      }}
       onChooseCode={() => setViewMode('code')}
-      onChooseBrowse={() => openFlowTarget({})}
+      onChooseCamera={() => setViewMode('camera')}
+      onChooseBrowse={() => {
+        setDomainFilter(null);
+        flow.openFlowTarget({});
+      }}
       onChooseApps={() => {
         onClose();
         onOpenApps();

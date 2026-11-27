@@ -14,6 +14,7 @@ import {
   parseHelperJson,
   recordingSource,
   releaseSurfaceLeases,
+  validateDesktopHelperRequest,
 } from './helper-service-validation';
 import { PassThrough } from 'node:stream';
 import type { HelperConnectionPort } from './hub/router';
@@ -22,9 +23,12 @@ import { HelperLive } from './helper-live';
 import type { NativeEvent } from '../shared/native';
 import type { SecureStore } from './secure-store';
 import { CameraAccessClient } from './camera-access-client';
-import { validateHelperRequest } from '@haus/ha/helper-request';
-export { validateHelperRequest } from '@haus/ha/helper-request';
-export type { HelperRequest } from '@haus/ha/helper-request';
+export {
+  validateDesktopHelperRequest,
+  validateHelperRequest,
+  validateHubServiceRequest,
+  type HelperRequest,
+} from './helper-service-validation';
 type HelperSurface = { url: string; cookie?: string; token?: string; expiresAt: number };
 type RecordingPreparationResult = { supported: true; event: unknown } | { supported: false };
 export class HausHelper {
@@ -173,7 +177,7 @@ export class HausHelper {
   }
   async request(input: unknown, signal?: AbortSignal) {
     this.live?.start();
-    const request = validateHelperRequest(input),
+    const request = validateDesktopHelperRequest(input, Boolean(this.connection.isHub)),
       epoch = this.epoch,
       scope = this.connection.serverUrl;
     const match = /^\/api\/cameras\/(camera\.[a-z0-9_]+)\/(warm|viewer(?:\/close)?)$/.exec(
@@ -222,7 +226,7 @@ export class HausHelper {
   }
   private async performRequest(input: unknown, allowRecovery: boolean, signal?: AbortSignal) {
     const epoch = this.epoch;
-    const request = validateHelperRequest(input);
+    const request = validateDesktopHelperRequest(input, Boolean(this.connection.isHub));
     if (request.path === '/api/backups/recovery' && !allowRecovery)
       throw new Error('Save the recovery kit through the native export dialog.');
     if (

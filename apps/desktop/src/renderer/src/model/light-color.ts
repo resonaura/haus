@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export { lightColor } from '@haus/ha/light-color';
+export { lightColor } from '@haus/core/optimistic';

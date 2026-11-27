@@ -33,6 +33,7 @@ export interface BoxProps {
   readonly style?: UiStyleSpec;
   readonly surfaceTokens?: HostSurfaceTokens;
   readonly motion?: UiMotionSpec;
+  readonly layoutTransition?: string;
   readonly paddingPx?: number;
   readonly gapPx?: number;
   readonly role?: string;

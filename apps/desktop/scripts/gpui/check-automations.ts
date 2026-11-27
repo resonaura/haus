@@ -366,4 +366,87 @@ async function checkNativeFilePickerFlow(): Promise<void> {
 await checkDemoSampleImport();
 await checkLiveHubImportAndValidation();
 await checkNativeFilePickerFlow();
+
+// Verify Automations Gallery starter templates, Hue/Event triggers, & visual flow in GPUIX
+{
+  const snapshot = createDemoSnapshot();
+  await withRoot(
+    createElement(GpuiAutomationsView, {
+      snapshot,
+      automations: [
+        {
+          entity_id: 'automation.hue_living_switch',
+          state: 'on',
+          attributes: {
+            id: 'hue_living_switch',
+            friendly_name: 'Living Room Switch',
+          },
+          last_changed: new Date().toISOString(),
+        },
+      ],
+      demo: true,
+      disabled: false,
+      onControl: () => undefined,
+    }),
+    async (renderer) => {
+      assert(
+        renderer.findByTestId('automation-row-automation.hue_living_switch'),
+        'Automations Gallery must render DeviceTile-adapted AutomationTile cards',
+      );
+      assert(
+        renderer.findByTestId('rule-automation.hue_living_switch'),
+        'AutomationTile must render interactive DeviceTileIconOrb toggle',
+      );
+      assert(
+        renderer.findByTestId('automation-template-switch_button'),
+        'Automations Gallery must render Switch Press starter template',
+      );
+      assert(
+        renderer.findByTestId('automation-template-good_morning'),
+        'Automations Gallery must render Good Morning starter template',
+      );
+      const galleryTexts = renderer.getAllText().join(' ').toLowerCase();
+      assert(!galleryTexts.includes('apple'), 'Automations UI must not mention third-party brand');
+      assert(!galleryTexts.includes('shortcut'), 'Automations UI must not use Shortcut naming');
+
+      click(renderer, 'automation-template-switch_button');
+      await flushMicrotasks(renderer);
+      assert(
+        !renderer.findByTestId('dialog-panel'),
+        'Automation editor must open as a dedicated full-page screen rather than a modal',
+      );
+      assert(
+        renderer.findByTestId('automation-editor-back'),
+        'AutomationEditorScreen must render All automations back navigation',
+      );
+      const texts = renderer.getAllText();
+      assert(
+        texts.some((t) => t.includes('WHEN')) &&
+          texts.some((t) => t.includes('Switch / Button')) &&
+          texts.some((t) => t.includes('Event')),
+        'AutomationEditorScreen must render Switch / Button and Event trigger modes',
+      );
+      click(renderer, 'when-kind-button_event-0');
+      await flushMicrotasks(renderer);
+      assert(
+        renderer.getAllText().some((t) => t.includes('Short press')),
+        'Switch / Button trigger must expose button press gestures',
+      );
+      click(renderer, 'automation-editor-back');
+      await flushMicrotasks(renderer);
+      const afterCancel = renderer.getAllText();
+      assert(
+        afterCancel.some((t) => t.includes('Discard unsaved automation changes?')),
+        'Dirty automation editor screen should prompt before discarding changes',
+      );
+      click(renderer, 'automation-discard-confirm');
+      await flushMicrotasks(renderer);
+      assert(
+        renderer.getAllText().includes('Create automation'),
+        'Confirming discard should return to Automations gallery screen',
+      );
+    },
+  );
+}
+
 console.log('GPUIX Automations HA Rules Transfer & Import integration check passed.');

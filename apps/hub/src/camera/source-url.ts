@@ -10,7 +10,7 @@ import {
   type RecordingInputCamera,
   type RecordingInputEntity,
   type RecordingInputState,
-} from '@haus/ha/node/recording-input';
+} from '@haus/core/servers';
 import { requiresProtectedStream } from '@haus/kitsune/native';
 
 export interface NvrCameraSourceDescriptor {

@@ -6,6 +6,7 @@
  */
 
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { DEFAULT_LEASE_TTL_MS } from '../coordination/lease-types.js';
 import type { ClusterStateStore } from '../coordination/state.js';
 import type { BoundedReplayGuard } from '../crypto/envelope.js';
 import type { CredentialBundlePayload } from '../sync/snapshot.js';
@@ -23,17 +24,28 @@ export async function transferWorkloadsOwnership(
   sourceHubId: string,
   targetHubId: string,
   epoch: number,
+  targetArch?: 'arm64' | 'x64',
 ): Promise<void> {
   if (!stateStore) return;
+  const now = Date.now();
   for (const wl of stateStore.listWorkloadsSync()) {
     if (wl.ownerHubId !== sourceHubId) continue;
+    let requiredArch: string | undefined;
+    try {
+      const req = JSON.parse(wl.requirementsJson) as { requiredArch?: unknown };
+      if (typeof req?.requiredArch === 'string') requiredArch = req.requiredArch;
+    } catch {
+      requiredArch = undefined;
+    }
+    const keepOnSource = Boolean(targetArch && requiredArch && requiredArch !== targetArch);
     await stateStore.saveWorkload({
       ...wl,
-      ownerHubId: targetHubId,
+      ownerHubId: keepOnSource ? sourceHubId : targetHubId,
       generation: wl.generation + 1,
       epoch: Math.max(wl.epoch, epoch),
       state: 'active',
-      updatedAt: Date.now(),
+      leaseExpiresAt: now + DEFAULT_LEASE_TTL_MS,
+      updatedAt: now,
     });
   }
 }

@@ -135,11 +135,27 @@ export class ScryptedAppSupervisor implements StandaloneRuntimeBridge {
     onProgress?: (update: AppInstallProgressUpdate) => void,
   ): Promise<{ logs?: readonly string[] }> {
     const appId = entry.manifest.id;
-    onProgress?.({ stage: 'pulling' });
-    onProgress?.({ stage: 'creating' });
-    onProgress?.({ stage: 'starting' });
+    onProgress?.({
+      stage: 'pulling',
+      detail: `Preparing Scrypted plugin ${appId}…`,
+      logLine: `Resolving Scrypted package for ${entry.manifest.name}`,
+    });
+    onProgress?.({
+      stage: 'creating',
+      detail: 'Allocating isolated Scrypted workspace…',
+      logLine: `Created isolated Scrypted host configuration for ${appId}`,
+    });
+    onProgress?.({
+      stage: 'starting',
+      detail: 'Starting Scrypted plugin host…',
+      logLine: `Launching Scrypted plugin ${entry.manifest.name}…`,
+    });
     await this.startPlugin(appId, entry.manifest, entry.config);
-    return { logs: this.getLogs(appId) };
+    const logs = this.getLogs(appId);
+    if (logs && logs.length > 0) {
+      onProgress?.({ stage: 'starting', logs: logs.slice(-20) });
+    }
+    return { logs };
   }
 
   async execute(entry: InstalledAppEntry, action: AppAction): Promise<void> {

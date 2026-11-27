@@ -14,7 +14,7 @@ import {
   type RecordingInputCamera,
   type RecordingInputEntity,
   type RecordingInputState,
-} from '@haus/ha/node/recording-input';
+} from '@haus/core/servers';
 
 export interface BridgeCameraManifestEntry {
   stream?: {

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import type { HubCapacityMetrics } from './types.js';
+import type { CpuArchitecture, HubCapacityMetrics } from './types.js';
 
 export type WorkloadKind =
   'vision' | 'recording' | 'media' | 'radio' | 'integration' | 'automation' | 'app';
@@ -11,6 +11,7 @@ export interface WorkloadRequirements {
   readonly minStorageGb?: number;
   readonly requiresHardwareTranscoder?: boolean;
   readonly requiredRadio?: 'zigbee' | 'matter' | 'thread' | 'zwave';
+  readonly requiredArch?: CpuArchitecture;
   readonly forbiddenOnWeakHub?: boolean;
 }
 
@@ -76,6 +77,11 @@ export class ResourcePlacementScheduler {
 
       // 3. Hardware transcoder constraint
       if (req.requiresHardwareTranscoder && !node.capacity.hasHardwareTranscoder) {
+        continue;
+      }
+
+      // 3b. CPU architecture constraint (e.g. arm64-only Docker image vs x64 host)
+      if (req.requiredArch && node.capacity.cpuArch && req.requiredArch !== node.capacity.cpuArch) {
         continue;
       }
 

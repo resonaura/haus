@@ -12,11 +12,15 @@ import type { HostDataAttrs, HostPointerEvent, HostSurfaceTokens } from '../rend
 import { dialogStyles, type DialogStyleProps } from '../styles/overlays.js';
 import { composeStyles } from '../styles/sheet.js';
 import { useHausStyles, useHausUi } from './context.js';
-import { Box, Heading, Pressable, Row } from './elements.js';
+import { dialogBackdropMotion, dialogPanelMotion, useDialogTransition } from './dialog-motion.js';
+import { Box, Heading, Pressable, Row, VectorGraphic } from './elements.js';
+
+const MODAL_CLOSE_X_PATHS = [{ d: 'M18 6 6 18' }, { d: 'm6 6 12 12' }] as const;
 
 type ModalContainerSize = 'xs' | 'sm' | 'md' | 'lg' | 'full' | 'cover';
 
 interface ModalOverlayCtx {
+  readonly closing: boolean;
   readonly onClose: () => void;
   readonly dismissableRef: React.MutableRefObject<boolean>;
 }
@@ -44,19 +48,24 @@ function ModalRoot({
 }: HausModalRootProps): React.ReactElement | null {
   const ctx = useHausUi();
   const dismissableRef = React.useRef(true);
-  const onClose = React.useCallback(() => onOpenChange?.(false), [onOpenChange]);
+  const handleClose = React.useCallback(() => onOpenChange?.(false), [onOpenChange]);
+  const { mounted, closing, requestClose } = useDialogTransition({
+    open: isOpen,
+    reducedMotion: ctx.viewport.reducedMotion,
+    onClose: handleClose,
+  });
 
   React.useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!mounted || closing) return undefined;
     return ctx.host.subscribeEscape?.(() => {
-      if (dismissableRef.current) onClose();
+      if (dismissableRef.current) requestClose();
     });
-  }, [isOpen, onClose, ctx.host]);
+  }, [mounted, closing, requestClose, ctx.host]);
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   const content = (
-    <ModalOverlayContext.Provider value={{ onClose, dismissableRef }}>
+    <ModalOverlayContext.Provider value={{ closing, onClose: requestClose, dismissableRef }}>
       {children}
     </ModalOverlayContext.Provider>
   );
@@ -93,32 +102,40 @@ function ModalBackdrop({
 
   const standaloneClose = React.useCallback(() => onOpenChange?.(false), [onOpenChange]);
   const isStandalone = !parentCtx && (isOpen !== undefined || onOpenChange !== undefined);
+  const standaloneTransition = useDialogTransition({
+    open: isStandalone ? isOpen !== false : true,
+    reducedMotion: ctx.viewport.reducedMotion,
+    onClose: standaloneClose,
+  });
+  const closing = parentCtx ? parentCtx.closing : standaloneTransition.closing;
 
   React.useEffect(() => {
-    if (!isStandalone || isOpen === false) return undefined;
+    if (!isStandalone || !standaloneTransition.mounted || closing) return undefined;
     return ctx.host.subscribeEscape?.(() => {
-      if (standaloneDismissableRef.current) standaloneClose();
+      if (standaloneDismissableRef.current) standaloneTransition.requestClose();
     });
-  }, [isStandalone, isOpen, standaloneClose, ctx.host]);
+  }, [isStandalone, standaloneTransition, closing, ctx.host]);
 
   const backdropMode =
     variant === 'liquid-glass' ? 'liquid-glass' : variant === 'blur' ? 'blur' : 'dim';
   const styles = useHausStyles(dialogStyles, { size: 'md', backdrop: backdropMode });
 
-  if (isOpen === false) return null;
+  if (isStandalone ? !standaloneTransition.mounted : isOpen === false) return null;
 
   const handleClose = () => {
-    if (!isDismissable) return;
-    if (onOpenChange) onOpenChange(false);
-    else parentCtx?.onClose();
+    if (!isDismissable || closing) return;
+    if (parentCtx) parentCtx.onClose();
+    else standaloneTransition.requestClose();
   };
 
   const backdropNode = (
     <Box
       className={['modal__backdrop', className].filter(Boolean).join(' ')}
       style={composeStyles(styles.backdrop, style)}
+      motion={dialogBackdropMotion(closing)}
       dataKind="modal-backdrop"
       onBackdropPress={handleClose}
+      stopPropagation
       onPointerDownCapture={onPointerDownCapture}
     >
       {children}
@@ -128,7 +145,11 @@ function ModalBackdrop({
   if (isStandalone) {
     const wrapped = (
       <ModalOverlayContext.Provider
-        value={{ onClose: standaloneClose, dismissableRef: standaloneDismissableRef }}
+        value={{
+          closing,
+          onClose: standaloneTransition.requestClose,
+          dismissableRef: standaloneDismissableRef,
+        }}
       >
         {backdropNode}
       </ModalOverlayContext.Provider>
@@ -194,6 +215,7 @@ function ModalContainer({
       onBackdropPress={() => {
         if (modalCtx?.dismissableRef.current !== false) modalCtx?.onClose();
       }}
+      stopPropagation
     >
       <ModalContainerContext.Provider value={size}>{children}</ModalContainerContext.Provider>
     </Box>
@@ -225,6 +247,7 @@ function ModalDialog({
   readonly 'data-video-fill'?: boolean | string;
   readonly children?: React.ReactNode;
 }): React.ReactElement {
+  const modalCtx = React.useContext(ModalOverlayContext);
   const containerSize = React.useContext(ModalContainerContext);
   const styles = useHausStyles(dialogStyles, {
     size: size ?? resolveDialogSize(containerSize),
@@ -244,9 +267,11 @@ function ModalDialog({
       ariaModal
       className={['modal__dialog', className].filter(Boolean).join(' ')}
       style={composeStyles(styles.panel, style)}
+      motion={dialogPanelMotion(Boolean(modalCtx?.closing))}
       surfaceTokens={surfaceTokens}
       dataAttrs={dataAttrs}
       dataKind="modal"
+      stopPropagation
     >
       {children}
     </Box>
@@ -293,7 +318,16 @@ function ModalCloseTrigger({
       })}
       onPress={() => modalCtx?.onClose()}
     >
-      ×
+      <VectorGraphic
+        viewWidth={24}
+        viewHeight={24}
+        width={14}
+        height={14}
+        stroke="currentColor"
+        strokeWidth={2}
+        paths={MODAL_CLOSE_X_PATHS}
+        ariaHidden
+      />
     </Pressable>
   );
 }

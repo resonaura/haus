@@ -28,9 +28,9 @@ export interface SwitchBlueprintProps {
 }
 
 const SWITCH_DIMS = {
-  sm: { width: 34, height: 20, thumb: 14, pad: 3 },
-  md: { width: 42, height: 24, thumb: 18, pad: 3 },
-  lg: { width: 50, height: 28, thumb: 22, pad: 3 },
+  sm: { width: 38, height: 20, thumbWidth: 18, thumbHeight: 14, pad: 3 },
+  md: { width: 46, height: 24, thumbWidth: 22, thumbHeight: 18, pad: 3 },
+  lg: { width: 54, height: 28, thumbWidth: 26, thumbHeight: 22, pad: 3 },
 } as const;
 
 export class SwitchBlueprint implements UiComponent<SwitchBlueprintProps> {
@@ -38,33 +38,34 @@ export class SwitchBlueprint implements UiComponent<SwitchBlueprintProps> {
 
   build(props: SwitchBlueprintProps, theme: UiTheme): UiNode {
     const dim = SWITCH_DIMS[props.size ?? 'md'];
-    const travel = dim.width - dim.thumb - dim.pad * 2;
+    const isDark = theme.mode === 'dark';
+    const travel = dim.width - dim.thumbWidth - dim.pad * 2;
     const trackMaterial = props.checked
       ? new SolidMaterial(theme.color('accent'))
-      : new SolidMaterial(
-          theme.mode === 'dark' ? rgba(255, 255, 255, 0.16) : rgba(15, 23, 42, 0.16),
-        );
+      : new SolidMaterial(isDark ? rgba(255, 255, 255, 0.16) : rgba(0, 0, 0, 0.12));
 
     const thumbNode = new UiNode({
       kind: 'box',
       style: {
         layout: {
-          width: px(dim.thumb),
-          height: px(dim.thumb),
+          width: px(dim.thumbWidth),
+          height: px(dim.thumbHeight),
           flexShrink: 0,
         },
-        material: new SolidMaterial(rgba(255, 255, 255, 0.98)),
+        material: new SolidMaterial(
+          props.checked ? theme.color('accentForeground') : rgba(255, 255, 255, isDark ? 0.92 : 0.98),
+        ),
         corners: corners(999, 'round'),
         shadows: [
           {
             offsetX: 0,
             offsetY: 1,
-            blurRadius: 3,
-            color: rgba(0, 0, 0, 0.28),
+            blurRadius: 2.5,
+            color: rgba(0, 0, 0, 0.22),
           },
         ],
         transform: { translateX: props.checked ? travel : 0 },
-        transitionMs: 180,
+        transitionMs: 190,
       },
     });
 
@@ -94,14 +95,10 @@ export class SwitchBlueprint implements UiComponent<SwitchBlueprintProps> {
           },
           material: trackMaterial,
           corners: corners(999, 'round'),
-          border: {
-            width: 1,
-            style: 'solid',
-            color: props.checked ? colorToken('accent') : colorToken('border'),
-          },
+          border: { width: 0, style: 'none', color: rgba(0, 0, 0, 0) },
           opacity: props.disabled ? 0.45 : 1,
           cursor: props.disabled ? 'not-allowed' : 'pointer',
-          transitionMs: 180,
+          transitionMs: 190,
         },
         props.style,
       ),
@@ -220,9 +217,16 @@ export class SliderBlueprint implements UiComponent<SliderBlueprintProps> {
             new UiNode({
               kind: 'box',
               style: {
-                layout: { width: pct(100), height: px(6), overflow: 'hidden' },
+                layout: {
+                  display: 'flex',
+                  direction: 'row',
+                  alignItems: 'center',
+                  width: pct(100),
+                  height: px(22),
+                  overflow: 'hidden',
+                },
                 material: new SolidMaterial(
-                  theme.mode === 'dark' ? rgba(255, 255, 255, 0.14) : rgba(15, 23, 42, 0.12),
+                  theme.mode === 'dark' ? rgba(255, 255, 255, 0.11) : rgba(0, 0, 0, 0.09),
                 ),
                 corners: corners(999, 'round'),
               },
@@ -230,9 +234,41 @@ export class SliderBlueprint implements UiComponent<SliderBlueprintProps> {
                 new UiNode({
                   kind: 'box',
                   style: {
-                    layout: { width: pct(ratioPct), height: pct(100) },
+                    layout: {
+                      display: 'flex',
+                      direction: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'end',
+                      width: px(28),
+                      minWidth: px(28),
+                      height: pct(100),
+                      padding: insets(3),
+                      flexGrow: ratioPct,
+                      flexShrink: 0,
+                    },
                     material: new SolidMaterial(theme.color('accent')),
                     corners: corners(999, 'round'),
+                  },
+                  children: [
+                    new UiNode({
+                      kind: 'box',
+                      style: {
+                        layout: { width: px(22), height: px(16), flexShrink: 0 },
+                        material: new SolidMaterial(theme.color('accentForeground')),
+                        corners: corners(999, 'round'),
+                      },
+                    }),
+                  ],
+                }),
+                new UiNode({
+                  kind: 'box',
+                  style: {
+                    layout: {
+                      width: px(0),
+                      height: pct(100),
+                      flexGrow: Math.max(0, 100 - ratioPct),
+                      flexShrink: 1,
+                    },
                   },
                 }),
               ],
@@ -277,7 +313,7 @@ export class SegmentedControlBlueprint implements UiComponent<SegmentedControlBl
             gap: px(2),
             padding: insets(3),
           },
-          material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.08) : rgba(15, 23, 42, 0.06)),
+          material: new SolidMaterial(theme.color('controlFill')),
           corners: corners(999, 'round'),
           border: { width: 1, style: 'solid', color: colorToken('border') },
         },
@@ -344,7 +380,6 @@ export class TabsBlueprint implements UiComponent<TabsBlueprintProps> {
   readonly name = 'HausTabs';
 
   build(props: TabsBlueprintProps, theme: UiTheme): UiNode {
-    const isDark = theme.mode === 'dark';
     return new UiNode({
       kind: 'tabs',
       id: props.id,
@@ -358,7 +393,7 @@ export class TabsBlueprint implements UiComponent<TabsBlueprintProps> {
             gap: px(4),
             padding: insets(4),
           },
-          material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.06) : rgba(15, 23, 42, 0.05)),
+          material: new SolidMaterial(theme.color('controlFill')),
           corners: corners(theme.palette.radii.control, 'superellipse', 1.4),
           border: { width: 1, style: 'solid', color: colorToken('border') },
         },

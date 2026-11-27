@@ -185,7 +185,7 @@ function applyScalarTransitionCss(
   if (scalars.left !== undefined) next.left = `${scalars.left}px`;
   if (transform !== undefined) next.transform = transform;
   if (scalars.blur !== undefined) {
-    next.filter = scalars.blur > 0 ? `blur(${scalars.blur}px)` : 'none';
+    next.filter = scalars.blur > 0 ? `blur(${scalars.blur}px)` : 'blur(0px)';
   }
   if (motion.originX !== undefined || motion.originY !== undefined) {
     next.transformOrigin = `${(motion.originX ?? 0.5) * 100}% ${(motion.originY ?? 0.5) * 100}%`;
@@ -193,8 +193,10 @@ function applyScalarTransitionCss(
   if (!reducedMotion && !hasKeyframeArray(motion.animate) && motion.repeat === undefined) {
     const opacityDur = motion.propertyDurationsMs?.opacity ?? motion.durationMs;
     const transformDur = motion.propertyDurationsMs?.transform ?? motion.durationMs;
+    const blurDur = motion.propertyDurationsMs?.blur ?? motion.durationMs;
     const opacityEase = easeToCss(motion.propertyEases?.opacity ?? motion.ease);
     const transformEase = easeToCss(motion.propertyEases?.transform ?? motion.ease);
+    const blurEase = easeToCss(motion.propertyEases?.blur ?? motion.ease);
     const transitions = [
       `opacity ${opacityDur}ms ${opacityEase}`,
       `transform ${transformDur}ms ${transformEase}`,
@@ -203,7 +205,7 @@ function applyScalarTransitionCss(
       transitions.push(`left ${transformDur}ms ${transformEase}`);
     }
     if (scalars.blur !== undefined) {
-      transitions.push(`filter ${motion.durationMs}ms ${easeToCss(motion.ease)}`);
+      transitions.push(`filter ${blurDur}ms ${blurEase}`);
     }
     if (typeof target.transition === 'string' && target.transition) {
       transitions.unshift(target.transition);
@@ -240,7 +242,18 @@ export function DomMotionBox({
   motionRef.current = motion;
   const isKeyframeOrRepeat =
     !reducedMotion && (hasKeyframeArray(motion.animate) || motion.repeat !== undefined);
-  const styled = applyScalarTransitionCss(motion, mergedStyle, reducedMotion);
+  const hasMountInitial = !isKeyframeOrRepeat && !reducedMotion && Boolean(motion.initial);
+  const [entered, setEntered] = React.useState(() => !hasMountInitial);
+
+  React.useEffect(() => {
+    if (entered) return;
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
+  }, [entered]);
+
+  const effectiveMotion: UiMotionSpec =
+    !entered && motion.initial ? { ...motion, animate: motion.initial } : motion;
+  const styled = applyScalarTransitionCss(effectiveMotion, mergedStyle, reducedMotion || !entered);
   const baseTransform =
     typeof mergedStyle.transform === 'string' ? mergedStyle.transform : undefined;
 
@@ -275,6 +288,69 @@ export function DomMotionBox({
 
   const tag = BOX_SEMANTIC_TAG[props.semantic ?? 'box'];
   const domProps = buildDomBoxProps(props, styled, shaderId);
+  domProps.ref = (node: HTMLElement | null) => {
+    elementRef.current = node;
+    assignRef(props.boxRef, node);
+  };
+  return tag === 'col'
+    ? React.createElement(tag, domProps)
+    : React.createElement(tag, domProps, props.children);
+}
+
+export function DomLayoutBox({
+  props,
+  layoutTransition,
+  mergedStyle,
+  shaderId,
+  reducedMotion,
+}: {
+  readonly props: HostBoxProps;
+  readonly layoutTransition: string;
+  readonly mergedStyle: React.CSSProperties;
+  readonly shaderId?: string;
+  readonly reducedMotion: boolean;
+}): React.ReactElement {
+  const elementRef = React.useRef<HTMLElement | null>(null);
+  const previousOffsetRef = React.useRef<{ x: number; y: number } | null>(null);
+  const previousTokenRef = React.useRef<string>(layoutTransition);
+  const animationRef = React.useRef<Animation | null>(null);
+
+  React.useLayoutEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+    const nextX = el.offsetLeft;
+    const nextY = el.offsetTop;
+    const prev = previousOffsetRef.current;
+    const tokenChanged = previousTokenRef.current !== layoutTransition;
+    previousTokenRef.current = layoutTransition;
+    previousOffsetRef.current = { x: nextX, y: nextY };
+
+    if (reducedMotion || typeof el.animate !== 'function') return;
+    if (prev && tokenChanged) {
+      const dx = prev.x - nextX;
+      const dy = prev.y - nextY;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        animationRef.current?.cancel();
+        animationRef.current = el.animate(
+          [
+            { transform: `translate3d(${dx}px, ${dy}px, 0)` },
+            { transform: 'translate3d(0, 0, 0)' },
+          ],
+          { duration: 320, easing: 'cubic-bezier(0.22, 0.8, 0.22, 1)' },
+        );
+      }
+    }
+  }, [layoutTransition, reducedMotion]);
+
+  React.useEffect(
+    () => () => {
+      animationRef.current?.cancel();
+    },
+    [],
+  );
+
+  const tag = BOX_SEMANTIC_TAG[props.semantic ?? 'box'];
+  const domProps = buildDomBoxProps(props, mergedStyle, shaderId);
   domProps.ref = (node: HTMLElement | null) => {
     elementRef.current = node;
     assignRef(props.boxRef, node);

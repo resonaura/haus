@@ -7,6 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import { Box, HausButton, Heading, SelectInput, Text } from '@haus/ui';
+import { OperationProgressPanel } from '@haus/ui/components';
 import { ArrowRightLeft, Layers, RefreshCw, ShieldAlert } from 'lucide-react';
 import {
   serverRequest,
@@ -56,13 +57,26 @@ export function ClusterCoordinationPanel({
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [transferTargetId, setTransferTargetId] = useState('');
+  const [opProgress, setOpProgress] = useState<{
+    title: string;
+    detail?: string;
+    percent: number;
+    state: 'running' | 'complete' | 'failed';
+    logs: readonly string[];
+  }>();
 
   const clusterCoordinatorId = meta?.coordinatorId ?? cluster.coordinatorId ?? cluster.id;
-  const nodes = Array.isArray(cluster.nodes) ? cluster.nodes : [];
+  const nodes =
+    Array.isArray(cluster.members) && cluster.members.length > 0
+      ? cluster.members
+      : Array.isArray(cluster.nodes)
+        ? cluster.nodes
+        : [];
   const coordinatorCandidates = nodes.filter(
-    (node) => node.enabled && node.id !== clusterCoordinatorId,
+    (node) => node.enabled && node.online !== false && node.id !== clusterCoordinatorId,
   );
-  const isSoleHub = coordinatorCandidates.length === 0;
+  const isSoleHub =
+    nodes.filter((node) => node.enabled).length <= 1 && coordinatorCandidates.length === 0;
   const selectedTarget =
     coordinatorCandidates.find((node) => node.id === transferTargetId)?.id ??
     coordinatorCandidates[0]?.id ??
@@ -89,6 +103,14 @@ export function ClusterCoordinationPanel({
   const handleRebalance = () => {
     setStatusMessage('');
     setErrorMessage('');
+    const logs = ['[CLUSTER] Evaluating workload placement across healthy Hubs…'];
+    setOpProgress({
+      title: 'Rebalancing cluster workloads…',
+      detail: 'Applying single-active Fence-Before-Promote placement',
+      percent: 45,
+      state: 'running',
+      logs,
+    });
     void act(async () => {
       const result = await serverRequest<{
         rebalanced?: boolean;
@@ -98,19 +120,42 @@ export function ClusterCoordinationPanel({
       }>('POST', '/api/cluster/rebalance', {});
       const moved = result.movedCount ?? result.movedWorkloadIds?.length ?? 0;
       setWorkloads(result.workloads);
-      setStatusMessage(
+      const msg =
         moved > 0
           ? `Rebalanced ${moved} workload${moved === 1 ? '' : 's'} with fence-before-promote.`
-          : 'Workloads are already balanced across healthy Hubs.',
-      );
+          : 'Workloads are already balanced across healthy Hubs.';
+      setStatusMessage(msg);
+      setOpProgress({
+        title: 'Cluster rebalance complete',
+        detail: msg,
+        percent: 100,
+        state: 'complete',
+        logs: [...logs, `[OK] ${msg}`],
+      });
     }).catch((error: unknown) => {
-      setErrorMessage(clusterErrorMessage(error, 'Cluster rebalance failed.'));
+      const msg = clusterErrorMessage(error, 'Cluster rebalance failed.');
+      setErrorMessage(msg);
+      setOpProgress({
+        title: 'Cluster rebalance failed',
+        detail: msg,
+        percent: 100,
+        state: 'failed',
+        logs: [...logs, `[ERROR] ${msg}`],
+      });
     });
   };
 
   const handleReconcile = () => {
     setStatusMessage('');
     setErrorMessage('');
+    const logs = ['[CLUSTER] Checking monotonic epoch & single-writer ownership across peers…'];
+    setOpProgress({
+      title: 'Reconciling split-brain state…',
+      detail: 'Verifying coordinator epoch & fencing stale writers',
+      percent: 50,
+      state: 'running',
+      logs,
+    });
     void act(async () => {
       const result = await serverRequest<ReconcileResponse>('POST', '/api/cluster/reconcile', {});
       const epoch = result.epoch ?? result.winningEpoch ?? cluster.epoch ?? 1;
@@ -127,12 +172,26 @@ export function ClusterCoordinationPanel({
         coordinatorId,
         role: result.role ?? cluster.role ?? 'coordinator',
       });
-      setStatusMessage(
-        `Reconciled at epoch ${epoch}: stopped ${stopped} duplicate workload(s), fenced ${conflicts.length} conflicting coordinator(s).`,
-      );
+      const msg = `Reconciled at epoch ${epoch}: stopped ${stopped} duplicate workload(s), fenced ${conflicts.length} conflicting coordinator(s).`;
+      setStatusMessage(msg);
+      setOpProgress({
+        title: 'Cluster reconciliation complete',
+        detail: msg,
+        percent: 100,
+        state: 'complete',
+        logs: [...logs, `[OK] ${msg}`],
+      });
       await loadWorkloads();
     }).catch((error: unknown) => {
-      setErrorMessage(clusterErrorMessage(error, 'Cluster reconciliation failed.'));
+      const msg = clusterErrorMessage(error, 'Cluster reconciliation failed.');
+      setErrorMessage(msg);
+      setOpProgress({
+        title: 'Cluster reconciliation failed',
+        detail: msg,
+        percent: 100,
+        state: 'failed',
+        logs: [...logs, `[ERROR] ${msg}`],
+      });
     });
   };
 
@@ -140,32 +199,76 @@ export function ClusterCoordinationPanel({
     if (!selectedTarget) return;
     setStatusMessage('');
     setErrorMessage('');
+    const logs: string[] = [`[CLUSTER] Initiating leadership handover to ${selectedTarget}…`];
+    setOpProgress({
+      title: `Transferring coordinator to ${selectedTarget}…`,
+      detail: 'Step 1/4 · Initiating transfer intent',
+      percent: 20,
+      state: 'running',
+      logs: [...logs],
+    });
     void act(async () => {
       const initiated = await serverRequest<ClusterTransferSummary>(
         'POST',
         '/api/cluster/transfer/initiate',
         { targetHubId: selectedTarget, preservePairing: true },
       );
+      logs.push(
+        `[INFO] Transfer ${initiated.transferId} created; staging state & credential manifest…`,
+      );
+      setOpProgress({
+        title: `Transferring coordinator to ${selectedTarget}…`,
+        detail: 'Step 2/4 · Preparing home manifest & encrypted credentials',
+        percent: 48,
+        state: 'running',
+        logs: [...logs],
+      });
       try {
         await serverRequest('POST', `/api/cluster/transfer/${initiated.transferId}/prepare`, {});
+        logs.push('[SYNC] Manifest verified by target Hub; fencing outgoing coordinator…');
+        setOpProgress({
+          title: `Transferring coordinator to ${selectedTarget}…`,
+          detail: 'Step 3/4 · Fencing previous coordinator (single-writer safety)',
+          percent: 76,
+          state: 'running',
+          logs: [...logs],
+        });
         await serverRequest('POST', `/api/cluster/transfer/${initiated.transferId}/fence`, {});
+        logs.push('[CLUSTER] Outgoing coordinator fenced; committing new epoch & renewing leases…');
         const committed = await serverRequest<{ newCoordinator: string; epoch: number }>(
           'POST',
           `/api/cluster/transfer/${initiated.transferId}/commit`,
           {},
         );
-        setStatusMessage(
-          `Coordinator transferred to ${committed.newCoordinator} (epoch ${committed.epoch}).`,
-        );
+        const msg = `Coordinator transferred to ${committed.newCoordinator} (epoch ${committed.epoch}).`;
+        logs.push(`[OK] ${msg}`);
+        setStatusMessage(msg);
+        setOpProgress({
+          title: 'Leadership transfer complete',
+          detail: msg,
+          percent: 100,
+          state: 'complete',
+          logs: [...logs],
+        });
         await loadWorkloads();
       } catch (err) {
+        logs.push('[WARN] Rolling back incomplete transfer and restoring active leases…');
         await serverRequest('POST', `/api/cluster/transfer/${initiated.transferId}/rollback`, {
           reason: err instanceof Error ? err.message : 'desktop_transfer_aborted',
         }).catch(() => {});
         throw err;
       }
     }).catch((error: unknown) => {
-      setErrorMessage(clusterErrorMessage(error, 'Coordinator transfer failed.'));
+      const msg = clusterErrorMessage(error, 'Coordinator transfer failed.');
+      logs.push(`[ERROR] ${msg}`);
+      setErrorMessage(msg);
+      setOpProgress({
+        title: 'Leadership transfer failed',
+        detail: msg,
+        percent: 100,
+        state: 'failed',
+        logs: [...logs],
+      });
     });
   };
 
@@ -252,12 +355,23 @@ export function ClusterCoordinationPanel({
           </HausButton>
         </Box>
       )}
-      {statusMessage && (
+      {opProgress && (
+        <OperationProgressPanel
+          id="cluster-operation-progress"
+          title={opProgress.title}
+          detail={opProgress.detail}
+          percent={opProgress.percent}
+          state={opProgress.state}
+          logs={opProgress.logs}
+          onDismiss={opProgress.state !== 'running' ? () => setOpProgress(undefined) : undefined}
+        />
+      )}
+      {statusMessage && !opProgress && (
         <Text semantic="p" role="status">
           {statusMessage}
         </Text>
       )}
-      {errorMessage && (
+      {errorMessage && !opProgress && (
         <Text semantic="p" className="form-error" role="alert">
           {errorMessage}
         </Text>

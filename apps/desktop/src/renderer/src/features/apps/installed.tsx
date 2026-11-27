@@ -62,7 +62,7 @@ const InstalledAppCard = memo(function InstalledAppCard({
     >
       <Row align="center" justify="between" gapPx={14} wrap style={{ layout: { width: pct(100) } }}>
         <Row align="center" gapPx={12} style={{ layout: { flexGrow: 1, minWidth: px(200) } }}>
-          <BrandIcon kind="app" id={brand.iconId || ext} size={44} hint={hint} />
+          <BrandIcon kind="app" id={brand.iconId || ext} size={46} hint={hint} />
           <Stack gapPx={3} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
             <Row align="center" gapPx={8} wrap>
               <Heading level={3} size={14.5} weight={600}>
@@ -122,7 +122,7 @@ const InstalledHausGoveeGroupCard = memo(function InstalledHausGoveeGroupCard({
           <BrandIcon
             kind="integration"
             id="govee"
-            size={44}
+            size={46}
             hint={{ name: 'Haus Govee', supportedBy: 'govee' }}
           />
           <Stack gapPx={4} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>

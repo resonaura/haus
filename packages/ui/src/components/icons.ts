@@ -26,6 +26,7 @@ import {
   Cable,
   Calendar,
   Camera,
+  CardSim,
   Check,
   CheckSquare,
   ChevronDown,
@@ -40,10 +41,13 @@ import {
   Clock3,
   CloudLightning,
   CloudRain,
+  Columns3,
   Command,
   CookingPot,
   CornerUpLeft,
   Cpu,
+  Database,
+  Disc3,
   DropletOff,
   Droplets,
   DoorClosed,
@@ -53,6 +57,8 @@ import {
   Eye,
   FileText,
   FileUp,
+  FileVideo,
+  Files,
   Film,
   Flame,
   Focus,
@@ -60,11 +66,15 @@ import {
   Gamepad2,
   Gauge,
   Globe,
+  Gpu,
   HardDrive,
   Heart,
   House,
+  Image,
+  Infinity as InfinitySymbol,
   Info,
   Lamp,
+  Laptop,
   Layers,
   LayoutGrid,
   Lightbulb,
@@ -73,6 +83,7 @@ import {
   LockKeyholeOpen,
   MemoryStick,
   Minimize,
+  Minus,
   Monitor,
   Moon,
   MoonStar,
@@ -98,6 +109,7 @@ import {
   Radio,
   Rainbow,
   RefreshCw,
+  RotateCcw,
   RotateCw,
   Router,
   Scan,
@@ -123,11 +135,13 @@ import {
   Terminal,
   TerminalSquare,
   Thermometer,
+  Timer,
   ToggleLeft,
   Trash2,
   Trees,
   Tv,
   Unplug,
+  Usb,
   Utensils,
   Vibrate,
   Video,
@@ -176,6 +190,7 @@ export const UI_ICONS = {
   cable: Cable,
   calendar: Calendar,
   camera: Camera,
+  'card-sim': CardSim,
   check: Check,
   'check-circle': CircleCheck,
   'check-square': CheckSquare,
@@ -189,11 +204,14 @@ export const UI_ICONS = {
   'clock-3': Clock3,
   'cloud-lightning': CloudLightning,
   'cloud-rain': CloudRain,
+  'columns-3': Columns3,
   command: Command,
   'cooking-pot': CookingPot,
   copy: Copy,
   'corner-up-left': CornerUpLeft,
   cpu: Cpu,
+  database: Database,
+  'disc-3': Disc3,
   'droplet-off': DropletOff,
   droplets: Droplets,
   'door-closed': DoorClosed,
@@ -204,6 +222,8 @@ export const UI_ICONS = {
   'eye-off': EyeOff,
   'file-text': FileText,
   'file-up': FileUp,
+  'file-video': FileVideo,
+  files: Files,
   film: Film,
   flame: Flame,
   focus: Focus,
@@ -211,12 +231,16 @@ export const UI_ICONS = {
   gamepad: Gamepad2,
   gauge: Gauge,
   globe: Globe,
+  gpu: Gpu,
   'hard-drive': HardDrive,
   heart: Heart,
   house: House,
+  image: Image,
+  infinity: InfinitySymbol,
   info: Info,
   'key-round': KeyRound,
   lamp: Lamp,
+  laptop: Laptop,
   layers: Layers,
   'layout-grid': LayoutGrid,
   lightbulb: Lightbulb,
@@ -226,6 +250,7 @@ export const UI_ICONS = {
   'memory-stick': MemoryStick,
   menu: Menu,
   minimize: Minimize,
+  minus: Minus,
   monitor: Monitor,
   moon: Moon,
   'moon-star': MoonStar,
@@ -251,6 +276,7 @@ export const UI_ICONS = {
   radio: Radio,
   rainbow: Rainbow,
   'refresh-cw': RefreshCw,
+  'rotate-ccw': RotateCcw,
   'rotate-cw': RotateCw,
   router: Router,
   scan: Scan,
@@ -277,11 +303,13 @@ export const UI_ICONS = {
   terminal: Terminal,
   'terminal-square': TerminalSquare,
   thermometer: Thermometer,
+  timer: Timer,
   'toggle-left': ToggleLeft,
   'trash-2': Trash2,
   trees: Trees,
   tv: Tv,
   unplug: Unplug,
+  usb: Usb,
   utensils: Utensils,
   vibrate: Vibrate,
   video: Video,
@@ -317,6 +345,9 @@ export const DEVICE_ICONS: Readonly<Record<DeviceCategory, UiIconName>> = {
   other: 'layout-grid',
 };
 
+const ICON_SOURCE_CACHE = new Map<string, string>();
+const MAX_ICON_SOURCE_CACHE = 512;
+
 export function iconSource(
   name: UiIconName,
   size = 24,
@@ -325,6 +356,10 @@ export function iconSource(
 ): string {
   const dimension = Number.isFinite(size) && size > 0 ? size : 24;
   const paint = fill === 'currentColor' ? 'currentColor' : 'none';
+  const stroke = Number.isFinite(strokeWidth) ? strokeWidth : 2;
+  const cacheKey = `${name}|${dimension}|${paint}|${stroke}`;
+  const cached = ICON_SOURCE_CACHE.get(cacheKey);
+  if (cached !== undefined) return cached;
   // The element names and attributes come exclusively from the static Lucide catalog above.
   const shapes = UI_ICONS[name]
     .map(([tag, attributes]) => {
@@ -334,7 +369,10 @@ export function iconSource(
       return `<${tag} ${markup}/>`;
     })
     .join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${dimension}" height="${dimension}" fill="${paint}" stroke="currentColor" stroke-width="${Number.isFinite(strokeWidth) ? strokeWidth : 2}" stroke-linecap="round" stroke-linejoin="round">${shapes}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${dimension}" height="${dimension}" fill="${paint}" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round">${shapes}</svg>`;
+  if (ICON_SOURCE_CACHE.size >= MAX_ICON_SOURCE_CACHE) ICON_SOURCE_CACHE.clear();
+  ICON_SOURCE_CACHE.set(cacheKey, svg);
+  return svg;
 }
 
 export interface UiIconProps {

@@ -11,10 +11,22 @@ export interface DiscoveredService {
   readonly txt?: Readonly<Record<string, unknown>>;
 }
 
+export interface HubIdentityClusterInfo {
+  readonly role: 'standalone' | 'coordinator' | 'node' | 'fenced';
+  readonly coordinatorHubId: string;
+  readonly hubCount: number;
+  readonly epoch?: number;
+}
+
 export interface DiscoveredHub {
   readonly id: string;
   readonly hubId: string;
   readonly homeId?: string;
+  readonly homeName?: string;
+  readonly onboarded?: boolean;
+  readonly clusterRole?: 'standalone' | 'coordinator' | 'node' | 'fenced';
+  readonly coordinatorHubId?: string;
+  readonly hubCount?: number;
   readonly name: string;
   readonly url: string;
   readonly host: string;
@@ -28,9 +40,11 @@ export interface HubIdentity {
   readonly hubId: string;
   readonly homeId: string;
   readonly name: string;
+  readonly homeName?: string;
   readonly fingerprint?: string;
   readonly publicKey?: string;
   readonly onboarded?: boolean;
+  readonly cluster?: HubIdentityClusterInfo;
 }
 
 export interface ClientIdentity {

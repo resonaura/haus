@@ -29,6 +29,11 @@ export {
 } from './transport.js';
 
 export { evaluateClockSkew, parseClientTimeHeader, CLIENT_TIME_HEADER } from './time-sync.js';
+export {
+  groupDiscoveredHomeTargets,
+  orderClusterCandidateUrls,
+  stripBonjourInstanceSuffix,
+} from './homes.js';
 
 export type {
   ClientIdentity,
@@ -36,12 +41,18 @@ export type {
   DiscoveredHub,
   DiscoveredService,
   HubIdentity,
+  HubIdentityClusterInfo,
   PairingErrorCode,
   PairingGrant,
   PairingOffer,
   PairingSessionRecord,
   PairingState,
 } from './types.js';
+export type {
+  DiscoveredHomeTarget,
+  DiscoveredHomeTargetType,
+  DiscoveredHubEndpointInput,
+} from './homes.js';
 
 export type { NetworkInterfaceCandidate } from './transport.js';
 export type { ClockSkewAssessment } from './time-sync.js';

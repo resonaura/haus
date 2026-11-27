@@ -347,7 +347,7 @@ export function HacsCommunityView({
                   <BrandIcon
                     kind="hacs"
                     id={repo.domain || repo.full_name}
-                    size={40}
+                    size={42}
                     hint={{
                       name: repo.name,
                       category: repo.category,

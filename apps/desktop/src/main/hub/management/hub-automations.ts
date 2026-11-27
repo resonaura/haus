@@ -3,7 +3,7 @@
 import { translateService } from '../commands';
 import { isRecord, type CompatView } from '../types';
 import { handleHaRuleManagement } from './hub-ha-rule-management';
-import { automationToHaConfig, scriptToHaConfig, toHubTrigger } from './hub-rule-configs';
+import { automationToHaConfig, scriptToHaConfig, toHubTriggerList } from './hub-rule-configs';
 import { toHubCondition, toHubStep, toHubTriggers } from './hub-ha-rule-import';
 import { handleRuleRpc, searchHubRelated } from './hub-related';
 import { haMigration, ruleRecordArray, ruleStepArray } from './hub-rule-transfer';
@@ -212,7 +212,7 @@ export async function handleRuleManagement(
       const triggerBlocks = ruleRecordArray(triggerInput, strict, 'automation_trigger_required');
       const triggers = strict
         ? triggerBlocks.flatMap((block) => toHubTriggers(block, view))
-        : triggerBlocks.map((block) => toHubTrigger(block, view));
+        : triggerBlocks.flatMap((block) => toHubTriggerList(block, view));
       if (strict && triggers.length === 0) throw new Error('automation_trigger_required');
       const conditionInput = body.conditions ?? body.condition;
       const conditionBlocks =

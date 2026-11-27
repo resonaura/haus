@@ -18,6 +18,8 @@ export * from './ha-scenes-import-modal.js';
 export * from './hidden-view.js';
 export * from './integration-details.js';
 export * from './integrations-view.js';
+export * from './integrations/details-view.js';
+export * from './integrations/entry-card.js';
 export * from './integrations/system-summary.js';
 export * from './room-bar.js';
 export * from './rooms-view.js';

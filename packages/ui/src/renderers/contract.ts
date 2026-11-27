@@ -5,9 +5,15 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import type { ColorValue, LengthValue, ViewportMetrics } from '../ir/geometry.js';
+import type {
+  ColorValue,
+  LengthValue,
+  SemanticColorToken,
+  ViewportMetrics,
+} from '../ir/geometry.js';
 import type { ShaderRegistry } from '../ir/materials.js';
 import type { UiNode, UiTheme } from '../ir/node.js';
+import type { Theme, ThemeAppearance } from '../ir/theme.js';
 
 export type RendererTarget = 'react-dom' | 'react-native' | 'native-ir';
 
@@ -134,6 +140,25 @@ export function resolveColorToCss(
     return `rgb(${r}, ${g}, ${b})`;
   }
   return `rgba(${r}, ${g}, ${b}, ${Number(a.toFixed(3))})`;
+}
+
+function camelToKebab(token: string): string {
+  return token.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+}
+
+/** Exports a resolved `Theme` appearance as `--haus-*` CSS custom properties. */
+export function resolveThemeCssVariables(
+  theme: Theme,
+  appearance: ThemeAppearance,
+): Readonly<Record<string, string>> {
+  const resolved = theme.forAppearance(appearance);
+  const vars: Record<string, string> = {};
+  for (const [token, value] of Object.entries(resolved.palette.colors) as Array<
+    [SemanticColorToken, ColorValue]
+  >) {
+    vars[`--haus-${camelToKebab(token)}`] = resolveColorToCss(value, resolved, false);
+  }
+  return vars;
 }
 
 /** Resolves a `LengthValue` into CSS string or pixel number. */

@@ -27,6 +27,8 @@
         "NSBonjourServices": [
           "_bonjour._tcp",
           "_lnp._tcp",
+          "_haus-hub._tcp",
+          "_haus._tcp",
           "_home-assistant._tcp",
           "_haus-nvr._tcp"
         ]

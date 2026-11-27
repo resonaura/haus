@@ -102,6 +102,7 @@ export function buildServerSidebarNav({
   kind,
   managed,
   hasNvr,
+  canManage = true,
   status,
   activeTab,
   onSelectTab,
@@ -111,6 +112,7 @@ export function buildServerSidebarNav({
   readonly kind: ServerSummaryRecord['kind'];
   readonly managed: boolean;
   readonly hasNvr: boolean;
+  readonly canManage?: boolean;
   readonly status?: 'online' | 'offline' | 'paused' | 'unknown';
   readonly activeTab: ServerDetailTabId;
   readonly onSelectTab: (tab: ServerDetailTabId) => void;
@@ -127,6 +129,11 @@ export function buildServerSidebarNav({
       : []),
     ...(hasNvr
       ? ([{ id: 'nvr', testId: 'server-tab-nvr', label: 'NVR', icon: 'video' }] as const)
+      : []),
+    ...(canManage
+      ? ([
+          { id: 'settings', testId: 'server-tab-settings', label: 'Settings', icon: 'settings-2' },
+        ] as const)
       : []),
   ];
   return {

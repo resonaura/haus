@@ -69,7 +69,7 @@ export function IntegrationDetailsModal({
             style={{ layout: { width: pct(100) } }}
           >
             <Row align="center" gapPx={12}>
-              <BrandIcon kind={iconKind} id={domain} size={42} hint={{ name: title }} />
+              <BrandIcon kind={iconKind} id={domain} size={48} hint={{ name: title }} />
               <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
                 <Text size={14.5} weight={600}>
                   {title}

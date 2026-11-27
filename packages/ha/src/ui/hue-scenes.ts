@@ -59,47 +59,69 @@ export function hueSceneArtwork(
       groups.set(id, name);
     }
   }
+  const areas = new Map(snapshot.areas.map((area) => [area.area_id, area.name]));
   const scenes = resources.filter((resource) => resource.type === 'scene');
   const result: NonNullable<Snapshot['sceneArtwork']> = {};
   for (const state of snapshot.states) {
     if (!state.entity_id.startsWith('scene.')) continue;
     const entry = snapshot.entities.find((entity) => entity.entity_id === state.entity_id);
+    const entryConfigId =
+      typeof entry?.config_entry_id === 'string' ? entry.config_entry_id : undefined;
+    const isHueEntry =
+      entry?.platform === 'hue' ||
+      entryConfigId === configEntryId ||
+      Boolean(entryConfigId?.endsWith(`:${configEntryId}`));
     if (
-      entry?.platform !== 'hue' ||
-      (entry.config_entry_id && entry.config_entry_id !== configEntryId)
+      !isHueEntry ||
+      (entryConfigId &&
+        entryConfigId !== configEntryId &&
+        !entryConfigId.endsWith(`:${configEntryId}`))
     )
       continue;
-    const device = snapshot.devices.find((item) => item.id === entry.device_id);
+    const device = snapshot.devices.find((item) => item.id === entry?.device_id);
     const groupIds = Array.isArray(device?.identifiers)
       ? device.identifiers.flatMap((identifier) =>
-          Array.isArray(identifier) && identifier[0] === 'hue' && typeof identifier[1] === 'string'
-            ? [identifier[1]]
-            : [],
+          Array.isArray(identifier) && typeof identifier[1] === 'string' ? [identifier[1]] : [],
         )
       : [];
+    const areaId = entry?.area_id ?? device?.area_id ?? undefined;
     const groupName =
-      typeof state.attributes.group_name === 'string' ? state.attributes.group_name : undefined;
+      typeof state.attributes.group_name === 'string'
+        ? state.attributes.group_name
+        : (areaId ? areas.get(areaId) : undefined) ?? device?.name ?? undefined;
     const name =
       typeof state.attributes.name === 'string'
         ? state.attributes.name
         : scenePresentation(state, groupName).title;
-    const exact = scenes.filter((scene) => scene.id === entry.unique_id);
-    const candidates = exact.length
+    const rawUniqueId = entry?.unique_id ?? '';
+    const strippedUniqueId = rawUniqueId.replace(/^ep_/, '').replace(/:scene$/, '');
+    const exact = scenes.filter(
+      (scene) =>
+        typeof scene.id === 'string' &&
+        (scene.id === rawUniqueId || scene.id === strippedUniqueId),
+    );
+    const byGroup = exact.length
       ? exact
       : scenes.filter((scene) => {
           if (normalized(record(scene.metadata).name) !== normalized(name)) return false;
           const groupId = record(scene.group).rid;
-          return (
-            (typeof groupId === 'string' && groupIds.includes(groupId)) ||
-            (groupName &&
-              typeof groupId === 'string' &&
-              normalized(groups.get(groupId)) === normalized(groupName))
-          );
+          if (typeof groupId !== 'string') return false;
+          if (groupIds.includes(groupId)) return true;
+          const bridgeGroupName = groups.get(groupId);
+          if (groupName && bridgeGroupName && normalized(bridgeGroupName) === normalized(groupName)) {
+            return true;
+          }
+          if (bridgeGroupName) {
+            const groupSlug = normalized(bridgeGroupName).replace(/[^a-z0-9]+/g, '_');
+            if (groupSlug && state.entity_id.includes(groupSlug)) return true;
+          }
+          return false;
         });
+    const candidates = exact.length ? exact : byGroup;
     // Redacted resource IDs can still be matched by the group and scene name.
     // A duplicate name without a unique group match is deliberately left unresolved.
     if (candidates.length !== 1) continue;
-    const scene = candidates[0];
+    const scene = candidates[0]!;
     const actions = records(scene.actions).map((entry) => record(entry.action));
     const litActions = actions.filter((action) => record(action.on).on !== false);
     const palette = record(scene.palette);

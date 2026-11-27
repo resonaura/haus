@@ -5,4 +5,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export { OptimisticState, EntityActionQueue } from '@haus/ha/optimistic';
+export {
+  EntityActionQueue,
+  HAUS_SCENE_QUEUE_KEY,
+  OptimisticSessionController,
+  OptimisticState,
+  actionQueueKey,
+  coalesceHausActions,
+  dispatchQueuedHausAction,
+  executeQueuedHausAction,
+  extractContextId,
+  isCoalesceableLightAction,
+  isStatelessAction,
+  mergeLightActions,
+} from '@haus/core/optimistic';

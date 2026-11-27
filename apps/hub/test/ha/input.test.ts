@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { directRecordingInput } from '@haus/ha/node/recording-input';
+import { directRecordingInput } from '@haus/core/servers';
 import { HaClient } from '@haus/hub/ha';
 
 const camera = {

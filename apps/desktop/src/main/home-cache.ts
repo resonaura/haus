@@ -1,2 +1,3 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-export { homeCacheScope, HomeCache } from '@haus/ha/native/home-cache';
+export { HomeCache } from '@haus/core/hub';
+export { homeCacheScope } from '@haus/ha/native/home-cache';

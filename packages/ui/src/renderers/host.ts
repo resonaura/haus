@@ -70,6 +70,7 @@ export interface HostBoxProps {
   readonly style?: UiStyleSpec;
   readonly surfaceTokens?: HostSurfaceTokens;
   readonly motion?: UiMotionSpec;
+  readonly layoutTransition?: string;
   readonly role?: string;
   readonly title?: string;
   readonly tabIndex?: number;
@@ -481,6 +482,7 @@ export type UiContentHost = Pick<
       props: {
         title: string;
         onClose: () => void;
+        closing?: boolean;
         backdrop: UiStyleSpec;
         panel: UiStyleSpec;
         children: React.ReactNode;

@@ -7,6 +7,7 @@
 
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { createCanvas } from '@napi-rs/canvas';
 import { describe, expect, it } from 'vitest';
 import {
   buildDemoAppsState,
@@ -26,6 +27,7 @@ import {
   DeviceTile,
   DiscoveredIntegrationsPanel,
   DiscoveryRadarPanel,
+  DOM_HOST_ADAPTER,
   formatDiscoverySourceLabel,
   HausUiProvider,
   IntegrationsOverviewView,
@@ -175,13 +177,45 @@ describe('@haus/ui brand icons, unified management views, and discovery', () => 
     expect(monogramTile).not.toBeNull();
     expect(monogramTile?.dataUrl).toMatch(/^data:image\/png;base64,/);
 
-    const shadowed = await applyBrandIconDropShadow(tile!.dataUrl, 44, true);
+    const shadowed = await applyBrandIconDropShadow(tile!.dataUrl, 46, true, 2);
     expect(shadowed).not.toBeNull();
-    expect(shadowed?.bleedFraction).toBe(BRAND_ICON_SHADOW_BLEED_FRACTION);
+    expect(shadowed?.bleedFraction).toBeGreaterThanOrEqual(0.2);
+    expect(shadowed?.bleedFraction).toBeLessThanOrEqual(BRAND_ICON_SHADOW_BLEED_FRACTION + 0.06);
+    expect(shadowed?.displaySizePt).toBe(70);
     expect(shadowed?.dataUrl).toMatch(/^data:image\/png;base64,/);
+    const pngBytes = Buffer.from(
+      shadowed!.dataUrl.slice('data:image/png;base64,'.length),
+      'base64',
+    );
+    expect(pngBytes.readUInt32BE(16)).toBe(140);
+    expect(pngBytes.readUInt32BE(20)).toBe(140);
+
+    // Uniform sizing guarantee: 64px small source, 256px full-bleed (tileFraction=1.0), and
+    // 256px wide-margin (tileFraction=0.78) tiles must all normalize to the exact same 140×140
+    // (70pt) canvas and 92×92 (46pt) visible body so icons in the same list never vary in size.
+    const makeSolidTile = (dim: number, bodyFrac: number): string => {
+      const c = createCanvas(dim, dim);
+      const ctx = c.getContext('2d');
+      const body = Math.round(dim * bodyFrac);
+      const off = Math.round((dim - body) / 2);
+      ctx.fillStyle = '#4488ff';
+      ctx.fillRect(off, off, body, body);
+      return c.toDataURL('image/png');
+    };
+    for (const srcUrl of [
+      makeSolidTile(64, 0.9),
+      makeSolidTile(256, 1.0),
+      makeSolidTile(256, 0.78),
+    ]) {
+      const out = await applyBrandIconDropShadow(srcUrl, 46, true, 2);
+      expect(out?.displaySizePt).toBe(70);
+      const buf = Buffer.from(out!.dataUrl.slice('data:image/png;base64,'.length), 'base64');
+      expect(buf.readUInt32BE(16)).toBe(140);
+      expect(buf.readUInt32BE(20)).toBe(140);
+    }
   }, 15_000);
 
-  it('preserves Electron container sizing, @haus/icons enclosure geometry, and exact drop-shadows on DOM', () => {
+  it('preserves Electron container sizing, @haus/icons enclosure geometry, tileFraction compensation, and exact drop-shadows on DOM', () => {
     const inheritLight = renderToStaticMarkup(
       React.createElement(
         HausUiProvider,
@@ -192,6 +226,10 @@ describe('@haus/ui brand icons, unified management views, and discovery', () => 
     expect(inheritLight).toContain('brand-icon-surface is-enclosure-rendered');
     expect(inheritLight).toContain('width:100%');
     expect(inheritLight).toContain('height:100%');
+    expect(inheritLight).toContain('width:111.1111%');
+    expect(inheritLight).toContain('height:111.1111%');
+    expect(inheritLight).toContain('max-width:111.1111%');
+    expect(inheritLight).toContain('top:-5.5556%');
     expect(inheritLight).toContain('overflow:visible');
     expect(inheritLight).toContain('filter:drop-shadow(0px 1.25px 2.25px rgba(0, 0, 0, 0.26))');
     expect(inheritLight).not.toContain('corner-shape');
@@ -206,7 +244,32 @@ describe('@haus/ui brand icons, unified management views, and discovery', () => 
     );
     expect(sizedDark).toContain('width:60px');
     expect(sizedDark).toContain('height:60px');
+    expect(sizedDark).toContain('min-width:60px');
+    expect(sizedDark).toContain('max-width:60px');
+    expect(sizedDark).toContain('width:111.1111%');
+    expect(sizedDark).toContain('max-width:111.1111%');
     expect(sizedDark).toContain('filter:drop-shadow(0px 1.5px 2.75px rgba(0, 0, 0, 0.42))');
+
+    // Non-DOM contentHost (as GPUIX passes `contentHost={GPUIX_CONTENT_HOST}` while `host`
+    // defaults to `DOM_HOST_ADAPTER`) must enter the GPUIX shadow layout (`70px`, `-12px`)
+    // rather than mistakenly taking the DOM percentage branch (`111.1111%`).
+    const nonDomContentHost = Object.create(DOM_HOST_ADAPTER) as typeof DOM_HOST_ADAPTER;
+    const gpuiRendered = renderToStaticMarkup(
+      React.createElement(
+        HausUiProvider,
+        {
+          mode: 'dark',
+          contentHost: nonDomContentHost,
+          brandIcons: { applyTileShadow: applyBrandIconDropShadow },
+        },
+        React.createElement(BrandIcon, { kind: 'integration', id: 'hue', size: 46 }),
+      ),
+    );
+    expect(gpuiRendered).toContain('width:70px');
+    expect(gpuiRendered).toContain('height:70px');
+    expect(gpuiRendered).toContain('top:-12px');
+    expect(gpuiRendered).toContain('left:-12px');
+    expect(gpuiRendered).not.toContain('111.1111%');
   });
 
   it('renders unified Integrations, Discovered, Apps, and Discovery Radar views with BrandIcon and GlassRim', () => {

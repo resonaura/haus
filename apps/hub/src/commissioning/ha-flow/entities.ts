@@ -113,6 +113,9 @@ export class HaIntegrationEntities {
     this.failureCounts.delete(entryId);
     this.states.delete(entryId);
   }
+  invalidateState(entryId: string): void {
+    this.states.delete(entryId);
+  }
   async close(): Promise<void> {
     this.stopped = true;
     this.detachPushListeners();
@@ -172,14 +175,12 @@ export class HaIntegrationEntities {
       this.eventSequence = 0;
     }
   }
-
   private syncEventSession(sessionId?: string): boolean {
     if (!sessionId || this.eventSessionId === sessionId) return false;
     this.eventSessionId = sessionId;
     this.eventSequence = 0;
     return true;
   }
-
   private clearEntryCaches(entryId: string): void {
     for (const [entityId, entity] of this.latestEntities) {
       if (entity.entryId !== entryId) continue;

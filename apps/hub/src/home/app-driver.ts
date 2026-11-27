@@ -27,7 +27,6 @@ import {
   type AppUpdateCheckResult,
   type MarketplaceAppEntry,
   type ResolvedAppImage,
-  type AppInstallProgressUpdate,
 } from '@haus/apps';
 import type { LiveService } from '../live/types.js';
 import type { StandaloneHomePersistence } from './home.persistence.js';
@@ -35,6 +34,7 @@ import type { AppSupervisor, AppSupervisorOptions } from './supervisor.js';
 import { AppOptions, persistAppOptions } from './options.js';
 import type { HomeClusterCoordinator } from './cluster-apps.js';
 import { resolveInstalledAppRuntime, streamInstalledAppLogs } from './apps/log-stream.js';
+import { AppInstallProgressTracker } from './apps/progress.js';
 import { reconcileDockerApps } from './apps/reconcile.js';
 import type {
   AppInstallProgress,
@@ -54,8 +54,7 @@ export class StandaloneAppManager {
   private baseDataDirectory?: string;
   private clusterCoordinator?: HomeClusterCoordinator;
   private readonly installing = new Set<string>();
-  private readonly installProgress = new Map<string, AppInstallProgress>();
-  private readonly progressPublishedAt = new Map<string, number>();
+  private readonly progressTracker: AppInstallProgressTracker;
 
   constructor(
     private readonly installedApps: Map<string, InstalledAppEntry>,
@@ -69,7 +68,9 @@ export class StandaloneAppManager {
     private readonly options = new AppOptions(dataRoot),
     public readonly catalog: AppCatalog = AppCatalog.createDefaultCatalog(),
     private readonly runtimeBridges = new Map<AppRuntimeType, StandaloneRuntimeBridge>(),
-  ) {}
+  ) {
+    this.progressTracker = new AppInstallProgressTracker(liveService);
+  }
 
   setClusterCoordinator(coordinator: HomeClusterCoordinator): void {
     this.clusterCoordinator = coordinator;
@@ -194,7 +195,11 @@ export class StandaloneAppManager {
     if (this.installedApps.has(appId)) throw Error('app_already_installed');
     if (this.installing.has(appId)) throw Error('app_install_in_progress');
     this.installing.add(appId);
-    this.setInstallProgress(appId, { stage: 'validating' });
+    this.progressTracker.reset(appId);
+    this.progressTracker.update(appId, {
+      stage: 'validating',
+      logLine: `Installing ${validation.manifest.name} (${appId} v${validation.manifest.version})`,
+    });
 
     try {
       const assessment = assessAppPermissions(validation.manifest, grantedPermissions);
@@ -223,7 +228,7 @@ export class StandaloneAppManager {
       if (runtimeBridge) {
         const res = await runtimeBridge.install(
           { manifest: validation.manifest, config: config ?? {} },
-          (progress) => this.setInstallProgress(appId, progress),
+          (progress) => this.progressTracker.update(appId, progress),
         );
         extraLogs = res.logs ?? [];
       } else if (this.lifecycle) {
@@ -236,11 +241,18 @@ export class StandaloneAppManager {
             validation.manifest,
             grantedPermissions,
             runtimeEnvironment,
-            (progress) => this.setInstallProgress(appId, progress),
+            (progress) => this.progressTracker.update(appId, progress),
           );
           containerId = res.containerId;
           image = res.image;
-          this.setInstallProgress(appId, { stage: 'starting' }, image);
+          this.progressTracker.update(
+            appId,
+            {
+              stage: 'starting',
+              logLine: `Created container ${containerId.slice(0, 12)}; starting service…`,
+            },
+            image,
+          );
           try {
             await this.lifecycle.start(containerId);
           } catch {
@@ -278,7 +290,14 @@ export class StandaloneAppManager {
       const inventory = await this.apps.list(actorId);
       const created = inventory.apps.find((a) => a.source.externalId === validation.manifest!.id);
       this.liveService?.publish('apps');
-      this.setInstallProgress(appId, { stage: 'complete' }, image);
+      this.progressTracker.update(
+        appId,
+        {
+          stage: 'complete',
+          logLine: `${validation.manifest.name} is installed and running.`,
+        },
+        image,
+      );
       return {
         appId: created?.id ?? validation.manifest.id,
         manifest: validation.manifest,
@@ -287,7 +306,13 @@ export class StandaloneAppManager {
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       const errorCode = /^[a-z][a-z0-9_]{0,79}$/.test(message) ? message : 'app_install_failed';
-      this.setInstallProgress(appId, { stage: 'failed' }, undefined, errorCode);
+      this.progressTracker.update(
+        appId,
+        { stage: 'failed' },
+        undefined,
+        errorCode,
+        message || errorCode,
+      );
       throw error;
     } finally {
       this.installing.delete(appId);
@@ -295,35 +320,7 @@ export class StandaloneAppManager {
   }
 
   getInstallProgress(appId: string): AppInstallProgress | undefined {
-    const progress = this.installProgress.get(appId);
-    return progress ? { ...progress } : undefined;
-  }
-
-  private setInstallProgress(
-    appId: string,
-    update: AppInstallProgressUpdate,
-    image?: ResolvedAppImage,
-    errorCode?: string,
-  ): void {
-    this.installProgress.set(appId, {
-      appId,
-      ...update,
-      updatedAt: new Date().toISOString(),
-      ...(errorCode ? { errorCode } : {}),
-      ...(image ? { image } : {}),
-    });
-    if (this.installProgress.size > 32) {
-      const oldest = [...this.installProgress.values()].sort((a, b) =>
-        a.updatedAt.localeCompare(b.updatedAt),
-      )[0];
-      if (oldest) this.installProgress.delete(oldest.appId);
-    }
-    const now = Date.now();
-    const lastPublished = this.progressPublishedAt.get(appId) ?? 0;
-    if (now - lastPublished >= 250 || update.stage === 'complete' || update.stage === 'failed') {
-      this.progressPublishedAt.set(appId, now);
-      this.liveService?.publish('apps');
-    }
+    return this.progressTracker.get(appId);
   }
 
   async listApps(actorId: string, signal?: AbortSignal): Promise<AppInventory> {

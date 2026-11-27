@@ -11,14 +11,15 @@ import { join, resolve } from 'node:path';
 import { AppCatalog } from '@haus/apps';
 import {
   BrandIconCache,
-  resolveBrandIcon,
-  resolveBrandIconWithMeta,
+  resolveCoreBrandIcon,
+  resolveCoreBrandIconWithMeta,
+  validateBrandIconInput,
   type BrandIconHint,
   type BrandIconKind,
-} from '@haus/ha/native/brand-icons';
-import { validateBrandIconInput } from '@haus/ha/native/brand-fallbacks';
+} from '@haus/core/brands';
 import { resolveIconTintColor, type IconAppearance, type ResolvedIconVariation } from '@haus/icons';
 import {
+  createNodeBrandLocalLookup,
   IconRenderService,
   type IconRenderServiceStatus,
   type IconSourceJob,
@@ -198,6 +199,14 @@ export class BrandsService implements OnApplicationBootstrap, OnModuleDestroy {
     };
   }
 
+  private createLocalLookup() {
+    return createNodeBrandLocalLookup({
+      localIntegrationDirs: this.getLocalIntegrationDirs(),
+      localPluginDirs: this.getLocalPluginDirs(),
+      localAddonDirs: this.getLocalAddonDirs(),
+    });
+  }
+
   private buildSourceJob(
     kind: BrandIconKind,
     id: string,
@@ -210,16 +219,14 @@ export class BrandsService implements OnApplicationBootstrap, OnModuleDestroy {
       key,
       label: `${kind}:${id}`,
       fetchSource: () =>
-        resolveBrandIconWithMeta({
+        resolveCoreBrandIconWithMeta({
           kind,
           id,
           // Always fetch canonical light/original brand source once — the 1:1 GNOME
           // engine generates Default, Dark, Clear, and Tinted cleanly from source pixels!
           dark: false,
           hint: enrichedHint,
-          localIntegrationDirs: this.getLocalIntegrationDirs(),
-          localPluginDirs: this.getLocalPluginDirs(),
-          localAddonDirs: this.getLocalAddonDirs(),
+          readLocalIcon: this.createLocalLookup(),
           fetchFn: this.fetchImpl,
           cache: this.cache,
         }),
@@ -229,14 +236,12 @@ export class BrandsService implements OnApplicationBootstrap, OnModuleDestroy {
   /** Backward-compatible raw source resolver. */
   async resolve(input: ResolveHubBrandIconInput): Promise<string | null> {
     const enrichedHint = this.enrichHint(input.id, input.hint);
-    return resolveBrandIcon({
+    return resolveCoreBrandIcon({
       kind: input.kind,
       id: input.id,
       dark: input.dark === true,
       hint: enrichedHint,
-      localIntegrationDirs: this.getLocalIntegrationDirs(),
-      localPluginDirs: this.getLocalPluginDirs(),
-      localAddonDirs: this.getLocalAddonDirs(),
+      readLocalIcon: this.createLocalLookup(),
       fetchFn: this.fetchImpl,
       cache: this.cache,
     });

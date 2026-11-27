@@ -470,7 +470,7 @@ async function testRealHomeWorkspaceModalBackdrop(): Promise<void> {
     );
 
     humanClick(renderer, bx, by);
-    await sleep(40);
+    await sleep(240);
     renderer.flush();
     assert.equal(
       renderer.findByTestId('dialog-panel'),

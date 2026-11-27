@@ -5,74 +5,27 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import {
-  HomeRuntime,
-  RuntimeError,
-  type ConnectionState,
-  type RuntimeTransport,
-} from '@haus/core/runtime';
+import { HomeRuntime, RuntimeError } from '@haus/core/runtime';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { createStore, type StoreApi } from 'zustand/vanilla';
+import { createStore } from 'zustand/vanilla';
+import {
+  OPTIMISTIC_TIMEOUT_NOTICE,
+  type HomeState,
+  type HomeStore,
+  type HomeStoreOptions,
+  type Projection,
+  type SnapshotFreshness,
+  type ValueObservation,
+} from './types.js';
 
-export interface Projection<S, V, A> {
-  copy(snapshot: S): S;
-  copyValue(value: V): V;
-  values(snapshot: S): readonly V[];
-  withValues(snapshot: S, values: readonly V[]): S;
-  pending(snapshot: S): readonly string[];
-  subject(action: A): string;
-  optimistic: {
-    project(snapshot: S): S;
-    clear(): void;
-    begin(snapshot: S, action: A, at: number): number | undefined;
-    acknowledge(id: number, correlation: string | undefined, snapshot: S, at: number): void;
-    reject(id: number, at: number): void;
-    reconcile(value: V, correlation: undefined, at: number): unknown;
-    expire(at: number): number;
-    takeFailures(): string[];
-  };
-}
-
-export type SnapshotFreshness = 'none' | 'cached' | 'live';
-export interface HomeState<S, V, A> {
-  homeId: string | null;
-  connection: ConnectionState;
-  snapshot: S | null;
-  snapshotFreshness: SnapshotFreshness;
-  entities: readonly V[];
-  entitiesFreshness: SnapshotFreshness;
-  lastLiveAt: string | null;
-  revision: number;
-  commandErrors: Readonly<Record<string, string>>;
-  commandNotice: string | null;
-  hydrateSnapshot(homeId: string, snapshot: S): void;
-  hydrateLiveSnapshot(homeId: string, snapshot: S): void;
-  confirmedSnapshot(): S | null;
-  connectHome(homeId: string, cachedSnapshot?: S): Promise<void>;
-  disconnect(): void;
-  execute(action: A): Promise<void>;
-  callService(action: A): Promise<void>;
-  clearCommandError(entityId: string): void;
-  dispose(): void;
-}
-
-export interface HomeStoreOptions<S, V, A> {
-  projection: Projection<S, V, A>;
-  openTransport(homeId: string): Promise<RuntimeTransport<V, A>>;
-  now?(): number;
-}
-
-interface SelectorSubscribe<T> {
-  (listener: (state: T, previous: T) => void): () => void;
-  <Value>(
-    selector: (state: T) => Value,
-    listener: (value: Value, previous: Value) => void,
-    options?: { equalityFn?: (left: Value, right: Value) => boolean; fireImmediately?: boolean },
-  ): () => void;
-}
-
-export type HomeStore<S, V, A> = Omit<StoreApi<HomeState<S, V, A>>, 'subscribe'> & {
-  subscribe: SelectorSubscribe<HomeState<S, V, A>>;
+export {
+  OPTIMISTIC_TIMEOUT_NOTICE,
+  type HomeState,
+  type HomeStore,
+  type HomeStoreOptions,
+  type Projection,
+  type SnapshotFreshness,
+  type ValueObservation,
 };
 
 function actionError(error: unknown): string {
@@ -83,9 +36,15 @@ function safeActionFailure(error: unknown): RuntimeError {
   return error instanceof RuntimeError ? error : new RuntimeError('connection-failed');
 }
 
+function unrefTimer(timer: unknown): void {
+  if (timer && typeof timer === 'object' && 'unref' in timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+}
+
 /**
- * One home-scoped source of truth for devices. Cached entities remain visible offline,
- * while freshness and connectivity stay separate so cached state is never shown as live.
+ * One home-scoped source of truth for devices across every OS. Cached entities remain visible
+ * offline, while freshness, connectivity, and reversible optimistic overlays stay strictly separate.
  */
 export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
   const now = options.now ?? Date.now;
@@ -95,13 +54,22 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
   let disposed = false;
   let store: HomeStore<S, V, A>;
 
+  const runExpiry = (at: number): { expired: number; timedOut: number } =>
+    optimistic.expireTransactions
+      ? optimistic.expireTransactions(at)
+      : { expired: optimistic.expire(at), timedOut: 0 };
+
   const project = () => {
     const snapshot = rawSnapshot ? optimistic.project(rawSnapshot) : null;
     const pendingEntityIds = snapshot ? options.projection.pending(snapshot) : [];
     if (pendingEntityIds.length > 0 && expiryTimer === undefined) {
       expiryTimer = setInterval(() => {
-        if (optimistic.expire(now()) > 0) publishProjection();
-      }, 1000);
+        const { expired, timedOut } = runExpiry(now());
+        if (expired > 0) {
+          publishProjection(timedOut > 0 ? OPTIMISTIC_TIMEOUT_NOTICE : undefined);
+        }
+      }, 500);
+      unrefTimer(expiryTimer);
     } else if (pendingEntityIds.length === 0 && expiryTimer !== undefined) {
       clearInterval(expiryTimer);
       expiryTimer = undefined;
@@ -109,15 +77,40 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
     return snapshot;
   };
 
-  const publishProjection = () => {
+  const publishProjection = (noticeOverride?: string) => {
+    const failures = optimistic.takeFailures();
+    const nextNotice = noticeOverride ?? failures.at(-1);
     store.setState((state) => {
       const snapshot = project();
       return {
         snapshot,
         entities: snapshot ? options.projection.values(snapshot) : state.entities,
+        commandNotice: nextNotice ?? state.commandNotice,
         revision: state.revision + 1,
       };
     });
+  };
+
+  const reconcileIncomingValues = (incoming: readonly V[], correlationId?: string): V[] => {
+    const at = now();
+    const idOf = options.projection.valueId;
+    const previousById =
+      idOf && rawSnapshot
+        ? new Map(options.projection.values(rawSnapshot).map((item) => [idOf(item), item]))
+        : undefined;
+    const accepted: V[] = [];
+    for (const rawValue of incoming) {
+      const copied = options.projection.copyValue(rawValue);
+      const result = optimistic.reconcile(copied, correlationId, at);
+      if (result === false && idOf && previousById) {
+        const previous = previousById.get(idOf(copied));
+        if (previous) accepted.push(previous);
+        continue;
+      }
+      accepted.push(copied);
+    }
+    runExpiry(at);
+    return accepted;
   };
 
   const client = new HomeRuntime(
@@ -145,12 +138,10 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
       values(homeId, entities) {
         const state = store.getState();
         if (state.homeId !== homeId || state.connection !== 'connected') return;
-        const nextEntities = entities.map(options.projection.copyValue);
+        const nextEntities = reconcileIncomingValues(entities);
         if (rawSnapshot) rawSnapshot = options.projection.withValues(rawSnapshot, nextEntities);
-        for (const entity of nextEntities) optimistic.reconcile(entity, undefined, now());
-        optimistic.expire(now());
         const failures = optimistic.takeFailures();
-        const snapshot = rawSnapshot ? optimistic.project(rawSnapshot) : null;
+        const snapshot = project();
         store.setState((current) => ({
           snapshot,
           snapshotFreshness: rawSnapshot ? 'live' : current.snapshotFreshness,
@@ -160,6 +151,9 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
           revision: current.revision + 1,
           commandNotice: failures.at(-1) ?? current.commandNotice,
         }));
+      },
+      observation(homeId, observation) {
+        store.getState().applyObservation(homeId, observation);
       },
       authRequired(homeId) {
         if (store.getState().homeId !== homeId) return;
@@ -171,7 +165,10 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
         }));
       },
     },
-    options.projection.subject,
+    {
+      subject: options.projection.subject,
+      coalesce: options.projection.coalesce,
+    },
   );
 
   store = createStore<HomeState<S, V, A>>()(
@@ -210,15 +207,14 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
       hydrateLiveSnapshot(homeId, snapshot) {
         const current = get();
         if (disposed || current.homeId !== homeId || current.connection !== 'connected') return;
-        // Registry/bootstrap replies can finish after newer entity subscriptions.
-        // Preserve the raw live facts, never the optimistic projection shown by the UI.
         const states =
           current.entitiesFreshness === 'live'
             ? rawSnapshot
               ? options.projection.values(rawSnapshot)
               : [...current.entities]
-            : options.projection.values(snapshot);
+            : reconcileIncomingValues(options.projection.values(snapshot));
         rawSnapshot = options.projection.copy(options.projection.withValues(snapshot, states));
+        const failures = optimistic.takeFailures();
         const projected = project();
         set((state) => ({
           snapshot: projected,
@@ -226,6 +222,78 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
           snapshotFreshness: 'live',
           entitiesFreshness: 'live',
           lastLiveAt: new Date(now()).toISOString(),
+          commandNotice: failures.at(-1) ?? state.commandNotice,
+          revision: state.revision + 1,
+        }));
+      },
+      syncLiveSnapshot(homeId, snapshot) {
+        const current = get();
+        if (disposed || current.homeId !== homeId || current.connection !== 'connected') return;
+        const cleaned = options.projection.copy(snapshot);
+        const reconciled = reconcileIncomingValues(options.projection.values(cleaned));
+        rawSnapshot = options.projection.withValues(cleaned, reconciled);
+        const failures = optimistic.takeFailures();
+        const projected = project();
+        set((state) => ({
+          snapshot: projected,
+          entities: projected ? options.projection.values(projected) : reconciled,
+          snapshotFreshness: 'live',
+          entitiesFreshness: 'live',
+          lastLiveAt: new Date(now()).toISOString(),
+          commandNotice: failures.at(-1) ?? state.commandNotice,
+          revision: state.revision + 1,
+        }));
+      },
+      applyObservation(homeId, observation) {
+        const current = get();
+        const idOf = options.projection.valueId;
+        if (disposed || current.homeId !== homeId || current.connection !== 'connected' || !idOf)
+          return;
+        const at = now();
+        if (observation.value !== null) {
+          const copied = options.projection.copyValue(observation.value);
+          if (optimistic.reconcile(copied, observation.correlationId, at) === false) return;
+          runExpiry(at);
+          if (rawSnapshot) {
+            const existing = options.projection.values(rawSnapshot);
+            const idx = existing.findIndex((item) => idOf(item) === observation.entityId);
+            const nextValues =
+              idx >= 0
+                ? existing.map((item, i) => (i === idx ? copied : item))
+                : [...existing, copied];
+            rawSnapshot = options.projection.withValues(rawSnapshot, nextValues);
+          }
+          const failures = optimistic.takeFailures();
+          const projected = project();
+          set((state) => {
+            const base = state.entities;
+            const idx = base.findIndex((item) => idOf(item) === observation.entityId);
+            const fallback =
+              idx >= 0 ? base.map((item, i) => (i === idx ? copied : item)) : [...base, copied];
+            return {
+              snapshot: projected,
+              snapshotFreshness: rawSnapshot ? 'live' : state.snapshotFreshness,
+              entities: projected ? options.projection.values(projected) : fallback,
+              entitiesFreshness: 'live',
+              lastLiveAt: new Date(at).toISOString(),
+              commandNotice: failures.at(-1) ?? state.commandNotice,
+              revision: state.revision + 1,
+            };
+          });
+          return;
+        }
+        if (rawSnapshot) {
+          const filtered = options.projection
+            .values(rawSnapshot)
+            .filter((item) => idOf(item) !== observation.entityId);
+          rawSnapshot = options.projection.withValues(rawSnapshot, filtered);
+        }
+        const projected = project();
+        set((state) => ({
+          snapshot: projected,
+          entities: projected
+            ? options.projection.values(projected)
+            : state.entities.filter((item) => idOf(item) !== observation.entityId),
           revision: state.revision + 1,
         }));
       },
@@ -286,44 +354,67 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
         }));
       },
       execute(action) {
-        return get().callService(action);
+        return get().executeBatch([action]);
       },
-      async callService(action) {
+      callService(action) {
+        return get().executeBatch([action]);
+      },
+      async executeBatch(actions) {
         if (disposed) throw new RuntimeError('session-changed');
         const { homeId, connection } = get();
         if (!homeId || connection !== 'connected') throw new RuntimeError('offline');
-        const transactionId = rawSnapshot
-          ? optimistic.begin(rawSnapshot, action, now())
-          : undefined;
-        if (transactionId !== undefined) publishProjection();
-        try {
-          const response = await client.execute(action);
-          if (transactionId !== undefined && rawSnapshot) {
-            optimistic.acknowledge(transactionId, response.correlationId, rawSnapshot, now());
-            publishProjection();
-          }
-          set((state) => {
-            const commandErrors = { ...state.commandErrors };
-            delete commandErrors[options.projection.subject(action)];
-            return { commandErrors, revision: state.revision + 1 };
-          });
-        } catch (error) {
-          if (transactionId !== undefined) optimistic.reject(transactionId, now());
-          const message = actionError(error);
-          if (get().homeId === homeId && !disposed) {
-            const snapshot = project();
-            set((state) => ({
-              snapshot,
-              entities: snapshot ? options.projection.values(snapshot) : state.entities,
-              commandErrors: {
-                ...state.commandErrors,
-                [options.projection.subject(action)]: message,
-              },
-              revision: state.revision + 1,
-            }));
-          }
-          throw safeActionFailure(error);
+        if (actions.length === 0) return;
+
+        const startedAt = now();
+        const entries = actions.map((action) => ({
+          action,
+          subject: options.projection.subject(action),
+          transactionId:
+            rawSnapshot && !options.projection.isStateless?.(action)
+              ? optimistic.begin(rawSnapshot, action, startedAt)
+              : undefined,
+        }));
+        if (entries.some((entry) => entry.transactionId !== undefined)) {
+          publishProjection();
         }
+
+        let firstFailure: RuntimeError | undefined;
+        await Promise.all(
+          entries.map(async ({ action, subject, transactionId }) => {
+            try {
+              const response = await client.execute(action);
+              if (transactionId !== undefined && rawSnapshot) {
+                optimistic.acknowledge(transactionId, response.correlationId, rawSnapshot, now());
+                publishProjection();
+              }
+              set((state) => {
+                if (!(subject in state.commandErrors)) return state;
+                const commandErrors = { ...state.commandErrors };
+                delete commandErrors[subject];
+                return { commandErrors, revision: state.revision + 1 };
+              });
+            } catch (error) {
+              if (transactionId !== undefined) optimistic.reject(transactionId, now());
+              const message = actionError(error);
+              if (get().homeId === homeId && !disposed) {
+                const snapshot = project();
+                const failures = optimistic.takeFailures();
+                set((state) => ({
+                  snapshot,
+                  entities: snapshot ? options.projection.values(snapshot) : state.entities,
+                  commandErrors: {
+                    ...state.commandErrors,
+                    [subject]: message,
+                  },
+                  commandNotice: failures.at(-1) ?? state.commandNotice,
+                  revision: state.revision + 1,
+                }));
+              }
+              firstFailure ??= safeActionFailure(error);
+            }
+          }),
+        );
+        if (firstFailure) throw firstFailure;
       },
       clearCommandError(entityId) {
         set((state) => {
@@ -332,6 +423,13 @@ export function createHomeStore<S, V, A>(options: HomeStoreOptions<S, V, A>) {
           delete commandErrors[entityId];
           return { commandErrors, revision: state.revision + 1 };
         });
+      },
+      clearCommandNotice() {
+        set((state) =>
+          state.commandNotice === null
+            ? state
+            : { commandNotice: null, revision: state.revision + 1 },
+        );
       },
       dispose() {
         if (disposed) return;

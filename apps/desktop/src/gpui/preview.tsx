@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { KeyEvent } from '@gpuix/react';
+import { LightOutputMemory } from '@haus/core/optimistic';
+import { defaults } from '@haus/core/preferences';
 import { RegistryController } from '@haus/ha/ui/registry';
-import { defaults } from '@haus/ha/view/preferences';
 import { createDemoSnapshot } from '@haus/ha/view/demo/snapshot';
 import { applyDemoAction } from '@haus/ha/view/demo/action';
 import type { SidebarBackdrop } from '../platform/sidebar.js';
@@ -41,6 +42,14 @@ export function Preview({
 }) {
   const [snapshot, setSnapshot] = useState(createDemoSnapshot);
   const [preferences, setPreferences] = useState(defaults);
+  const [lightMemory] = useState(() => new LightOutputMemory());
+  const projectedSnapshot = useMemo(() => {
+    for (const entity of snapshot.states) lightMemory.remember(entity);
+    const states = snapshot.states.map((entity) => lightMemory.complete(entity));
+    return states.some((entity, idx) => entity !== snapshot.states[idx])
+      ? { ...snapshot, states }
+      : snapshot;
+  }, [lightMemory, snapshot]);
   const latest = useRef(snapshot);
   latest.current = snapshot;
   const [registry] = useState(
@@ -56,7 +65,7 @@ export function Preview({
   );
   return (
     <HomeWorkspace
-      snapshot={snapshot}
+      snapshot={projectedSnapshot}
       registry={registry}
       preferences={preferences}
       platform={platform}

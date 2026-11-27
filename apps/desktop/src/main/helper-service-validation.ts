@@ -5,7 +5,28 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export { validateServiceOperation, recordingSource } from '@haus/ha/helper-service-validation';
+import {
+  recordingSource,
+  validateHubServiceOperation,
+  validateHubServiceRequest,
+  type HubServiceRequest,
+} from '@haus/core/hub';
+import { validateHelperRequest } from '@haus/ha/helper-request';
+import { validateServiceOperation as validateHaServiceOperation } from '@haus/ha/helper-service-validation';
+
+export type HelperRequest = HubServiceRequest;
+export {
+  recordingSource,
+  validateHelperRequest,
+  validateHubServiceOperation,
+  validateHubServiceRequest,
+  validateHaServiceOperation as validateServiceOperation,
+};
+
+/** Validates helper requests against `@haus/core/hub` for Haus Hubs and `@haus/ha` for Home Assistant hubs. */
+export function validateDesktopHelperRequest(input: unknown, isHub: boolean): HelperRequest {
+  return isHub ? validateHubServiceRequest(input) : validateHelperRequest(input);
+}
 
 /** Error surfaced when a Haus helper operation returns a structured failure code. */
 export class HelperOperationError extends Error {

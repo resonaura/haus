@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { Auth, openHaTransport } from '@haus/ha/ha-transport';
-import { fetch as nativeFetch } from 'expo/fetch';
-import { createHausHomeStore, type HausHomeStore } from '@haus/ha/store';
-import type { AuthData, HaTransport } from '@haus/ha/ha-transport';
+import { OptimisticState } from '@haus/core/optimistic';
+import { defaults, sanitizePreferences, type Preferences } from '@haus/core/preferences';
+import { Auth, openHaTransport, type AuthData, type HaTransport } from '@haus/ha/ha-transport';
 import { HaIngressHelperPort } from '@haus/ha/helper-ingress';
-import { defaults, sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
+import { createHausHomeStore, type HausHomeStore } from '@haus/ha/store';
+import { fetch as nativeFetch } from 'expo/fetch';
 import { mobilePersistence } from '../storage/native-persistence';
 import type { HaSession } from '../storage/mobile-persistence';
 
@@ -87,7 +87,10 @@ export async function openMobileHome(
     },
     fetch: (input, init) => nativeFetch(String(input), init),
   });
+  const optimistic = new OptimisticState();
+  optimistic.lightMemory.hydrate(homeId, preferences.lightMemories?.[homeId]);
   const store = createHausHomeStore({
+    optimistic,
     openTransport: async () => {
       const next = await openHaTransport(auth);
       transport = next;
@@ -112,6 +115,7 @@ export async function openMobileHome(
         const next = sanitizePreferences(document.value);
         if (JSON.stringify(next) === JSON.stringify(preferences)) return;
         preferences = next;
+        optimistic.lightMemory.hydrate(homeId, next.lightMemories?.[homeId]);
         for (const listener of preferenceListeners) listener();
         await mobilePersistence.saveHomePreferences(session, next);
       })
@@ -192,7 +196,7 @@ export async function openMobileHome(
 
   const reconnect = async () => {
     if (!alive) return;
-    await store.getState().connectHome(homeId, store.getState().snapshot ?? undefined);
+    await store.getState().connectHome(homeId, store.getState().confirmedSnapshot() ?? undefined);
     await bootstrap();
   };
 

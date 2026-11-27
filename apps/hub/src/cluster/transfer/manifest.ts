@@ -43,6 +43,8 @@ export async function collectHubTransferManifest(params: {
   readonly transferId: string;
   readonly homeId: string;
   readonly sourceHubId: string;
+  readonly sourceHubUrl?: string;
+  readonly sourceHubName?: string;
   readonly targetHubId: string;
   readonly epoch: number;
   readonly preservePairing: boolean;
@@ -74,6 +76,8 @@ export async function collectHubTransferManifest(params: {
     transferId: params.transferId,
     homeId: params.homeId,
     sourceHubId: params.sourceHubId,
+    ...(params.sourceHubUrl ? { sourceHubUrl: params.sourceHubUrl } : {}),
+    ...(params.sourceHubName ? { sourceHubName: params.sourceHubName } : {}),
     targetHubId: params.targetHubId,
     epoch: params.epoch,
     timestamp: Date.now(),
@@ -117,16 +121,51 @@ export async function applyHubTransferManifest(
     for (const s of manifest.sessions) {
       await manager.upsert(ClientSessionEntity, s, ['sessionId']);
     }
+    const existingSourceNode = await manager.findOneBy(ClusterNodeEntity, {
+      id: manifest.sourceHubId,
+    });
+    let preservedNode: Record<string, unknown> | undefined;
+    if (existingSourceNode) {
+      try {
+        const parsed = JSON.parse(existingSourceNode.value) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          preservedNode = parsed as Record<string, unknown>;
+        }
+      } catch {
+        preservedNode = undefined;
+      }
+    }
+    const existingUrl =
+      typeof preservedNode?.url === 'string' && preservedNode.url.length > 0
+        ? preservedNode.url
+        : undefined;
+    const resolvedUrl =
+      existingUrl && existingUrl !== 'http://127.0.0.1:8790'
+        ? existingUrl
+        : (manifest.sourceHubUrl ?? existingUrl ?? 'http://127.0.0.1:8790');
+    const existingName =
+      typeof preservedNode?.name === 'string' &&
+      preservedNode.name.length > 0 &&
+      !preservedNode.name.startsWith('Hub ')
+        ? preservedNode.name
+        : undefined;
+    const resolvedName =
+      existingName ?? manifest.sourceHubName ?? `Hub ${manifest.sourceHubId.slice(0, 6)}`;
+    const resolvedRoles =
+      Array.isArray(preservedNode?.roles) && preservedNode.roles.length > 0
+        ? preservedNode.roles
+        : ['storage', 'stream'];
     await manager.upsert(
       ClusterNodeEntity,
       {
         id: manifest.sourceHubId,
         value: JSON.stringify({
+          ...preservedNode,
           id: manifest.sourceHubId,
-          name: `Hub ${manifest.sourceHubId.slice(0, 6)}`,
-          url: 'http://127.0.0.1:8790',
-          enabled: true,
-          roles: ['storage', 'stream'],
+          name: resolvedName,
+          url: resolvedUrl,
+          enabled: preservedNode?.enabled !== false,
+          roles: resolvedRoles,
           online: true,
           homeId: manifest.homeId,
         }),

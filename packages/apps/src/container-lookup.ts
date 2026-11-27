@@ -46,6 +46,10 @@ export interface AppInstallProgressUpdate {
   readonly stage: AppInstallStage;
   readonly current?: number;
   readonly total?: number;
+  readonly percent?: number;
+  readonly detail?: string;
+  readonly logLine?: string;
+  readonly logs?: readonly string[];
 }
 
 export interface DockerContainerMountInfo {

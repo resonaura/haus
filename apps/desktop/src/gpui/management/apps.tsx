@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   buildDemoAppConfig,
   buildDemoAppsState,
-  countAppFilters,
   filterCatalogApps,
   filterInstalledApps,
   parseCatalogAppsPayload,
@@ -23,18 +22,25 @@ import {
   AppConfigEditorPanel,
   AppDetailsModal,
   AppsWorkspaceView,
-  type PortableAppFilterTab,
+  OperationProgressPanel,
+  computeInstallProgressPercent,
+  formatByteProgress,
+  formatInstallStageTitle,
 } from '@haus/ui/components';
 import {
   applyDemoConfigSave,
+  buildAppFilterTabs,
+  buildDemoInstalledApp,
   executeHubAppAction,
   fetchHubAppLogs,
   installHubCatalogApp,
   loadHubAppConfig,
   removeHubApp,
+  resolveCatalogEntryTitle,
   saveHubAppConfig,
   toAppConfigState,
   type AppConfigState,
+  type HubInstallProgressPoll,
 } from './apps-config.js';
 import { GpuiAppRepositoriesModal } from './apps-repos.js';
 import type { GpuiRpcRequest } from './integrations.js';
@@ -85,6 +91,7 @@ export function GpuiAppsView({
   const [reposOpen, setReposOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyAppId, setBusyAppId] = useState<string | null>(null);
+  const [installProgress, setInstallProgress] = useState<HubInstallProgressPoll>();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -142,17 +149,7 @@ export function GpuiAppsView({
   useEffect(() => {
     void load();
   }, [load]);
-
-  const filterTabs = useMemo<PortableAppFilterTab[]>(() => {
-    const counts = countAppFilters(installed);
-    return [
-      { id: 'all', label: 'Installed', count: counts.all },
-      { id: 'running', label: 'Running', count: counts.running },
-      { id: 'stopped', label: 'Stopped', count: counts.stopped },
-      { id: 'updates', label: 'Updates', count: counts.updates },
-    ];
-  }, [installed]);
-
+  const filterTabs = useMemo(() => buildAppFilterTabs(installed), [installed]);
   const visibleInstalled = useMemo(
     () => filterInstalledApps(installed, filter, query),
     [filter, installed, query],
@@ -160,7 +157,6 @@ export function GpuiAppsView({
   const visibleCatalog = useMemo(() => filterCatalogApps(catalog, query), [catalog, query]);
   const installedIds = useMemo(() => new Set(installed.map((item) => item.id)), [installed]);
   const activeApp = activeAppId ? installed.find((item) => item.id === activeAppId) : undefined;
-
   const loadConfig = useCallback(
     async (app: InstalledAppRecord) => {
       if (demo) {
@@ -318,23 +314,7 @@ export function GpuiAppsView({
 
   const installCatalogApp = (entry: CatalogAppRecord) => {
     if (demo) {
-      setInstalled((prev) => [
-        ...prev,
-        {
-          id: entry.id,
-          externalId: entry.id,
-          name: entry.name,
-          description: entry.description,
-          version: entry.latestVersion,
-          state: 'running',
-          available: true,
-          managed: true,
-          actions: ['stop', 'restart'],
-          logs: true,
-          updateAvailable: false,
-          sourceKind: 'haus-app',
-        },
-      ]);
+      setInstalled((prev) => [...prev, buildDemoInstalledApp(entry)]);
       setCatalog((prev) =>
         prev.map((item) => (item.id === entry.id ? { ...item, installed: true } : item)),
       );
@@ -343,9 +323,15 @@ export function GpuiAppsView({
     }
     setBusyAppId(entry.id);
     setError('');
+    setInstallProgress({
+      appId: entry.id,
+      stage: isHaSession ? 'pulling' : 'validating',
+      detail: `Installing ${entry.name}…`,
+      logs: [`[INFO] Starting installation of ${entry.name} (${entry.id})…`],
+    });
     const op =
       !isHaSession && management
-        ? installHubCatalogApp(management, entry.id)
+        ? installHubCatalogApp(management, entry.id, setInstallProgress)
         : isHaSession && requestRpc
           ? requestRpc({
               type: 'supervisor/api',
@@ -360,15 +346,61 @@ export function GpuiAppsView({
     void op
       .then(() => {
         setNotice(`Installed ${entry.name}.`);
+        setInstallProgress((prev) => ({
+          appId: entry.id,
+          stage: 'complete',
+          percent: 100,
+          detail: `${entry.name} is installed and ready.`,
+          logs: [...(prev?.logs ?? []), `[OK] ${entry.name} installed.`],
+        }));
         onSaved?.();
         return load();
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Install failed.'))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Install failed.';
+        setError(msg);
+        setInstallProgress((prev) => ({
+          appId: entry.id,
+          stage: 'failed',
+          percent: 100,
+          detail: msg,
+          logs: [...(prev?.logs ?? []), `[ERROR] ${msg}`],
+        }));
+      })
       .finally(() => setBusyAppId(null));
   };
 
   return (
     <>
+      {installProgress && (
+        <OperationProgressPanel
+          id="gpui-app-install-progress"
+          title={`${resolveCatalogEntryTitle(catalog, installProgress.appId)} · ${formatInstallStageTitle(installProgress.stage)}`}
+          detail={
+            installProgress.detail ??
+            formatByteProgress(installProgress.current, installProgress.total)
+          }
+          percent={computeInstallProgressPercent(
+            installProgress.stage,
+            installProgress.current,
+            installProgress.total,
+            installProgress.percent,
+          )}
+          state={
+            installProgress.stage === 'failed'
+              ? 'failed'
+              : installProgress.stage === 'complete'
+                ? 'complete'
+                : 'running'
+          }
+          logs={installProgress.logs}
+          onDismiss={
+            installProgress.stage === 'complete' || installProgress.stage === 'failed'
+              ? () => setInstallProgress(undefined)
+              : undefined
+          }
+        />
+      )}
       <AppsWorkspaceView
         columns={columns}
         tab={tab}

@@ -251,15 +251,18 @@ function RangeSliderTrack({
           : styles.trackHost
       }
     >
-      <Box
-        style={
-          ctx?.vertical
-            ? composeStyles(styles.track, { layout: { width: px(32), height: pct(100) } })
-            : styles.track
-        }
-      >
-        {children}
-      </Box>
+      {ctx?.vertical ? (
+        <Box style={composeStyles(styles.track, { layout: { width: px(32), height: pct(100) } })}>
+          {children}
+        </Box>
+      ) : (
+        <Box style={styles.track}>
+          <Box className="slider__fill" style={styles.fill}>
+            <Box className="slider__thumb" style={styles.thumb} />
+          </Box>
+          <Box style={styles.spacer} />
+        </Box>
+      )}
       {ctx && (
         <RangeInput
           ariaLabel={ctx.ariaLabel}
@@ -276,39 +279,32 @@ function RangeSliderTrack({
   );
 }
 
-function RangeSliderFill(): React.ReactElement {
+function RangeSliderFill(): React.ReactElement | null {
   const ctx = React.useContext(SliderContext);
   const styles = useHausStyles(sliderStyles, {
     ratioPct: ctx?.ratioPct ?? 0,
     disabled: ctx?.disabled,
   });
+  if (!ctx?.vertical) return null;
   return (
     <Box
       className="slider__fill"
-      style={
-        ctx?.vertical
-          ? composeStyles(styles.fill, {
-              layout: {
-                position: 'absolute',
-                inset: { bottom: px(0), left: px(0), right: px(0) },
-                width: pct(100),
-                height: pct(ctx.ratioPct),
-              },
-            })
-          : styles.fill
-      }
+      style={composeStyles(styles.fill, {
+        layout: {
+          position: 'absolute',
+          inset: { bottom: px(0), left: px(0), right: px(0) },
+          width: pct(100),
+          minWidth: px(0),
+          height: pct(ctx.ratioPct),
+          padding: undefined,
+        },
+      })}
     />
   );
 }
 
 function RangeSliderThumb(): React.ReactElement | null {
-  const ctx = React.useContext(SliderContext);
-  const styles = useHausStyles(sliderStyles, {
-    ratioPct: ctx?.ratioPct ?? 0,
-    disabled: ctx?.disabled,
-  });
-  if (ctx?.vertical) return null;
-  return <Box className="slider__thumb" style={styles.thumb} />;
+  return null;
 }
 
 function RangeSliderOutput({

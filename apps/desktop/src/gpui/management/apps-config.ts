@@ -2,6 +2,7 @@
 
 import {
   REDACTED_SECRET_PLACEHOLDER,
+  countAppFilters,
   formatAddonRepositoryError,
   isGoveeAddon,
   mergeCatalogFieldMeta,
@@ -11,11 +12,49 @@ import {
   parseCatalogInstallPayload,
   type AddonRepositorySummary,
   type AppActionId,
+  type CatalogAppRecord,
   type InstalledAppRecord,
   type LoadedAppConfigInfo,
   type ManagementPort,
   type NativeConfigFieldMeta,
 } from '@haus/core/transport';
+import type { PortableAppFilterTab } from '@haus/ui/components';
+
+export function buildAppFilterTabs(
+  installed: readonly InstalledAppRecord[],
+): PortableAppFilterTab[] {
+  const counts = countAppFilters(installed);
+  return [
+    { id: 'all', label: 'Installed', count: counts.all },
+    { id: 'running', label: 'Running', count: counts.running },
+    { id: 'stopped', label: 'Stopped', count: counts.stopped },
+    { id: 'updates', label: 'Updates', count: counts.updates },
+  ];
+}
+
+export function buildDemoInstalledApp(entry: CatalogAppRecord): InstalledAppRecord {
+  return {
+    id: entry.id,
+    externalId: entry.id,
+    name: entry.name,
+    description: entry.description,
+    version: entry.latestVersion,
+    state: 'running',
+    available: true,
+    managed: true,
+    actions: ['stop', 'restart'],
+    logs: true,
+    updateAvailable: false,
+    sourceKind: 'haus-app',
+  };
+}
+
+export function resolveCatalogEntryTitle(
+  catalog: readonly CatalogAppRecord[],
+  appId: string,
+): string {
+  return catalog.find((item) => item.id === appId)?.name ?? appId;
+}
 
 export interface AppConfigState {
   readonly values: Record<string, unknown>;
@@ -88,10 +127,54 @@ export async function fetchHubAppLogs(
   return parseAppLogsPayload(payload);
 }
 
+export interface HubInstallProgressPoll {
+  readonly appId: string;
+  readonly stage: string;
+  readonly current?: number;
+  readonly total?: number;
+  readonly percent?: number;
+  readonly detail?: string;
+  readonly logs?: readonly string[];
+  readonly errorCode?: string;
+}
+
+export async function pollHubAppInstallProgress(
+  management: ManagementPort,
+  entryId: string,
+): Promise<HubInstallProgressPoll | undefined> {
+  const raw = await management.management({
+    method: 'GET',
+    path: `apps/${encodeURIComponent(entryId)}/install-progress`,
+  });
+  const rec = asRec(raw);
+  if (!rec || typeof rec.stage !== 'string') return undefined;
+  const logs = Array.isArray(rec.logs)
+    ? rec.logs.filter((l): l is string => typeof l === 'string')
+    : undefined;
+  return {
+    appId: typeof rec.appId === 'string' ? rec.appId : entryId,
+    stage: rec.stage,
+    ...(typeof rec.current === 'number' ? { current: rec.current } : {}),
+    ...(typeof rec.total === 'number' ? { total: rec.total } : {}),
+    ...(typeof rec.percent === 'number' ? { percent: rec.percent } : {}),
+    ...(typeof rec.detail === 'string' ? { detail: rec.detail } : {}),
+    ...(logs && logs.length > 0 ? { logs } : {}),
+    ...(typeof rec.errorCode === 'string' ? { errorCode: rec.errorCode } : {}),
+  };
+}
+
 export async function installHubCatalogApp(
   management: ManagementPort,
   entryId: string,
+  onProgress?: (progress: HubInstallProgressPoll) => void,
 ): Promise<void> {
+  onProgress?.({
+    appId: entryId,
+    stage: 'validating',
+    percent: 8,
+    detail: 'Loading catalog manifest…',
+    logs: [`[INFO] Fetching manifest for ${entryId}…`],
+  });
   const detail = await management.management({
     method: 'GET',
     path: `apps/catalog/${encodeURIComponent(entryId)}`,
@@ -100,15 +183,40 @@ export async function installHubCatalogApp(
   if (!install) {
     throw new Error('Could not resolve App manifest from the Hub catalog.');
   }
-  const res = await management.management({
-    method: 'POST',
-    path: 'apps/install',
-    data: {
-      manifest: install.manifest,
-      grantedPermissions: [...install.grantedPermissions],
-    },
-  });
-  assertHubResponseOk(res, 'App installation failed.');
+  const targetId =
+    typeof install.manifest.id === 'string' && install.manifest.id ? install.manifest.id : entryId;
+  let active = true;
+  const timer = setInterval(() => {
+    if (!active) return;
+    void pollHubAppInstallProgress(management, targetId)
+      .then((next) => {
+        if (active && next) onProgress?.(next);
+      })
+      .catch(() => undefined);
+  }, 550);
+  try {
+    const res = await management.management({
+      method: 'POST',
+      path: 'apps/install',
+      data: {
+        manifest: install.manifest,
+        grantedPermissions: [...install.grantedPermissions],
+      },
+    });
+    assertHubResponseOk(res, 'App installation failed.');
+    const finalSnap = await pollHubAppInstallProgress(management, targetId).catch(() => undefined);
+    onProgress?.(
+      finalSnap ?? {
+        appId: targetId,
+        stage: 'complete',
+        percent: 100,
+        detail: 'Installed and running.',
+      },
+    );
+  } finally {
+    active = false;
+    clearInterval(timer);
+  }
 }
 
 export async function loadHubAppConfig(

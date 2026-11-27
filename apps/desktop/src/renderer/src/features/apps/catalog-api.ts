@@ -83,6 +83,9 @@ export interface AppInstallProgress {
   stage: string;
   current?: number;
   total?: number;
+  percent?: number;
+  detail?: string;
+  logs?: readonly string[];
   errorCode?: string;
 }
 
@@ -422,11 +425,17 @@ export function parseUpdateCheck(value: unknown): AppUpdateStatus {
 
 export function parseInstallProgress(value: unknown): AppInstallProgress | undefined {
   if (!record(value) || typeof value.stage !== 'string') return undefined;
+  const logs = Array.isArray(value.logs)
+    ? value.logs.filter((line): line is string => typeof line === 'string')
+    : undefined;
   return {
     appId: typeof value.appId === 'string' ? value.appId : '',
     stage: value.stage,
     ...(typeof value.current === 'number' ? { current: value.current } : {}),
     ...(typeof value.total === 'number' ? { total: value.total } : {}),
+    ...(typeof value.percent === 'number' ? { percent: value.percent } : {}),
+    ...(typeof value.detail === 'string' ? { detail: value.detail } : {}),
+    ...(logs && logs.length > 0 ? { logs } : {}),
     ...(typeof value.errorCode === 'string' ? { errorCode: value.errorCode } : {}),
   };
 }

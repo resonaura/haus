@@ -125,16 +125,25 @@ export function buildDomBoxProps(
             if (props.stopPropagation) event.stopPropagation();
             props.onPress?.();
             if (props.onBackdropPress && event.target === event.currentTarget) {
-              props.onBackdropPress();
+              const startedInside = event.currentTarget.dataset.hausBd === '0';
+              delete event.currentTarget.dataset.hausBd;
+              if (!startedInside) {
+                event.stopPropagation();
+                props.onBackdropPress();
+              }
             }
           }
         : undefined,
-    onPointerDown: props.onPointerDownEvent
-      ? (event: React.PointerEvent<HTMLElement>) => {
-          props.onPointerDown?.();
-          props.onPointerDownEvent?.(wrapSurfacePointerEvent(event));
-        }
-      : props.onPointerDown,
+    onPointerDown:
+      props.onPointerDownEvent || props.onPointerDown || props.onBackdropPress
+        ? (event: React.PointerEvent<HTMLElement>) => {
+            if (props.onBackdropPress) {
+              event.currentTarget.dataset.hausBd = event.target === event.currentTarget ? '1' : '0';
+            }
+            props.onPointerDown?.();
+            props.onPointerDownEvent?.(wrapSurfacePointerEvent(event));
+          }
+        : undefined,
     onPointerMove: props.onPointerMoveEvent
       ? (event: React.PointerEvent<HTMLElement>) =>
           props.onPointerMoveEvent?.(wrapSurfacePointerEvent(event))

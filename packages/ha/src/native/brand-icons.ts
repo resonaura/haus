@@ -5,83 +5,16 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { readLocalAddonDirectoryIcon, resolveAddonGithubIcon } from './brand-addons.js';
 import {
-  bundledFallbackSvgDataUri,
-  deriveCandidateDomains,
-  KNOWN_BRAND_REPOS,
-  parseGithubRepo,
-  validateBrandIconInput,
+  BrandIconCache,
+  fetchImageDataUri,
+  resolveCoreBrandIconWithMeta,
   type BrandIconHint,
   type BrandIconKind,
-  type GithubRepoRef,
-} from './brand-fallbacks.js';
-import {
-  fetchImageDataUri,
-  readLocalIntegrationDirectoryIcon,
-  readLocalPluginDirectoryIcon,
-  resolvePluginPackageAssets,
-} from './brand-packages.js';
+} from '@haus/core/brands';
+import { createNodeBrandLocalLookup } from '@haus/icons/node';
 
-export type { BrandIconHint, BrandIconKind };
-
-const MAX_ICON_BYTES = 2_000_000;
-const POSITIVE_TTL_MS = 24 * 60 * 60_000;
-const FALLBACK_TTL_MS = 2 * 60_000;
-
-interface CacheEntry {
-  readonly value: string | null;
-  readonly expiresAt: number;
-}
-
-/** Bounded LRU cache and in-flight coalescing registry for resolved brand icon data URIs. */
-export class BrandIconCache {
-  private readonly store = new Map<string, CacheEntry>();
-  private readonly inFlight = new Map<string, Promise<string | null>>();
-
-  constructor(private readonly maxEntries = 600) {}
-
-  getInFlight(key: string): Promise<string | null> | undefined {
-    return this.inFlight.get(key);
-  }
-
-  setInFlight(key: string, promise: Promise<string | null>): void {
-    this.inFlight.set(key, promise);
-  }
-
-  clearInFlight(key: string): void {
-    this.inFlight.delete(key);
-  }
-
-  get(key: string): string | null | undefined {
-    const entry = this.store.get(key);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return undefined;
-    }
-    this.store.delete(key);
-    this.store.set(key, entry);
-    return entry.value;
-  }
-
-  set(key: string, value: string | null, isFallback: boolean): void {
-    if (this.store.has(key)) this.store.delete(key);
-    this.store.set(key, {
-      value,
-      expiresAt: Date.now() + (isFallback ? FALLBACK_TTL_MS : POSITIVE_TTL_MS),
-    });
-    while (this.store.size > this.maxEntries) {
-      const oldest = this.store.keys().next().value;
-      if (oldest === undefined) break;
-      this.store.delete(oldest);
-    }
-  }
-
-  clear(): void {
-    this.store.clear();
-  }
-}
+export { BrandIconCache, type BrandIconHint, type BrandIconKind };
 
 export interface BrandIconHaSession {
   readonly url: string;
@@ -174,260 +107,51 @@ async function tryHaEndpoints(
   return null;
 }
 
-async function tryUpstreamBrands(
-  candidates: readonly string[],
-  dark: boolean,
-  brandsBaseUrl: string,
-  fetchFn: typeof fetch,
-  timeoutMs: number,
-): Promise<string | null> {
-  const primaryVariants = dark
-    ? [
-        'dark_icon@2x.png',
-        'dark_icon.png',
-        'icon@2x.png',
-        'icon.png',
-        'dark_logo@2x.png',
-        'logo@2x.png',
-        'logo.png',
-      ]
-    : ['icon@2x.png', 'icon.png', 'logo@2x.png', 'logo.png'];
-  const secondaryVariants = dark
-    ? ['dark_icon@2x.png', 'icon@2x.png', 'icon.png', 'logo.png']
-    : ['icon@2x.png', 'icon.png', 'logo.png'];
-
-  for (let i = 0; i < candidates.length; i += 1) {
-    const domain = candidates[i]!;
-    const variants = i === 0 ? primaryVariants : secondaryVariants;
-    for (const variant of variants) {
-      let target: URL;
-      try {
-        target = new URL(`/${encodeURIComponent(domain)}/${variant}`, brandsBaseUrl);
-      } catch {
-        continue;
-      }
-      const hit = await fetchImageDataUri(target, fetchFn, timeoutMs);
-      if (hit) return hit;
-    }
-  }
-  return null;
-}
-
-async function tryGithubFallback(
-  kind: BrandIconKind,
-  id: string,
-  candidates: readonly string[],
-  hint: BrandIconHint | undefined,
-  discoveredRepo: GithubRepoRef | null,
-  rawBaseUrl: string,
-  avatarBaseUrl: string,
-  fetchFn: typeof fetch,
-  timeoutMs: number,
-): Promise<string | null> {
-  const repoRef =
-    parseGithubRepo(hint?.repositoryUrl) ??
-    discoveredRepo ??
-    parseGithubRepo(id) ??
-    parseGithubRepo(KNOWN_BRAND_REPOS[id.toLowerCase()]) ??
-    candidates.map((c) => parseGithubRepo(KNOWN_BRAND_REPOS[c])).find((v) => v !== null) ??
-    null;
-
-  if (!repoRef) return null;
-
-  const owner = encodeURIComponent(repoRef.owner);
-  const repo = encodeURIComponent(repoRef.repo);
-  const primary = encodeURIComponent(candidates[0] ?? id);
-  const prefix = `/${owner}/${repo}/HEAD`;
-  const rawPaths =
-    kind === 'homebridge'
-      ? [
-          `${prefix}/homebridge-ui/public/icon.png`,
-          `${prefix}/branding/icon.png`,
-          `${prefix}/icon.png`,
-          `${prefix}/logo.png`,
-          `${prefix}/images/icon.png`,
-        ]
-      : kind === 'scrypted'
-        ? [
-            `${prefix}/icon.png`,
-            `${prefix}/assets/icon.png`,
-            `${prefix}/public/icon.png`,
-            `${prefix}/logo.png`,
-          ]
-        : kind === 'addon'
-          ? [
-              `${prefix}/icon.png`,
-              `${prefix}/logo.png`,
-              `${prefix}/${primary}/icon.png`,
-              `${prefix}/${primary}/logo.png`,
-            ]
-          : [
-              `${prefix}/custom_components/${primary}/brand/icon.png`,
-              `${prefix}/custom_components/${primary}/icon.png`,
-              `${prefix}/brand/icon.png`,
-              `${prefix}/icon.png`,
-              `${prefix}/logo.png`,
-              `${prefix}/assets/icon.png`,
-            ];
-
-  for (const path of rawPaths) {
-    try {
-      const target = new URL(path, rawBaseUrl);
-      const hit = await fetchImageDataUri(target, fetchFn, timeoutMs);
-      if (hit) return hit;
-    } catch {
-      // ignore invalid URL
-    }
-  }
-
-  try {
-    const avatarUrl = new URL(`/${owner}.png?size=512`, avatarBaseUrl);
-    return await fetchImageDataUri(avatarUrl, fetchFn, timeoutMs, {}, true);
-  } catch {
-    return null;
-  }
-}
-
-/** Resolves an icon data URI across local components, add-on repos, HA APIs, upstream HA brands, GitHub, and bundled fallbacks. */
+/** Resolves a brand icon on Home Assistant sessions (extending `@haus/core/brands` with authenticated HA Supervisor & `/api/brands` endpoints). */
 export async function resolveBrandIconWithMeta(
   options: BrandIconResolveOptions,
 ): Promise<{ readonly dataUri: string | null; readonly isFallback: boolean }> {
-  const { kind, id } = validateBrandIconInput(options.kind, options.id);
-  const dark = options.dark === true;
-  const allowFallback = options.allowFallback !== false;
-  const hintKey = `${options.hint?.supportedBy ?? ''}:${options.hint?.repositoryUrl ?? ''}:${options.hint?.repository ?? ''}:${options.hint?.addonSlug ?? ''}:${options.hint?.addonConfigPath ?? ''}`;
-  const cacheKey = `${kind}:${id}:${dark ? 'dark' : 'light'}:${hintKey}:${allowFallback ? 'fb' : 'raw'}`;
+  const hasLocalDirs = Boolean(
+    options.localAddonDirs?.length ||
+    options.localIntegrationDirs?.length ||
+    options.localPluginDirs?.length,
+  );
+  const readLocalIcon = hasLocalDirs
+    ? createNodeBrandLocalLookup({
+        localAddonDirs: options.localAddonDirs,
+        localIntegrationDirs: options.localIntegrationDirs,
+        localPluginDirs: options.localPluginDirs,
+      })
+    : undefined;
 
-  const cached = options.cache?.get(cacheKey);
-  if (cached !== undefined) {
-    return {
-      dataUri: cached,
-      isFallback: Boolean(cached && cached.startsWith('data:image/svg+xml;')),
-    };
-  }
-
-  const existingFlight = options.cache?.getInFlight(cacheKey);
-  if (existingFlight) {
-    const dataUri = await existingFlight;
-    return {
-      dataUri,
-      isFallback: Boolean(dataUri && dataUri.startsWith('data:image/svg+xml;')),
-    };
-  }
-
-  let usedFallback = false;
-  const task = (async (): Promise<string | null> => {
-    const fetchFn = options.fetchFn ?? globalThis.fetch;
-    const timeoutMs = options.timeoutMs ?? 6_000;
-    const candidates = deriveCandidateDomains(kind, id, options.hint);
-    const githubRawBaseUrl = options.githubRawBaseUrl ?? 'https://raw.githubusercontent.com';
-    const isAddonLike = kind === 'addon' || kind === 'app';
-
-    let resolved: string | null = null;
-    if (isAddonLike && options.localAddonDirs?.length) {
-      resolved = await readLocalAddonDirectoryIcon(
-        options.localAddonDirs,
-        id,
-        options.hint,
-        MAX_ICON_BYTES,
-      );
-    }
-
-    if (!resolved && options.localIntegrationDirs?.length) {
-      resolved = await readLocalIntegrationDirectoryIcon(
-        options.localIntegrationDirs,
-        candidates,
-        dark,
-        MAX_ICON_BYTES,
-      );
-    }
-
-    if (!resolved && options.localPluginDirs?.length) {
-      resolved = await readLocalPluginDirectoryIcon(options.localPluginDirs, id, MAX_ICON_BYTES);
-    }
-
-    if (!resolved && options.haSession) {
-      resolved = await tryHaEndpoints(
-        kind,
-        id,
-        candidates,
-        dark,
-        options.hint,
-        options.haSession,
-        fetchFn,
-        timeoutMs,
-      );
-    }
-
-    if (!resolved && isAddonLike) {
-      resolved = await resolveAddonGithubIcon({
-        id,
-        hint: options.hint,
-        githubRawBaseUrl,
-        fetchFn,
-        timeoutMs,
-        fetchImage: fetchImageDataUri,
-      });
-    }
-
-    let discoveredRepo: GithubRepoRef | null = null;
-    if (!resolved) {
-      const pluginAssets = await resolvePluginPackageAssets({
-        kind,
-        id,
-        hint: options.hint,
-        npmCdnBaseUrl: options.npmCdnBaseUrl ?? 'https://cdn.jsdelivr.net',
-        githubRawBaseUrl,
-        fetchFn,
-        timeoutMs,
-        fetchImage: fetchImageDataUri,
-      });
-      resolved = pluginAssets.iconDataUri;
-      discoveredRepo = pluginAssets.discoveredRepo;
-    }
-
-    if (!resolved) {
-      resolved = await tryUpstreamBrands(
-        candidates,
-        dark,
-        options.brandsBaseUrl ?? 'https://brands.home-assistant.io',
-        fetchFn,
-        timeoutMs,
-      );
-    }
-
-    if (!resolved) {
-      resolved = await tryGithubFallback(
-        kind,
-        id,
-        candidates,
-        options.hint,
-        discoveredRepo,
-        githubRawBaseUrl,
-        options.githubAvatarBaseUrl ?? 'https://github.com',
-        fetchFn,
-        timeoutMs,
-      );
-    }
-
-    if (resolved) {
-      options.cache?.set(cacheKey, resolved, false);
-      return resolved;
-    }
-
-    usedFallback = true;
-    const fallback = allowFallback ? bundledFallbackSvgDataUri(kind, id, options.hint) : null;
-    options.cache?.set(cacheKey, fallback, true);
-    return fallback;
-  })();
-
-  options.cache?.setInFlight(cacheKey, task);
-  try {
-    const dataUri = await task;
-    return { dataUri, isFallback: usedFallback };
-  } finally {
-    options.cache?.clearInFlight(cacheKey);
-  }
+  return resolveCoreBrandIconWithMeta({
+    kind: options.kind,
+    id: options.id,
+    dark: options.dark,
+    hint: options.hint,
+    readLocalIcon,
+    resolveSessionIcon: options.haSession
+      ? (ctx) =>
+          tryHaEndpoints(
+            ctx.kind,
+            ctx.id,
+            ctx.candidates,
+            ctx.dark,
+            ctx.hint,
+            options.haSession!,
+            ctx.fetchFn,
+            ctx.timeoutMs,
+          )
+      : undefined,
+    fetchFn: options.fetchFn,
+    brandsBaseUrl: options.brandsBaseUrl,
+    githubRawBaseUrl: options.githubRawBaseUrl,
+    githubAvatarBaseUrl: options.githubAvatarBaseUrl,
+    npmCdnBaseUrl: options.npmCdnBaseUrl,
+    cache: options.cache,
+    allowFallback: options.allowFallback,
+    timeoutMs: options.timeoutMs,
+  });
 }
 
 export async function resolveBrandIcon(options: BrandIconResolveOptions): Promise<string | null> {

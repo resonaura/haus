@@ -187,7 +187,6 @@
 }
 button.home-metric:hover {
   background: var(--soft);
-  transform: translateY(-1px);
 }
 .home-metric-icon {
   width: 34px;
@@ -240,7 +239,6 @@ button.home-metric:hover {
 .room-overview-card:hover {
   border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
   box-shadow: 0 8px 24px #1111110b;
-  transform: translateY(-1px);
 }
 .room-overview-main {
   width: 100%;

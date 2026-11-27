@@ -102,6 +102,31 @@ export function parseDiscoveredHub(service: DiscoveredService): DiscoveredHub | 
 
   const homeId =
     typeof txt.homeId === 'string' && txt.homeId.trim() ? txt.homeId.trim() : undefined;
+  const homeName =
+    typeof txt.homeName === 'string' && txt.homeName.trim()
+      ? sanitizeServiceName(txt.homeName)
+      : undefined;
+  const onboarded =
+    txt.onboarded === '1' || txt.onboarded === 'true' || txt.onboarded === true
+      ? true
+      : txt.onboarded === '0' || txt.onboarded === 'false' || txt.onboarded === false
+        ? false
+        : undefined;
+  const rawRole = typeof txt.role === 'string' ? txt.role.trim() : '';
+  const clusterRole =
+    rawRole === 'standalone' ||
+    rawRole === 'coordinator' ||
+    rawRole === 'node' ||
+    rawRole === 'fenced'
+      ? rawRole
+      : undefined;
+  const coordinatorHubId =
+    typeof txt.coordinatorHubId === 'string' && txt.coordinatorHubId.trim()
+      ? txt.coordinatorHubId.trim()
+      : undefined;
+  const rawCount = txt.hubCount !== undefined ? Number(txt.hubCount) : NaN;
+  const hubCount =
+    Number.isSafeInteger(rawCount) && rawCount >= 1 && rawCount <= 64 ? rawCount : undefined;
   const fingerprint =
     typeof txt.fingerprint === 'string' && txt.fingerprint.trim()
       ? txt.fingerprint.trim()
@@ -132,6 +157,11 @@ export function parseDiscoveredHub(service: DiscoveredService): DiscoveredHub | 
     id: `haus-hub:${hubId}`,
     hubId,
     homeId,
+    ...(homeName ? { homeName } : {}),
+    ...(onboarded !== undefined ? { onboarded } : {}),
+    ...(clusterRole ? { clusterRole } : {}),
+    ...(coordinatorHubId ? { coordinatorHubId } : {}),
+    ...(hubCount !== undefined ? { hubCount } : {}),
     name: name || 'Haus Hub',
     url,
     host,

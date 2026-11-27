@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import type { AppsFilterId, AppsTabId } from '@haus/core/transport';
 import { colorToken, corners, insets, pct, rgba } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
-import { HausButton, Pressable, Row, Stack, Text, useHausUi } from '../../primitives/index.js';
+import { HausButton, Pressable, Row, Stack, Text } from '../../primitives/index.js';
 import {
   ManagementEmptyCard,
   ManagementFilterBar,
@@ -99,10 +99,8 @@ export function AppsWorkspaceView({
   readonly onQuickToggleApp?: (app: PortableInstalledAppItem, action: 'start' | 'stop') => void;
   readonly onInstallCatalogApp: (app: PortableCatalogAppItem) => void;
 }) {
-  const { theme } = useHausUi();
-  const dark = theme.mode === 'dark';
-  const activeTabBg = dark ? rgba(255, 255, 255, 0.14) : rgba(16, 16, 20, 0.09);
-  const activeTabBorder = dark ? rgba(255, 255, 255, 0.24) : rgba(16, 16, 20, 0.18);
+  const activeTabBg = colorToken('controlFillActive');
+  const activeTabBorder = colorToken('controlBorderActive');
   const gridColumns = Math.max(1, Math.min(columns, 3));
 
   return (

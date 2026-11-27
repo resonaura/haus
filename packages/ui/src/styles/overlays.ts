@@ -55,7 +55,6 @@ export interface DialogStyleProps {
 }
 
 export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyleProps) => {
-  const isDark = theme.mode === 'dark';
   const cover = props.size === 'cover';
   const widthSpec = cover
     ? pct(100)
@@ -71,14 +70,14 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
 
   const backdropMaterial =
     props.backdrop === 'dim'
-      ? new SolidMaterial(rgba(2, 6, 23, isDark ? 0.62 : 0.36))
+      ? new SolidMaterial(theme.color('backdropDim'))
       : new BackdropMaterial(
           {
             blurRadius: props.backdrop === 'liquid-glass' ? 16 : 10,
-            saturation: 1.2,
-            tintColor: rgba(2, 6, 23, isDark ? 0.54 : 0.28),
+            saturation: 1.15,
+            tintColor: theme.color('backdrop'),
           },
-          { fallbackColor: rgba(2, 6, 23, 0.5) },
+          { fallbackColor: theme.color('backdropFallback') },
         );
 
   return {
@@ -150,7 +149,7 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
           offsetY: 24,
           blurRadius: 64,
           spreadRadius: -16,
-          color: rgba(0, 0, 0, isDark ? 0.62 : 0.24),
+          color: theme.color('shadow'),
         },
       ],
     },
@@ -178,21 +177,22 @@ export const dialogStyles = defineStyleSheet('dialog', (theme, props: DialogStyl
     closeButton: {
       layout: {
         display: 'inline-flex',
+        direction: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         width: px(30),
         height: px(30),
         flexShrink: 0,
       },
-      material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.08) : rgba(15, 23, 42, 0.06)),
+      material: new SolidMaterial(theme.color('controlFill')),
       corners: corners(999, 'round'),
       border: { width: 1, style: 'solid', color: colorToken('border') },
-      typography: { size: 16, weight: 500, color: colorToken('textSecondary') },
+      typography: { size: 16, lineHeight: 1, weight: 500, color: colorToken('textSecondary') },
       cursor: 'pointer',
       transitionMs: 140,
       states: {
         hover: {
-          material: new SolidMaterial(isDark ? rgba(255, 255, 255, 0.14) : rgba(15, 23, 42, 0.12)),
+          material: new SolidMaterial(theme.color('controlFillHover')),
           textColor: colorToken('textPrimary'),
         },
       },

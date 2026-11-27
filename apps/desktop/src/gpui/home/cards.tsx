@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useEffect, useState } from 'react';
+import { lightStateDescription } from '@haus/core/optimistic';
+import type { Preferences } from '@haus/core/preferences';
 import type { HassEntity, Snapshot } from '@haus/ha/types';
 import { resolveDeviceAppearance } from '@haus/ha/view/device-state';
-import { lightStateDescription } from '@haus/ha/light-profile';
 import type { RegistryController } from '@haus/ha/ui/registry';
-import type { Preferences } from '@haus/ha/view/preferences';
 import type { HausAccessory } from '@haus/ha/view/types';
 import { getCategoryMetadata } from '@haus/ui/categories';
 import {
@@ -14,7 +14,7 @@ import {
   DashboardGrid,
   DeviceTile,
   parseCssColor,
-  SceneCard,
+  SceneCardCollection,
   UiIcon,
 } from '@haus/ui/components';
 import { Box, Image } from '@haus/ui/primitives';
@@ -34,7 +34,7 @@ import {
 
 export type DeviceControl = (target: DeviceTarget, intent: DeviceIntent, value?: unknown) => void;
 
-function resolveModalDevice(
+export function resolveModalDevice(
   cards: readonly HomeDevice[],
   selected: string,
   preferences?: Preferences,
@@ -58,6 +58,8 @@ function resolveModalDevice(
         state: stateText,
         available: member.availability === 'available',
         active: member.availability === 'available' && appearance.active,
+        pending: member.pending,
+        pendingSince: member.pendingSince,
         favorite: Boolean(preferences?.favorites.some((fav) => member.entityIds.includes(fav))),
         accent: appearance.actualColor,
         colorSwatch:
@@ -84,6 +86,7 @@ export function DeviceCards({
   disabled,
   canFavorite,
   selectedId,
+  externalModal,
   statistics,
   registry,
   onSelectId,
@@ -102,6 +105,7 @@ export function DeviceCards({
   disabled: boolean;
   canFavorite: boolean;
   selectedId?: string;
+  externalModal?: boolean;
   statistics?: StatisticsRequest;
   registry?: Pick<RegistryController, 'saveRoom' | 'updateEntity'>;
   onSelectId?: (id: string) => void;
@@ -114,7 +118,7 @@ export function DeviceCards({
   const [internalSelected, setInternalSelected] = useState('');
   const selected = onSelectId ? (selectedId ?? '') : internalSelected;
   const setSelected = onSelectId ?? setInternalSelected;
-  const details = resolveModalDevice(cards, selected, preferences);
+  const details = externalModal ? undefined : resolveModalDevice(cards, selected, preferences);
   return (
     <>
       <DashboardGrid columns={columns}>
@@ -150,6 +154,8 @@ export function DeviceCards({
               subtitle={room?.name ?? 'Other'}
               available={device.available}
               active={device.active}
+              pending={device.pending}
+              pendingSince={device.pendingSince}
               favorite={device.favorite}
               accent={parseCssColor(device.accent)}
               colorSwatch={parseCssColor(device.colorSwatch)}
@@ -203,6 +209,7 @@ export function SceneCards({
   present,
   snapshot,
   columns,
+  horizontal = false,
   disabled,
   showAccessoryCount,
   onControl,
@@ -212,31 +219,31 @@ export function SceneCards({
   present: ReturnType<typeof homeDashboard>['sceneCard'];
   snapshot: Snapshot;
   columns: number;
+  horizontal?: boolean;
   disabled: boolean;
   showAccessoryCount: boolean;
   onControl: DeviceControl;
   onContextMenu?: (scene: HassEntity) => void;
 }) {
   return (
-    <DashboardGrid columns={columns}>
-      {scenes.map((scene) => (
-        <SceneCard
-          key={scene.entity_id}
-          {...present(scene)}
-          id={`scene-${scene.entity_id}`}
-          applying={snapshot.pendingEntityIds?.includes(scene.entity_id)}
-          showAccessoryCount={showAccessoryCount}
-          disabled={
-            disabled ||
-            scene.state === 'unavailable' ||
-            snapshot.pendingEntityIds?.includes(scene.entity_id) ||
-            !availableAction(snapshot, scene.entity_id, 'run')
-          }
-          onContextOptions={onContextMenu ? () => onContextMenu(scene) : undefined}
-          onActivate={() => onControl(scene.entity_id, 'run')}
-        />
-      ))}
-    </DashboardGrid>
+    <SceneCardCollection
+      horizontal={horizontal}
+      columns={columns}
+      showAccessoryCount={showAccessoryCount}
+      items={scenes.map((scene) => ({
+        ...present(scene),
+        entityId: scene.entity_id,
+        id: `scene-${scene.entity_id}`,
+        applying: snapshot.pendingEntityIds?.includes(scene.entity_id),
+        disabled:
+          disabled ||
+          scene.state === 'unavailable' ||
+          snapshot.pendingEntityIds?.includes(scene.entity_id) ||
+          !availableAction(snapshot, scene.entity_id, 'run'),
+        onContextOptions: onContextMenu ? () => onContextMenu(scene) : undefined,
+        onActivate: () => onControl(scene.entity_id, 'run'),
+      }))}
+    />
   );
 }
 
@@ -367,6 +374,7 @@ function GpuiCameraPreviewItem({
   demo,
   fetchSnapshot,
   onOpen,
+  onReorder,
   onContextMenu,
 }: {
   readonly camera: {
@@ -381,6 +389,7 @@ function GpuiCameraPreviewItem({
   readonly demo?: boolean;
   readonly fetchSnapshot?: (id: string) => Promise<string | null>;
   readonly onOpen: (id: string) => void;
+  readonly onReorder?: (id: string, direction: -1 | 1) => void;
   readonly onContextMenu?: (id: string) => void;
 }) {
   const sourceOffline = !demo && camera.available === false;
@@ -394,32 +403,46 @@ function GpuiCameraPreviewItem({
 
   const isOffline = !demo && (offline || sourceOffline);
   return (
-    <CameraPreviewTile
-      id={`preview-${camera.id}`}
-      name={camera.name}
-      label={camera.label ?? camera.name}
-      room={camera.room}
-      demo={Boolean(demo)}
-      updatedAt={updatedAt}
-      offline={isOffline}
-      recovering={recovering}
-      preview={
-        <LiveCameraThumbnail
-          cameraId={camera.id}
-          name={camera.name}
-          demo={demo}
-          demoScene={camera.demoScene}
-          index={index}
-          available={camera.available !== false}
-          fetchSnapshot={fetchSnapshot}
-          onSnapshotLoaded={setUpdatedAt}
-          onOfflineChange={setOffline}
-          onRecoveryChange={setRecovering}
-        />
+    <Box
+      style={{ layout: { width: pct(100) } }}
+      onKeyDown={
+        onReorder
+          ? (event) => {
+              if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+                event.preventDefault();
+                onReorder(camera.id, event.key === 'ArrowLeft' ? -1 : 1);
+              }
+            }
+          : undefined
       }
-      onSecondaryPress={onContextMenu ? () => onContextMenu(camera.id) : undefined}
-      onOpen={() => onOpen(camera.id)}
-    />
+    >
+      <CameraPreviewTile
+        id={`preview-${camera.id}`}
+        name={camera.name}
+        label={camera.label ?? camera.name}
+        room={camera.room}
+        demo={Boolean(demo)}
+        updatedAt={updatedAt}
+        offline={isOffline}
+        recovering={recovering}
+        preview={
+          <LiveCameraThumbnail
+            cameraId={camera.id}
+            name={camera.name}
+            demo={demo}
+            demoScene={camera.demoScene}
+            index={index}
+            available={camera.available !== false}
+            fetchSnapshot={fetchSnapshot}
+            onSnapshotLoaded={setUpdatedAt}
+            onOfflineChange={setOffline}
+            onRecoveryChange={setRecovering}
+          />
+        }
+        onSecondaryPress={onContextMenu ? () => onContextMenu(camera.id) : undefined}
+        onOpen={() => onOpen(camera.id)}
+      />
+    </Box>
   );
 }
 
@@ -429,6 +452,7 @@ export function CameraPreviews({
   demo,
   fetchSnapshot,
   onOpen,
+  onReorder,
   onContextMenu,
 }: {
   cameras: readonly {
@@ -443,6 +467,7 @@ export function CameraPreviews({
   demo?: boolean;
   fetchSnapshot?: (id: string) => Promise<string | null>;
   onOpen: (id: string) => void;
+  onReorder?: (id: string, direction: -1 | 1) => void;
   onContextMenu?: (id: string) => void;
 }) {
   return (
@@ -455,6 +480,7 @@ export function CameraPreviews({
           demo={demo}
           fetchSnapshot={fetchSnapshot}
           onOpen={onOpen}
+          onReorder={onReorder}
           onContextMenu={onContextMenu}
         />
       ))}

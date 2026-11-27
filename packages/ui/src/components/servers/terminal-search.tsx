@@ -114,7 +114,12 @@ export function TerminalSearchBar({
           ariaLabel="Previous match"
           onActivate={() => onFind(true)}
           style={{
-            layout: { padding: insets(4, 6) },
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
             material: new SolidMaterial(colorToken('surfaceSecondary')),
             corners: corners(6),
           }}
@@ -126,7 +131,12 @@ export function TerminalSearchBar({
           ariaLabel="Next match"
           onActivate={() => onFind(false)}
           style={{
-            layout: { padding: insets(4, 6) },
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
             material: new SolidMaterial(colorToken('surfaceSecondary')),
             corners: corners(6),
           }}
@@ -138,7 +148,12 @@ export function TerminalSearchBar({
           ariaLabel="Close search"
           onActivate={onClose}
           style={{
-            layout: { padding: insets(4, 6) },
+            layout: {
+              direction: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: insets(4, 6),
+            },
             material: new SolidMaterial(colorToken('surfaceSecondary')),
             corners: corners(6),
           }}

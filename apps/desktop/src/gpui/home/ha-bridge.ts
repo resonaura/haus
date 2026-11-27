@@ -6,12 +6,17 @@ import type {
   ManagementPort,
   ManagementRequest,
 } from '@haus/core/transport';
+import {
+  defaults,
+  PreferenceSync,
+  sanitizePreferences,
+  sharedPreferences,
+  type Preferences,
+  type SharedDocument,
+} from '@haus/core/preferences';
 import type { CredentialStore } from '@haus/ha/native-types';
 import { readHaSnapshot } from '@haus/ha/snapshot';
 import type { Snapshot } from '@haus/ha/types';
-import { defaults, sanitizePreferences, type Preferences } from '@haus/ha/view/preferences';
-import { sharedPreferences } from '@haus/ha/view/settings/shared';
-import { PreferenceSync, type SharedDocument } from '@haus/ha/view/settings/sync';
 import type { BrandIconPort } from '@haus/ui/components';
 import { applyBrandIconDropShadow, createGpuiBrandIconPort } from '@haus/ui/gpui';
 import {
@@ -122,11 +127,24 @@ export function createGpuiCameraHelper(options: {
   });
 }
 
-export function applyHaStateChangedEvent(
-  snapshot: Snapshot,
-  data: Record<string, unknown>,
-): Snapshot | null {
-  const next = data.new_state;
+export interface HaStateChangedDelta {
+  readonly entityId: string;
+  readonly entity: Snapshot['states'][number] | null;
+  readonly contextId?: string;
+}
+
+export function extractHaStateChangedDelta(
+  event: Extract<NativeEvent, { type: 'ha-event' }>['event'],
+): HaStateChangedDelta | null {
+  if (event.event_type !== 'state_changed' || !isRecord(event.data)) return null;
+  const contextId =
+    isRecord(event.context) && typeof event.context.id === 'string' && event.context.id.length > 0
+      ? event.context.id
+      : undefined;
+  const next = event.data.new_state;
+  if (next === null && typeof event.data.entity_id === 'string') {
+    return { entityId: event.data.entity_id, entity: null, contextId };
+  }
   if (
     !isRecord(next) ||
     typeof next.entity_id !== 'string' ||
@@ -135,13 +153,41 @@ export function applyHaStateChangedEvent(
   ) {
     return null;
   }
-  const entity = next as unknown as Snapshot['states'][number];
+  const entity: Snapshot['states'][number] = {
+    entity_id: next.entity_id,
+    state: next.state,
+    attributes: { ...next.attributes },
+    last_changed: typeof next.last_changed === 'string' ? next.last_changed : '',
+    last_updated: typeof next.last_updated === 'string' ? next.last_updated : undefined,
+  };
+  return { entityId: entity.entity_id, entity, contextId };
+}
+
+export function applyHaStateDeltaToSnapshot(
+  snapshot: Snapshot,
+  delta: HaStateChangedDelta,
+): Snapshot {
+  if (delta.entity === null) {
+    return {
+      ...snapshot,
+      states: snapshot.states.filter((item) => item.entity_id !== delta.entityId),
+    };
+  }
+  const entity = delta.entity;
   const index = snapshot.states.findIndex((item) => item.entity_id === entity.entity_id);
   const states =
     index >= 0
       ? snapshot.states.map((item, i) => (i === index ? entity : item))
       : [...snapshot.states, entity];
   return { ...snapshot, states };
+}
+
+export function applyHaStateChangedEvent(
+  snapshot: Snapshot,
+  data: Record<string, unknown>,
+): Snapshot | null {
+  const delta = extractHaStateChangedDelta({ event_type: 'state_changed', data });
+  return delta ? applyHaStateDeltaToSnapshot(snapshot, delta) : null;
 }
 
 export function createGpuiPreferenceSync(options: {
@@ -180,15 +226,21 @@ export function handleHaRuntimeEvent(
   currentSnapshot: () => Snapshot | null,
   onSnapshot: (snapshot: Snapshot) => void,
   onOffline: () => void,
+  onStateDelta?: (delta: HaStateChangedDelta) => void,
 ): void {
   if (event.type === 'connection' && event.status !== 'connected') onOffline();
   if (event.type === 'connection' && event.status === 'connected') {
     void readHaSnapshot(ha).then(onSnapshot, onOffline);
   }
-  const snapshot = currentSnapshot();
-  if (event.type === 'ha-event' && event.event.event_type === 'state_changed' && snapshot) {
-    const next = applyHaStateChangedEvent(snapshot, event.event.data);
-    if (next) onSnapshot(next);
+  if (event.type === 'ha-event' && event.event.event_type === 'state_changed') {
+    const delta = extractHaStateChangedDelta(event.event);
+    if (!delta) return;
+    if (onStateDelta) {
+      onStateDelta(delta);
+      return;
+    }
+    const snapshot = currentSnapshot();
+    if (snapshot) onSnapshot(applyHaStateDeltaToSnapshot(snapshot, delta));
   }
 }
 

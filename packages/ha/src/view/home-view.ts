@@ -11,7 +11,7 @@ import { accessoryMatchesCategory, categories } from './categories.js';
 import { deviceTelemetryRegistry } from './device-telemetry.js';
 import { effectiveClimateClass, isNonClimateHardware, isSecondary } from './matchers.js';
 import { accessoryVisibilityIds } from './visibility.js';
-import { groupNumberedLights } from './room-devices.js';
+import { CAMERA_ORDER_SCOPE, groupNumberedLights, orderCameras } from './room-devices.js';
 import { sceneViews, scenePresentation, sortScenesByName } from './scene-presentation.js';
 import { formatTemperature } from './format-temperature.js';
 export const serviceRoomRank = (room: { id: string; name: string }) =>
@@ -76,10 +76,14 @@ export function buildHomeView({
       visibleAccessories.some((accessory) => accessoryMatchesCategory(accessory, category.id)),
   );
   const cameraOwner = (camera: HassEntity) => owners.get(camera.entity_id);
-  const appCameras = model.cameras.filter((camera) => {
-    const owner = cameraOwner(camera);
-    return owner ? !appHidden(owner) : !hiddenAppIds.has(camera.entity_id);
-  });
+  const savedCameraOrder = preferences.deviceOrder?.[CAMERA_ORDER_SCOPE];
+  const appCameras = orderCameras(
+    model.cameras.filter((camera) => {
+      const owner = cameraOwner(camera);
+      return owner ? !appHidden(owner) : !hiddenAppIds.has(camera.entity_id);
+    }),
+    savedCameraOrder,
+  );
   const camerasForRoom = (areaId: string) =>
     appCameras.filter((camera) => cameraOwner(camera)?.areaId === areaId);
   const hiddenCameras = model.cameras.filter((camera) => {

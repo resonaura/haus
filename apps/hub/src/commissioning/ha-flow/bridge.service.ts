@@ -117,7 +117,13 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
 
   private getSyncBindings() {
     return {
-      reloadEntries: () => this.entriesService.reload(),
+      reloadEntries: async () => {
+        const list = await this.entriesService.reload();
+        for (const item of list) {
+          if (item.state !== 'loaded' || item.reason) this.entities.invalidateState(item.entry_id);
+        }
+        return list;
+      },
       syncRuntimeState: () => this.syncAllState(),
       removeEntryFromRuntime: async (entryId: string) => {
         if (this.runtime) {
@@ -242,9 +248,12 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    const disabled = process.env.HAUS_DISABLE_HA_FLOW === '1';
-    if (disabled || process.env.VITEST || process.env.NODE_ENV === 'test') return;
-    // Warm up non-blockingly so Hub HTTP startup never blocks on Python imports.
+    if (
+      process.env.HAUS_DISABLE_HA_FLOW === '1' ||
+      process.env.VITEST ||
+      process.env.NODE_ENV === 'test'
+    )
+      return;
     void this.ensureStarted().catch((err: unknown) => {
       if (!this.destroyed) {
         this.logger.warn(
@@ -283,9 +292,14 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   getBridge(): HaConfigFlowBridge | undefined {
     return this.bridge;
   }
-
   setDiscoveryFlowEnsurer(ensurer: DiscoveryFlowEnsurer): void {
     this.discoveryFlowEnsurer = ensurer;
+  }
+  async listApplicationCredentials(): Promise<readonly StoredAppCredentialPublic[]> {
+    return this.secretsStore.listCredentialsPublic();
+  }
+  importEntry(input: HaEntryImport) {
+    return this.entryImporter.importEntry(input);
   }
 
   async ensureStarted(): Promise<HaConfigFlowBridge | undefined> {
@@ -337,10 +351,12 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
       persistedEntries,
       this.getSyncBindings(),
     );
+    for (const item of activeEntries) {
+      if (item.state !== 'loaded' || item.reason) this.entities.invalidateState(item.entry_id);
+    }
     const haEntries = await buildHaSyncEntries(activeEntries, this.secretsStore);
     const areas = collectHaAreaNames(this.homeService?.listDevices() ?? []);
     const applicationCredentials = await this.secretsStore.getCredentialsForHaSync();
-
     await rt.syncState({
       entries: haEntries,
       areas,
@@ -448,11 +464,6 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
   getUpdateReleaseNotes(entityId: string) {
     return getUpdateReleaseNotes(entityId, this.startFn, this.runtimeFn);
   }
-
-  async listApplicationCredentials(): Promise<readonly StoredAppCredentialPublic[]> {
-    return this.secretsStore.listCredentialsPublic();
-  }
-
   async addApplicationCredential(input: HaSyncCredentialInput): Promise<StoredAppCredentialPublic> {
     const stored = await this.secretsStore.saveCredential(input);
     this.clusterHaSync.scheduleSync('credential', `ha_app:${input.domain}`);
@@ -463,29 +474,21 @@ export class HaFlowBridgeService implements OnModuleInit, OnModuleDestroy {
     }
     return stored;
   }
-
   async removeApplicationCredential(domain: string): Promise<boolean> {
     const removed = await this.secretsStore.deleteCredential(domain);
     if (removed) this.clusterHaSync.scheduleSync('credential', `ha_app:${domain}`);
     if (removed && this.bridge) await this.syncAllState().catch(() => undefined);
     return removed;
   }
-
   async startFlowDirect(options: FlowInitOptions): Promise<IntegrationFlowStep> {
     await this.ensureStarted();
     return this.commissioning.startFlow(options);
   }
-
   async reloadCustomComponents(): Promise<readonly string[]> {
     const bridge = await this.ensureStarted().catch(() => undefined);
     if (!bridge || this.destroyed) return [];
     return bridge.reloadCustomComponents();
   }
-
-  importEntry(input: HaEntryImport) {
-    return this.entryImporter.importEntry(input);
-  }
-
   private async persistCompletedStep(
     step: IntegrationFlowStep,
     source: string,

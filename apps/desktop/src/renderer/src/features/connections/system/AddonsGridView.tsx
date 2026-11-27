@@ -87,7 +87,7 @@ export const AddonsGridView = memo(function AddonsGridView({
               style={{ layout: { width: pct(100) } }}
             >
               <Row align="center" gapPx={12}>
-                <BrandIcon kind="integration" id={group.id} size={44} hint={{ name: group.name }} />
+                <BrandIcon kind="integration" id={group.id} size={46} hint={{ name: group.name }} />
                 <Stack gapPx={2}>
                   <Heading level={3} size={15} weight={600}>
                     {group.name}
@@ -147,7 +147,7 @@ const AddonCard = memo(function AddonCard({
           <BrandIcon
             kind="addon"
             id={addon.slug}
-            size={44}
+            size={46}
             hint={{
               name: addon.name,
               ...(addon.url && addon.url.includes('github.com')

@@ -255,64 +255,112 @@ export function buildEffectBadgeStyle(
   };
 }
 
-export function effectMotionFor(motion: LightEffectMotion): UiMotionSpec | undefined {
+export const WASH_ACTIVATE_MS = 540;
+export const WASH_DEACTIVATE_MS = 500;
+export const WASH_MIN_SCALE = 0.72;
+export const WASH_MAX_BLUR = 28;
+
+/** Inverse size-to-blur ("motion blur") law: scale >= 1 -> 0 blur; smaller scale -> stronger blur. */
+export function washBlurForScale(
+  scale: number,
+  maxBlur = WASH_MAX_BLUR,
+  minScale = WASH_MIN_SCALE,
+): number {
+  if (scale >= 1 || maxBlur <= 0) return 0;
+  const deficit = Math.min(1, Math.max(0, (1 - scale) / Math.max(0.01, 1 - minScale)));
+  return Number((maxBlur * deficit).toFixed(2));
+}
+
+export function buildWashTransitionMotion(
+  activating: boolean,
+  reducedTransparency = false,
+): UiMotionSpec {
+  const maxBlur = reducedTransparency ? 0 : WASH_MAX_BLUR;
+  const shrunkBlur = washBlurForScale(WASH_MIN_SCALE, maxBlur);
+  const ease = activating ? ([0.22, 1, 0.36, 1] as const) : ([0.22, 0.8, 0.25, 1] as const);
+  const durationMs = activating ? WASH_ACTIVATE_MS : WASH_DEACTIVATE_MS;
+  const opacityEase = activating ? ([0.2, 0.7, 0.2, 1] as const) : ([0.25, 0.6, 0.3, 1] as const);
+  const opacityMs = activating ? 440 : 450;
+  return {
+    initial: activating
+      ? { opacity: 0, scale: WASH_MIN_SCALE, ...(maxBlur > 0 ? { blur: shrunkBlur } : {}) }
+      : { opacity: 1, scale: 1, ...(maxBlur > 0 ? { blur: 0 } : {}) },
+    animate: activating
+      ? { opacity: 1, scale: 1, ...(maxBlur > 0 ? { blur: 0 } : {}) }
+      : { opacity: 0, scale: WASH_MIN_SCALE, ...(maxBlur > 0 ? { blur: shrunkBlur } : {}) },
+    originX: 0.12,
+    originY: 0.19,
+    durationMs,
+    ease,
+    propertyDurationsMs: { opacity: opacityMs, transform: durationMs, blur: durationMs },
+    propertyEases: { opacity: opacityEase, transform: ease, blur: ease },
+  };
+}
+
+export function effectMotionFor(
+  motion: LightEffectMotion,
+  reducedTransparency = false,
+): UiMotionSpec | undefined {
+  const blurForScales = (scales: readonly number[]) =>
+    reducedTransparency ? {} : { blur: scales.map((s) => washBlurForScale(s)) };
   switch (motion) {
-    case 'flicker':
+    case 'flicker': {
+      const scale = [0.96, 1.025, 0.98, 1.03, 0.96] as const;
       return {
         initial: false,
-        animate: {
-          opacity: [0.78, 0.98, 0.85, 1, 0.78],
-          scale: [0.985, 1.025, 0.995, 1.03, 0.985],
-        },
+        animate: { opacity: [0.78, 0.98, 0.85, 1, 0.78], scale, ...blurForScales(scale) },
         times: [0, 0.34, 0.62, 0.82, 1],
         durationMs: 8400,
         ease: 'easeInOut',
         repeat: 'Infinity',
       };
-    case 'pulse':
+    }
+    case 'pulse': {
+      const scale = [0.91, 1.04, 0.91] as const;
       return {
         initial: false,
-        animate: { opacity: [0.68, 1, 0.68], scale: [0.96, 1.04, 0.96] },
+        animate: { opacity: [0.68, 1, 0.68], scale, ...blurForScales(scale) },
         times: [0, 0.5, 1],
         durationMs: 7200,
         ease: 'easeInOut',
         repeat: 'Infinity',
       };
-    case 'rainbow':
+    }
+    case 'rainbow': {
+      const scale = [0.965, 1.015, 0.98, 1.015, 0.965] as const;
       return {
         initial: false,
-        animate: { opacity: [0.82, 1, 0.88, 1, 0.82], scale: [0.985, 1.015, 0.99, 1.015, 0.985] },
+        animate: { opacity: [0.82, 1, 0.88, 1, 0.82], scale, ...blurForScales(scale) },
         times: [0, 0.25, 0.5, 0.75, 1],
         durationMs: 16000,
         ease: 'easeInOut',
         repeat: 'Infinity',
       };
-    case 'aurora':
+    }
+    case 'aurora': {
+      const scale = [0.94, 1.02, 0.975] as const;
       return {
         initial: false,
-        animate: {
-          scale: [0.985, 1.02, 0.995],
-          opacity: [0.84, 1, 0.9],
-        },
+        animate: { scale, opacity: [0.84, 1, 0.9], ...blurForScales(scale) },
         times: [0, 0.5, 1],
         durationMs: 13000,
         ease: 'easeInOut',
         repeat: 'Infinity',
         repeatType: 'reverse',
       };
-    case 'wave':
+    }
+    case 'wave': {
+      const scaleY = [0.93, 1.02, 0.97] as const;
       return {
         initial: false,
-        animate: {
-          scaleY: [0.98, 1.02, 0.99],
-          opacity: [0.8, 1, 0.86],
-        },
+        animate: { scaleY, opacity: [0.8, 1, 0.86], ...blurForScales(scaleY) },
         times: [0, 0.5, 1],
         durationMs: 9500,
         ease: 'easeInOut',
         repeat: 'Infinity',
         repeatType: 'reverse',
       };
+    }
     case 'sparkle':
       return {
         initial: false,
@@ -322,18 +370,17 @@ export function effectMotionFor(motion: LightEffectMotion): UiMotionSpec | undef
         ease: 'easeInOut',
         repeat: 'Infinity',
       };
-    case 'beat':
+    case 'beat': {
+      const scale = [0.92, 1.04, 0.965, 1.035, 0.92] as const;
       return {
         initial: false,
-        animate: {
-          opacity: [0.72, 1, 0.8, 0.98, 0.72],
-          scale: [0.97, 1.04, 0.985, 1.035, 0.97],
-        },
+        animate: { opacity: [0.72, 1, 0.8, 0.98, 0.72], scale, ...blurForScales(scale) },
         times: [0, 0.25, 0.5, 0.75, 1],
         durationMs: 3800,
         ease: 'easeInOut',
         repeat: 'Infinity',
       };
+    }
     default:
       return undefined;
   }

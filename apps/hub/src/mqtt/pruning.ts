@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
-import { readExplicitRoomAssignment, type HausDevice } from '@haus/core';
+import {
+  isUnassignedRoomId,
+  readExplicitNameAssignment,
+  readExplicitRoomAssignment,
+  reconcileDeviceUserAssignments,
+  type HausDevice,
+} from '@haus/core';
 import { consolidateLegacyMqttDevices, sanitizeMqttId } from '@haus/mqtt';
 import type { StandaloneHomeService } from '../home/home.service.js';
 import type { MqttIdentities } from './identity.js';
@@ -64,26 +70,12 @@ export function deduplicateMqttDeviceForExternalId(
   const canonical = homeService.getDevice(canonicalId);
   if (canonical) {
     let nextCanonical = withoutSyntheticHashSourceRef(canonical);
-    if (!readExplicitRoomAssignment(nextCanonical)) {
-      const explicitRoom = duplicates.map((dup) => readExplicitRoomAssignment(dup)).find(Boolean);
-      const donorWithRoom = duplicates.find((dup) =>
-        Boolean(dup.roomId && dup.roomId !== 'unassigned'),
-      );
-      if (explicitRoom) {
-        const roomId = explicitRoom.roomId;
-        nextCanonical = {
-          ...nextCanonical,
-          roomId,
-          areaId: roomId !== 'unassigned' ? roomId : undefined,
-          opaqueMetadata: {
-            ...nextCanonical.opaqueMetadata,
-            roomAssignment: explicitRoom,
-          },
-        };
-      } else if (
-        (!nextCanonical.roomId || nextCanonical.roomId === 'unassigned') &&
-        donorWithRoom?.roomId
-      ) {
+    for (const dup of duplicates) {
+      nextCanonical = reconcileDeviceUserAssignments(dup, nextCanonical);
+    }
+    if (!readExplicitRoomAssignment(nextCanonical) && isUnassignedRoomId(nextCanonical.roomId)) {
+      const donorWithRoom = duplicates.find((dup) => !isUnassignedRoomId(dup.roomId));
+      if (donorWithRoom?.roomId) {
         nextCanonical = {
           ...nextCanonical,
           roomId: donorWithRoom.roomId,
@@ -163,6 +155,42 @@ export async function runStartupMqttConsolidation(
   });
 
   return { consolidated, deduplicated };
+}
+
+const stashedMqttAssignments = new WeakMap<object, Map<string, HausDevice>>();
+
+/** Stashes explicit user room/name assignments before MQTT topic removal so transient add-on restarts preserve them. */
+export function stashAndRemoveMqttDevice(
+  homeService: HomeDeduplicateHost | undefined,
+  device: HausDevice,
+): void {
+  if (!homeService) return;
+  if (readExplicitRoomAssignment(device) || readExplicitNameAssignment(device)) {
+    let bucket = stashedMqttAssignments.get(homeService);
+    if (!bucket) {
+      bucket = new Map();
+      stashedMqttAssignments.set(homeService, bucket);
+    }
+    bucket.set(device.id, device);
+    if (device.source.externalId) bucket.set(`ext:${device.source.externalId}`, device);
+  }
+  homeService.removeDevice(device.id);
+}
+
+/** Restores stashed user room/name assignments when an MQTT device re-registers after transient removal. */
+export function restoreStashedMqttAssignments(
+  homeService: object | undefined,
+  rawDevId: string,
+  device: HausDevice,
+): HausDevice {
+  if (!homeService) return device;
+  const bucket = stashedMqttAssignments.get(homeService);
+  if (!bucket) return device;
+  const donor = bucket.get(device.id) ?? bucket.get(`ext:${rawDevId}`);
+  if (!donor) return device;
+  bucket.delete(device.id);
+  bucket.delete(`ext:${rawDevId}`);
+  return reconcileDeviceUserAssignments(donor, device);
 }
 
 /** Remove unplayable placeholder `_camera` endpoints left by legacy MQTT name heuristics. */

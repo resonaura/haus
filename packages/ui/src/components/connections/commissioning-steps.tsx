@@ -3,21 +3,15 @@
 import type { DetectedSetupCode } from '@haus/core/transport';
 import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
-import {
-  HausButton,
-  HausSwitch,
-  Row,
-  Stack,
-  Text,
-  TextInput,
-} from '../../primitives/index.js';
+import { HausButton, HausSwitch, Row, Stack, Text, TextInput } from '../../primitives/index.js';
+import { ManagementGlassCard, ManagementStatusPill } from '../brand/index.js';
 import { UiIcon } from '../icon.js';
 
 const FIELD_INPUT_STYLE = {
   layout: { width: pct(100), minHeight: px(38), padding: insets(8, 12) },
-  material: new SolidMaterial(colorToken('surfaceSecondary')),
+  material: new SolidMaterial(colorToken('surface')),
   border: { width: 1, color: colorToken('border') },
-  corners: corners(10),
+  corners: corners(11),
   typography: { size: 13, color: colorToken('textPrimary') },
 } as const;
 
@@ -92,34 +86,37 @@ export function CommissioningCodeStep({
         </Row>
       )}
 
-      <Stack
-        gapPx={6}
+      <ManagementGlassCard
+        radius={18}
+        padding={insets(13, 15)}
+        attention={detected.badgeTone === 'warning' || detected.badgeTone === 'danger'}
         style={{
-          layout: { width: pct(100), padding: insets(12, 14) },
-          material: new SolidMaterial(colorToken('surfaceSecondary')),
+          layout: { width: pct(100), gap: px(6) },
           border: { width: 1, color: borderColor },
-          corners: corners(12),
         }}
       >
-        <Row align="center" gapPx={8}>
-          <UiIcon
-            name={detected.valid ? 'check-circle' : 'key-round'}
-            size={15}
-            color={detected.valid ? '#34d399' : undefined}
-          />
-          <Text size={13} weight={600}>
-            {detected.label}
-          </Text>
+        <Row align="center" justify="between" gapPx={8} wrap>
+          <Row align="center" gapPx={8}>
+            <UiIcon
+              name={detected.valid ? 'check-circle' : 'key-round'}
+              size={15}
+              color={detected.valid ? '#34d399' : undefined}
+            />
+            <Text size={13} weight={600}>
+              {detected.label}
+            </Text>
+          </Row>
+          {detected.valid && <ManagementStatusPill label="Ready to pair" tone="success" showDot />}
         </Row>
-        <Text size={12} tone="muted">
+        <Text size={12} tone="muted" style={{ typography: { size: 12, lineHeight: 1.4 } }}>
           {detected.description}
         </Text>
         {detected.honestLimitation && (
-          <Text size={12} tone="accent">
+          <Text size={12} tone="accent" style={{ typography: { size: 12, lineHeight: 1.4 } }}>
             {detected.honestLimitation}
           </Text>
         )}
-      </Stack>
+      </ManagementGlassCard>
     </>
   );
 }

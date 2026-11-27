@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
+import { groupDiscoveredHomeTargets } from '@haus/core/pairing';
 import { AppState } from 'react-native';
 import {
   parseLocalHausHubService,
@@ -9,7 +10,7 @@ import {
 
 export { parseLocalHausHubService, parseLocalHomeAssistantService, type LocalHomeCandidate };
 
-const HAUS_HUB_SERVICE = '_haus._tcp';
+const HAUS_HUB_SERVICE = '_haus-hub._tcp';
 const HOME_ASSISTANT_SERVICE = '_home-assistant._tcp';
 const DISCOVERY_SECONDS = 4;
 const DISCOVERY_SETUP_TIMEOUT_MS = 30_000;
@@ -26,7 +27,46 @@ export interface LocalDiscoveryTask {
   cancel(): void;
 }
 
-/** A bounded native mDNS scan. Default discovers Haus Hubs; explicitHa scans Home Assistant. */
+async function enrichCandidateIdentity(candidate: LocalHomeCandidate): Promise<LocalHomeCandidate> {
+  if (candidate.kind === 'home-assistant') return candidate;
+  try {
+    const res = await fetch(`${candidate.url.replace(/\/+$/, '')}/api/auth/identity`, {
+      signal: AbortSignal.timeout(1_200),
+    });
+    if (!res.ok) return candidate;
+    const body = (await res.json()) as {
+      hub?: {
+        hubId?: string;
+        homeId?: string;
+        name?: string;
+        homeName?: string;
+        onboarded?: boolean;
+        cluster?: {
+          role?: 'standalone' | 'coordinator' | 'node' | 'fenced';
+          coordinatorHubId?: string;
+          hubCount?: number;
+        };
+      };
+    };
+    const hub = body?.hub;
+    if (!hub || typeof hub.hubId !== 'string') return candidate;
+    return {
+      ...candidate,
+      hubId: hub.hubId,
+      ...(typeof hub.homeId === 'string' && hub.homeId ? { homeId: hub.homeId } : {}),
+      ...(typeof hub.name === 'string' && hub.name ? { name: hub.name } : {}),
+      ...(typeof hub.homeName === 'string' && hub.homeName ? { homeName: hub.homeName } : {}),
+      ...(typeof hub.onboarded === 'boolean' ? { onboarded: hub.onboarded } : {}),
+      ...(hub.cluster?.role ? { clusterRole: hub.cluster.role } : {}),
+      ...(hub.cluster?.coordinatorHubId ? { coordinatorHubId: hub.cluster.coordinatorHubId } : {}),
+      ...(typeof hub.cluster?.hubCount === 'number' ? { hubCount: hub.cluster.hubCount } : {}),
+    };
+  } catch {
+    return candidate;
+  }
+}
+
+/** A bounded native mDNS scan. Default discovers Haus Homes & Hubs; explicitHa scans Home Assistant. */
 export function createLocalHomeDiscovery(options?: { explicitHa?: boolean }): LocalDiscoveryTask {
   let resolve!: (outcome: LocalDiscoveryOutcome) => void;
   let settled = false;
@@ -53,14 +93,34 @@ export function createLocalHomeDiscovery(options?: { explicitHa?: boolean }): Lo
     } catch {
       // Native cleanup is best-effort; the result still settles promptly.
     }
-    resolve(
-      status === 'complete' || status === 'cancelled'
-        ? {
-            status,
-            servers: [...servers.values()].sort((a, b) => a.name.localeCompare(b.name)),
-          }
-        : { status, servers: [] },
-    );
+    if (status !== 'complete' && status !== 'cancelled') {
+      resolve({ status, servers: [] });
+      return;
+    }
+    void (async () => {
+      const raw = [...servers.values()];
+      if (options?.explicitHa || status === 'cancelled') {
+        resolve({ status, servers: raw.sort((a, b) => a.name.localeCompare(b.name)) });
+        return;
+      }
+      const enriched = await Promise.all(raw.map(enrichCandidateIdentity));
+      const grouped = groupDiscoveredHomeTargets(enriched).map((target) => ({
+        id: target.id,
+        name: target.name,
+        url: target.url,
+        host: target.host ?? new URL(target.url).hostname,
+        port: target.port ?? Number(new URL(target.url).port || 80),
+        kind: target.kind ?? 'haus-hub',
+        ...(target.targetType ? { targetType: target.targetType } : {}),
+        ...(target.hubId ? { hubId: target.hubId } : {}),
+        ...(target.homeId ? { homeId: target.homeId } : {}),
+        ...(target.hubCount !== undefined ? { hubCount: target.hubCount } : {}),
+        ...(target.onboarded !== undefined ? { onboarded: target.onboarded } : {}),
+        ...(target.memberUrls ? { memberUrls: target.memberUrls } : {}),
+        ...(target.memberNames ? { memberNames: target.memberNames } : {}),
+      }));
+      resolve({ status, servers: grouped });
+    })();
   };
 
   appStateListener = AppState.addEventListener('change', (state) => {

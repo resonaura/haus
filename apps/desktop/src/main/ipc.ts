@@ -26,7 +26,7 @@ import { NATIVE_CHANNELS, type SidebarMaterial, type WindowChrome } from '../sha
 import { packIpcError } from '../shared/ipc-envelope';
 import { logIpcError } from './logging/logger';
 import type { NativeConnection } from './hub/router';
-import { cancelDiscovery, discoverServers } from './discovery';
+import { cancelDiscovery, discoverServers, type DiscoveryOptions } from './discovery';
 import { cancelHausNvrDiscovery, discoverHausNvrNodes } from './nvr-discovery';
 import type { SecureStore } from './secure-store';
 import type { HausHelper } from './helper';
@@ -209,7 +209,7 @@ export function registerNativeIpc(
   handle(NATIVE_CHANNELS.writeTalk, (data) => helper.writeTalk(data));
   handle(NATIVE_CHANNELS.stopTalk, () => helper.stopTalk());
   handle(NATIVE_CHANNELS.discover, (_event, options) =>
-    discoverServers(options as { explicitHa?: boolean } | undefined),
+    discoverServers(options as DiscoveryOptions | undefined),
   );
   handle(NATIVE_CHANNELS.discoverHausNvrNodes, () => discoverHausNvrNodes());
   ipcMain.on(NATIVE_CHANNELS.cancelHausNvrDiscovery, (event) => {

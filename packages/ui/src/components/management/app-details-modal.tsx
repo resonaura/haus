@@ -90,7 +90,7 @@ export function AppDetailsModal({
               <BrandIcon
                 kind="app"
                 id={app.externalId || app.id}
-                size={42}
+                size={48}
                 hint={{ name: app.name, addonSlug: app.externalId }}
               />
               <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>

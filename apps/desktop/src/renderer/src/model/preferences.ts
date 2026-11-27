@@ -5,4 +5,4 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-export * from '@haus/ha/view/preferences';
+export * from '@haus/core/preferences';

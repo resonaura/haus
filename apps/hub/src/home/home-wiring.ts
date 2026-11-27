@@ -152,9 +152,21 @@ export function initializeHomeRulesAndCluster(deps: HomeWiringDeps) {
       }
     },
   });
+  const persistSeededRooms = async () => {
+    const existingRows = await deps.persistence.listByKind<Room>('room');
+    const persistedIds = new Set(existingRows.map((row) => row.entryId));
+    for (const room of deps.rooms.values()) {
+      if (!room.id || room.id === 'unassigned' || persistedIds.has(room.id)) continue;
+      await deps.persistence.save('room', room.id, room);
+    }
+  };
   return {
     ...runtime,
     roomManager,
-    loadAndApply: () => loadAndApplyHomeSnapshot(deps.persistence, snapshotTargets()),
+    loadAndApply: async () => {
+      const snap = await loadAndApplyHomeSnapshot(deps.persistence, snapshotTargets());
+      await persistSeededRooms();
+      return snap;
+    },
   };
 }

@@ -10,12 +10,12 @@ import { availableParallelism, homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   BrandIconCache,
-  resolveBrandIconWithMeta,
+  resolveCoreBrandIconWithMeta as resolveBrandIconWithMeta,
   type BrandIconHint,
   type BrandIconKind,
-} from '@haus/ha/native/brand-icons';
+} from '@haus/core/brands';
 import { resolveIconTintColor, type ResolvedIconStyle } from '@haus/icons';
-import { encodePngRgba, IconRenderService } from '@haus/icons/node';
+import { createNodeBrandLocalLookup, encodePngRgba, IconRenderService } from '@haus/icons/node';
 import type {
   BrandIconPort,
   BrandIconTileResult,
@@ -52,6 +52,7 @@ function resolveGpuiBrandCacheRoot(): string {
 
 let sharedRenderService: IconRenderService | null = null;
 const sharedSourceCache = new BrandIconCache(1200);
+const sharedLocalLookup = createNodeBrandLocalLookup({});
 
 /**
  * Shared desktop GPUIX `@haus/icons/node` `IconRenderService` backed by the native
@@ -92,7 +93,7 @@ function sourceKeyFor(kind: BrandIconKind, id: string, hint?: BrandIconHint): st
 }
 
 /**
- * Resolves a real brand logo via `@haus/ha/native/brand-icons` (or an explicit source
+ * Resolves a real brand logo via `@haus/core/brands` (or an explicit source
  * callback such as a live HA session) and renders it through `@haus/icons/node`
  * (`IconRenderService` + C++20 `haus-icon-worker` + `VersionedIconCache`).
  */
@@ -121,6 +122,7 @@ export async function resolveGpuiLocalBrandTile(
                 dark: false,
                 hint,
                 cache: sharedSourceCache,
+                readLocalIcon: sharedLocalLookup,
               });
           const rasterized = await ensureRasterPngDataUri(fetched.dataUri);
           return { dataUri: rasterized, isFallback: fetched.isFallback };
@@ -144,7 +146,7 @@ export async function resolveGpuiLocalBrandTile(
 }
 
 /**
- * Resolves a raw brand source URI via `@haus/ha/native/brand-icons` (`brands.home-assistant.io`,
+ * Resolves a raw brand source URI via `@haus/core/brands` (`brands.home-assistant.io`,
  * add-on GitHub repos, npm packages, local directories, and bundled fallbacks).
  */
 export async function resolveGpuiLocalBrandSource(
@@ -160,6 +162,7 @@ export async function resolveGpuiLocalBrandSource(
       dark,
       hint,
       cache: sharedSourceCache,
+      readLocalIcon: sharedLocalLookup,
     });
     return res.dataUri;
   } catch {
@@ -202,7 +205,7 @@ export async function renderGpuiLocalBrandTile(
 
 /**
  * Standalone GPUIX `BrandIconPort` powered by `@haus/icons/node` (`IconRenderService` +
- * C++20 `haus-icon-worker`) and `@haus/ha/native/brand-icons` — used in demo/offline mode
+ * C++20 `haus-icon-worker`) and `@haus/core/brands` — used in demo/offline mode
  * and as fallback when a Hub does not supply pre-rendered tiles.
  */
 export function createGpuiStandaloneBrandIconPort(): BrandIconPort {

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later.
  */
 
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import {
   colorToken,
   corners,
@@ -36,7 +36,7 @@ const ATTENTION_RIM_TINT = rgba(251, 191, 36, 0.55);
 
 /**
  * Refined monochrome continuous-corner glass card modeled directly on `ServerGlassPanel`,
- * with analytical `<GlassRim />` edge lighting and subtle hover response.
+ * with analytical `<GlassRim />` edge lighting and zero-commit native hover response.
  */
 export function ManagementGlassCard({
   id,
@@ -44,6 +44,7 @@ export function ManagementGlassCard({
   radius = 22,
   interactive = false,
   attention = false,
+  rim = true,
   ariaLabel,
   className,
   style,
@@ -55,13 +56,13 @@ export function ManagementGlassCard({
   readonly radius?: number;
   readonly interactive?: boolean;
   readonly attention?: boolean;
+  readonly rim?: boolean;
   readonly ariaLabel?: string;
   readonly className?: string;
   readonly style?: UiStyleSpec;
   readonly onPress?: () => void;
   readonly children: ReactNode;
 }) {
-  const [hovered, setHovered] = useState(false);
   const { theme } = useHausUi();
   const hoverSurface =
     theme.mode === 'dark'
@@ -80,7 +81,7 @@ export function ManagementGlassCard({
       padding,
       ...style?.layout,
     },
-    material: new SolidMaterial(isHoverable && hovered ? hoverSurface : colorToken('card')),
+    material: new SolidMaterial(colorToken('card')),
     border: {
       width: 1,
       color: attention ? ATTENTION_BORDER : colorToken('border'),
@@ -88,16 +89,27 @@ export function ManagementGlassCard({
     shadows: [],
     corners: corners(radius),
     transitionMs: 180,
+    ...(isHoverable
+      ? {
+          states: {
+            ...style?.states,
+            hover: {
+              material: new SolidMaterial(hoverSurface),
+              ...style?.states?.hover,
+            },
+          },
+        }
+      : {}),
   };
 
-  const rim = (
+  const rimNode = rim ? (
     <GlassRim
       preset="card"
       radiusPx={Math.max(8, radius - 1)}
-      opacity={hovered ? 0.68 : 0.46}
+      opacity={0.48}
       tintColor={attention ? ATTENTION_RIM_TINT : undefined}
     />
-  );
+  ) : null;
 
   if (onPress) {
     return (
@@ -106,8 +118,6 @@ export function ManagementGlassCard({
         className={className}
         ariaLabel={ariaLabel}
         onActivate={onPress}
-        onPointerEnter={() => setHovered(true)}
-        onPointerLeave={() => setHovered(false)}
         style={{
           ...baseStyle,
           layout: {
@@ -118,23 +128,15 @@ export function ManagementGlassCard({
         }}
       >
         {children}
-        {rim}
+        {rimNode}
       </Pressable>
     );
   }
 
   return (
-    <Box
-      id={id}
-      semantic="article"
-      className={className}
-      ariaLabel={ariaLabel}
-      onPointerEnter={interactive ? () => setHovered(true) : undefined}
-      onPointerLeave={interactive ? () => setHovered(false) : undefined}
-      style={baseStyle}
-    >
+    <Box id={id} semantic="article" className={className} ariaLabel={ariaLabel} style={baseStyle}>
       {children}
-      {rim}
+      {rimNode}
     </Box>
   );
 }

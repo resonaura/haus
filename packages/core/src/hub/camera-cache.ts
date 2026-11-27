@@ -1,0 +1,36 @@
+/*
+ * Haus — A thoughtful home.
+ * Copyright © 2026 Andrii Vynohradov. All rights reserved.
+ * Licensed under the GNU General Public License v3.0 or later; see LICENSE.
+ * SPDX-License-Identifier: GPL-3.0-or-later.
+ */
+
+/** Short-lived signalling metadata only; never retains a stream, SDP or microphone. */
+export class CameraMetadataCache {
+  private entries = new Map<string, { expires: number; result: Promise<unknown> }>();
+  constructor(private readonly now = () => Date.now()) {}
+
+  request<T>(message: Record<string, unknown>, load: () => Promise<T>): Promise<T> {
+    if (
+      !['camera/capabilities', 'camera/webrtc/get_client_config'].includes(String(message.type)) ||
+      !/^camera\.[a-z0-9_]+$/.test(String(message.entity_id)) ||
+      Object.keys(message).some((key) => !['type', 'entity_id'].includes(key))
+    )
+      return load();
+    const key = `${message.type}:${message.entity_id}`;
+    const existing = this.entries.get(key);
+    if (existing && existing.expires > this.now()) return existing.result as Promise<T>;
+    const oldestKey = this.entries.size >= 64 ? this.entries.keys().next().value : undefined;
+    if (oldestKey !== undefined) this.entries.delete(oldestKey);
+    const entry = { expires: this.now() + 30_000, result: Promise.resolve().then(load) };
+    this.entries.set(key, entry);
+    void entry.result.catch(() => {
+      if (this.entries.get(key) === entry) this.entries.delete(key);
+    });
+    return entry.result;
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}

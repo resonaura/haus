@@ -1,43 +1,124 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { isRecord, type CompatView } from '../types';
+import { toHubDeviceTriggers } from './hub-ha-device-triggers';
 import {
   buildEndpointEntityMap,
   type HubAutomationRecord,
   type HubScriptRecord,
 } from './hub-rules-projection';
 
+function stringList(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
+
+function parseSunOffsetMinutes(raw: unknown): number | undefined {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.round(raw / 60);
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const trimmed = raw.trim();
+  const sign = trimmed.startsWith('-') ? -1 : 1;
+  const parts = trimmed.replace(/^[+-]/, '').split(':').map(Number);
+  if (parts.some((n) => !Number.isFinite(n))) return undefined;
+  return sign * ((parts[0] ?? 0) * 60 + (parts[1] ?? 0));
+}
+
+export function toHubTriggerList(
+  block: Record<string, unknown>,
+  view: CompatView,
+): Record<string, unknown>[] {
+  const kind = String(block.trigger ?? block.platform ?? 'state');
+  const target = isRecord(block.target) ? block.target : {};
+  const entityIds = stringList(target.entity_id ?? block.entity_id);
+  const firstEntityId = entityIds[0] ?? '';
+  const endpointId = view.bindings.get(firstEntityId)?.endpointId ?? firstEntityId;
+
+  if (kind === 'time') {
+    return [{ type: 'time', ...(typeof block.at === 'string' ? { at: block.at } : {}) }];
+  }
+  if (kind === 'sun') {
+    const offsetMinutes = parseSunOffsetMinutes(block.offset);
+    return [
+      {
+        type: 'time',
+        sun: block.event === 'sunrise' ? 'sunrise' : 'sunset',
+        ...(offsetMinutes !== undefined && offsetMinutes !== 0 ? { offsetMinutes } : {}),
+      },
+    ];
+  }
+  if (kind === 'event.received' || kind === 'event') {
+    const options = isRecord(block.options) ? block.options : {};
+    const eventTypes = stringList(options.event_type ?? block.event_type);
+    const resolvedTypes = eventTypes.length > 0 ? eventTypes : ['initial_press'];
+    const eventData = isRecord(block.event_data) ? block.event_data : undefined;
+    const hasData = eventData && Object.keys(eventData).length > 0;
+    if (entityIds.length > 0) {
+      return entityIds.flatMap((id) => {
+        const ep = view.bindings.get(id)?.endpointId ?? id;
+        return resolvedTypes.map((eventType) => ({
+          type: 'event',
+          eventType,
+          endpointId: ep,
+          ...(hasData ? { data: eventData } : {}),
+        }));
+      });
+    }
+    return resolvedTypes.map((eventType) => ({
+      type: 'event',
+      eventType,
+      ...(hasData ? { data: eventData } : {}),
+    }));
+  }
+  if (kind === 'device') {
+    try {
+      return toHubDeviceTriggers(block, view);
+    } catch {
+      const eventType = typeof block.type === 'string' && block.type ? block.type : 'initial_press';
+      const deviceId = typeof block.device_id === 'string' ? block.device_id : undefined;
+      return [{ type: 'event', eventType, ...(deviceId ? { endpointId: deviceId } : {}) }];
+    }
+  }
+  if (kind === 'state' && firstEntityId.startsWith('event.') && block.attribute === 'event_type') {
+    const toTypes = stringList(block.to);
+    const resolvedTypes = toTypes.length > 0 ? toTypes : ['initial_press'];
+    return resolvedTypes.map((eventType) => ({
+      type: 'event',
+      eventType,
+      endpointId,
+    }));
+  }
+  if (kind === 'numeric_state') {
+    return [
+      {
+        type: 'numeric_state',
+        endpointId,
+        property:
+          typeof block.attribute === 'string' && block.attribute ? block.attribute : 'value',
+        ...(typeof block.above === 'number' ? { above: block.above } : {}),
+        ...(typeof block.below === 'number' ? { below: block.below } : {}),
+      },
+    ];
+  }
+  return [
+    {
+      type: 'state',
+      endpointId,
+      ...(typeof block.attribute === 'string' && block.attribute
+        ? { property: block.attribute }
+        : {}),
+      ...(block.from !== undefined ? { from: block.from } : {}),
+      ...(block.to !== undefined ? { to: block.to } : {}),
+    },
+  ];
+}
+
 export function toHubTrigger(
   block: Record<string, unknown>,
   view: CompatView,
 ): Record<string, unknown> {
-  const kind = String(block.trigger ?? block.platform ?? 'state');
-  const entityId = typeof block.entity_id === 'string' ? block.entity_id : '';
-  const endpointId = view.bindings.get(entityId)?.endpointId ?? entityId;
-  if (kind === 'time') {
-    return { type: 'time', ...(typeof block.at === 'string' ? { at: block.at } : {}) };
-  }
-  if (kind === 'sun') {
-    return { type: 'time', sun: block.event === 'sunrise' ? 'sunrise' : 'sunset' };
-  }
-  if (kind === 'numeric_state') {
-    return {
-      type: 'numeric_state',
-      endpointId,
-      property: typeof block.attribute === 'string' && block.attribute ? block.attribute : 'value',
-      ...(typeof block.above === 'number' ? { above: block.above } : {}),
-      ...(typeof block.below === 'number' ? { below: block.below } : {}),
-    };
-  }
-  return {
-    type: 'state',
-    endpointId,
-    ...(typeof block.attribute === 'string' && block.attribute
-      ? { property: block.attribute }
-      : {}),
-    ...(block.from !== undefined ? { from: block.from } : {}),
-    ...(block.to !== undefined ? { to: block.to } : {}),
-  };
+  return toHubTriggerList(block, view)[0] ?? { type: 'state', endpointId: '' };
 }
 
 export function automationToHaConfig(
@@ -67,6 +148,25 @@ export function automationToHaConfig(
         return t.sun
           ? { trigger: 'sun', event: t.sun }
           : { trigger: 'time', at: t.at ?? '08:00:00' };
+      }
+      if (t.type === 'event') {
+        const entityId =
+          typeof t.endpointId === 'string' && t.endpointId
+            ? (epMap.get(t.endpointId)?.entityId ?? t.endpointId)
+            : '';
+        const eventType = typeof t.eventType === 'string' && t.eventType ? t.eventType : 'initial_press';
+        if (entityId) {
+          return {
+            trigger: 'event.received',
+            target: { entity_id: entityId },
+            options: { event_type: [eventType] },
+          };
+        }
+        return {
+          trigger: 'event',
+          event_type: eventType,
+          ...(isRecord(t.data) && Object.keys(t.data).length > 0 ? { event_data: t.data } : {}),
+        };
       }
       const entityId =
         typeof t.endpointId === 'string' ? (epMap.get(t.endpointId)?.entityId ?? t.endpointId) : '';

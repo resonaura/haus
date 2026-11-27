@@ -11,3 +11,4 @@ export * from './cpp-worker.js';
 export * from './fingerprint.js';
 export * from './cache.js';
 export * from './service.js';
+export * from './brand-fs.js';

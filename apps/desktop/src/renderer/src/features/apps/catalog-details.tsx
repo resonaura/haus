@@ -7,10 +7,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Box, HausButton, Heading, Text } from '@haus/ui';
-import { Check, Download, ExternalLink, LoaderCircle } from 'lucide-react';
+import { Check, Download, ExternalLink } from 'lucide-react';
 import type { BrandIconKind } from '../../../../shared/native';
 import { BrandIcon } from '../../components/brand/BrandIcon';
-import { FeatureLoading } from '@haus/ui/components';
+import {
+  FeatureLoading,
+  OperationProgressPanel,
+  computeInstallProgressPercent,
+  formatByteProgress,
+  formatInstallStageTitle,
+} from '@haus/ui/components';
 import { nativeApi } from '../../ha/management';
 import { hacs } from '../community/hacs';
 import { ConnectionDetailLayout } from '../connections/ConnectionDetailLayout';
@@ -26,6 +32,7 @@ import {
   type CatalogAppSummary,
 } from './catalog-api';
 import { AppConfigFields } from './config-form';
+import { AppLiveLogs } from './live-logs';
 
 export function catalogIconKind(runtimeType: string): BrandIconKind {
   if (runtimeType === 'homebridge') return 'homebridge';
@@ -34,19 +41,6 @@ export function catalogIconKind(runtimeType: string): BrandIconKind {
   if (runtimeType === 'addon') return 'addon';
   return 'app';
 }
-
-const stageLabel = (stage: string) =>
-  ({
-    validating: 'Validating manifest…',
-    'checking-local': 'Checking local images…',
-    pulling: 'Pulling container image…',
-    building: 'Building App image…',
-    ready: 'Image ready…',
-    creating: 'Creating App container…',
-    starting: 'Starting App…',
-    complete: 'Installed',
-    failed: 'Installation failed',
-  })[stage] ?? `${stage}…`;
 
 export function AppCatalogDetails({
   entry,
@@ -296,13 +290,34 @@ export function AppCatalogDetails({
 
           {progress && (
             <Box semantic="section" className="native-app-section">
-              <Box className="native-app-progress" role="status">
-                {busy && <LoaderCircle size={15} className="spin" />}
-                <Text>
-                  {stageLabel(progress.stage)}
-                  {progress.errorCode ? ` (${progress.errorCode})` : ''}
-                </Text>
-              </Box>
+              <OperationProgressPanel
+                id="catalog-app-install-progress"
+                title={formatInstallStageTitle(progress.stage)}
+                detail={
+                  progress.detail ??
+                  formatByteProgress(progress.current, progress.total) ??
+                  (progress.errorCode ? `Error code: ${progress.errorCode}` : undefined)
+                }
+                percent={computeInstallProgressPercent(
+                  progress.stage,
+                  progress.current,
+                  progress.total,
+                  progress.percent,
+                )}
+                state={
+                  progress.stage === 'failed'
+                    ? 'failed'
+                    : progress.stage === 'complete'
+                      ? 'complete'
+                      : 'running'
+                }
+                logs={progress.logs}
+                liveLogsSlot={
+                  progress.stage === 'starting' || progress.stage === 'complete' ? (
+                    <AppLiveLogs appId={entry.id} />
+                  ) : undefined
+                }
+              />
             </Box>
           )}
 

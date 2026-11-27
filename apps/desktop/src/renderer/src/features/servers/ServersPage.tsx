@@ -17,8 +17,8 @@ import {
   LayoutGrid,
   ChevronRight,
 } from 'lucide-react';
-import { Dialog, FeatureLoading, EmptyState } from '@haus/ui/components';
-import { VirtualSections } from '@haus/ui/web';
+import { FeatureLoading, EmptyState } from '@haus/ui/components';
+import { PresenceGrid, VirtualSections } from '@haus/ui/web';
 import { roomIconFor } from '../../components/icons/Icon';
 import { PairServerDialog } from './PairServerDialog';
 import { ServerSshAddDialog } from './ServerSshAddDialog';
@@ -26,6 +26,7 @@ import { confirmStorageLimit, serverRequest } from './server-api';
 import { ServerDetail } from './ServerDetail';
 import { ServerBackups } from './ServerBackups';
 import { ClusterCoordinationPanel } from './cluster/ClusterCoordinationPanel';
+import { AddHubDialog, AddServerMenuDialog } from './cluster/AddHubDialog';
 import { RemoveServerDialog } from './cluster/RemoveServerDialog';
 import { useServers } from './useServers';
 import { ServerCard } from './ServerCard';
@@ -81,6 +82,7 @@ export function ServersPage({
     useServers(demo);
   const [selected, setSelected] = useState<string | undefined>(initialServerId);
   const [addMenu, setAddMenu] = useState(false);
+  const [addHub, setAddHub] = useState(false);
   const [pair, setPair] = useState(false);
   const [sshAdd, setSshAdd] = useState(false);
   const [enrolling, setEnrolling] = useState<HomeServer>();
@@ -90,6 +92,11 @@ export function ServersPage({
   const rawServer = status?.servers.find((item) => item.id === selected);
   const server = rawServer ? namedServer(rawServer, serverDevices) : undefined;
   const visibleServers = serversForView(status?.servers ?? [], serverDevices, 'all');
+  const isHausHubSession = Boolean(
+    status?.servers.some((item) => item.kind === 'hub') ||
+    cluster?.coordinatorId ||
+    cluster?.selfHubId,
+  );
   const groups = groupServersByRoom(visibleServers, rooms, serverDevices);
   const opener = useRef<string | undefined>(undefined);
   const detail = useRef<HTMLDivElement>(null);
@@ -237,7 +244,7 @@ export function ServersPage({
                   </Text>
                   <Text className="device-group-rule" />
                 </Box>
-                <Box className="accessory-grid">
+                <PresenceGrid className="accessory-grid">
                   {group.servers.map((item) => (
                     <ServerCard
                       key={item.id}
@@ -260,7 +267,7 @@ export function ServersPage({
                       }}
                     />
                   ))}
-                </Box>
+                </PresenceGrid>
               </Box>
             );
           }}
@@ -273,7 +280,7 @@ export function ServersPage({
           description="Add a server, or restore a hidden one from Hidden devices."
         />
       )}
-      {status && !server && cluster && (
+      {status && !server && cluster && isHausHubSession && (
         <ClusterCoordinationPanel cluster={cluster} admin={admin} busy={busy || !fresh} act={act} />
       )}
       {status && server && (
@@ -408,43 +415,19 @@ export function ServersPage({
         />
       )}
       {addMenu && (
-        <Dialog title="Add a server" onClose={() => setAddMenu(false)}>
-          <Text semantic="p" className="registry-help">
-            Choose how you want to connect this machine.
-          </Text>
-          <Box className="server-add-methods">
-            <Pressable
-              onPress={() => {
-                setAddMenu(false);
-                setPair(true);
-              }}
-            >
-              <Server size={20} />
-              <Text>
-                <Text semantic="strong">Haus Hub</Text>
-                <Text semantic="small">
-                  System monitoring with optional camera services and backups.
-                </Text>
-              </Text>
-              <ChevronRight size={17} />
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setAddMenu(false);
-                setSshAdd(true);
-              }}
-            >
-              <Server size={20} />
-              <Text>
-                <Text semantic="strong">SSH server</Text>
-                <Text semantic="small">
-                  Secure shell access and a place for this machine in your home.
-                </Text>
-              </Text>
-              <ChevronRight size={17} />
-            </Pressable>
-          </Box>
-        </Dialog>
+        <AddServerMenuDialog
+          onClose={() => setAddMenu(false)}
+          onSelectHub={isHausHubSession ? () => setAddHub(true) : undefined}
+          onSelectNvr={() => setPair(true)}
+          onSelectSsh={() => setSshAdd(true)}
+        />
+      )}
+      {isHausHubSession && (
+        <AddHubDialog
+          open={addHub}
+          onClose={() => setAddHub(false)}
+          onJoined={() => refresh().catch(() => {})}
+        />
       )}
       {sshAdd && (
         <ServerSshAddDialog

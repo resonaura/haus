@@ -1,21 +1,38 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later. Copyright © 2026 Andrii Vynohradov. */
 
 import { useState } from 'react';
-import { colorToken, corners, insets, pct, px } from '../../ir/geometry.js';
+import {
+  colorToken,
+  corners,
+  insets,
+  mixColor,
+  pct,
+  px,
+  transparentColor,
+} from '../../ir/geometry.js';
 import { SolidMaterial } from '../../ir/materials.js';
 import {
+  Box,
   HausButton,
-  HausDialog,
   Heading,
   Pressable,
   Row,
   Stack,
   Text,
   TextInput,
+  useHausUi,
 } from '../../primitives/index.js';
+import { GlassRim } from '../../primitives/glass-rim.js';
+import { buildTileFrameStyle, getDeviceTileTokens } from '../devices/tile-theme.js';
 import { DashboardGrid } from '../home.js';
 import { UiIcon } from '../icon.js';
 import type { UiIconName } from '../icons.js';
+
+export {
+  RoomAddDevicesModal,
+  RoomDeleteModal,
+  type PortableRoomCandidate,
+} from './rooms/modals.js';
 
 export interface PortableRoomCardItem {
   readonly id: string;
@@ -31,12 +48,225 @@ export interface PortableRoomIconChoice {
   readonly iconName: UiIconName;
 }
 
-export interface PortableRoomCandidate {
-  readonly id: string;
-  readonly name: string;
-  readonly detail: string;
-  readonly currentRoomName: string;
-  readonly selected: boolean;
+function RoomManagementCard({
+  room,
+  picking,
+  canManage,
+  iconOptions,
+  onTogglePicker,
+  onSelectIcon,
+  onOpenRoom,
+  onAddDevices,
+  onEditRoom,
+  onDeleteRoom,
+}: {
+  readonly room: PortableRoomCardItem;
+  readonly picking: boolean;
+  readonly canManage: boolean;
+  readonly iconOptions: readonly PortableRoomIconChoice[];
+  readonly onTogglePicker: () => void;
+  readonly onSelectIcon: (iconId: string) => void;
+  readonly onOpenRoom: () => void;
+  readonly onAddDevices: () => void;
+  readonly onEditRoom: () => void;
+  readonly onDeleteRoom: () => void;
+}) {
+  const { theme, viewport } = useHausUi();
+  const [hovered, setHovered] = useState(false);
+  const tokens = getDeviceTileTokens(theme.mode);
+  const frameLayout = buildTileFrameStyle({
+    mode: theme.mode,
+    active: false,
+    hovered,
+    highContrast: viewport.highContrast,
+    reducedTransparency: viewport.reducedTransparency,
+    deviceColor: tokens.deviceNeutral,
+    hasRestore: false,
+  });
+
+  return (
+    <Box
+      semantic="article"
+      dataAttrs={{ 'data-haus-glass-rim': 'managed' }}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      style={{
+        layout: {
+          display: 'flex',
+          direction: 'column',
+          justifyContent: 'between',
+          gap: px(18),
+          width: pct(100),
+          minHeight: px(142),
+          padding: insets(18),
+          position: 'relative',
+          overflow: 'hidden',
+        },
+        material: frameLayout.material,
+        border: frameLayout.border,
+        shadows: frameLayout.shadows,
+        corners: corners(26),
+        transitionMs: 220,
+      }}
+    >
+      {frameLayout.sheenMaterial && (
+        <Box
+          ariaHidden
+          style={{
+            layout: { position: 'absolute', inset: insets(0), width: pct(100), height: pct(100) },
+            corners: corners(25),
+            pointerEvents: 'none',
+            material: frameLayout.sheenMaterial,
+          }}
+        />
+      )}
+
+      <Row
+        align="center"
+        justify="between"
+        gapPx={8}
+        style={{ layout: { width: pct(100), position: 'relative', zIndex: 1 } }}
+      >
+        <Pressable
+          id={`room-icon-${room.id}`}
+          ariaLabel={`Change ${room.name} icon`}
+          ariaExpanded={picking}
+          onActivate={onTogglePicker}
+          style={{
+            layout: { width: px(38), height: px(38), alignItems: 'center', justifyContent: 'center' },
+            cursor: 'pointer',
+            material: new SolidMaterial(
+              mixColor(transparentColor, colorToken('ink'), picking ? 0.14 : 0.07),
+            ),
+            border: {
+              width: 1,
+              color: mixColor(transparentColor, colorToken('ink'), picking ? 0.22 : 0.1),
+            },
+            corners: corners(12),
+            transitionMs: 160,
+            states: {
+              hover: {
+                material: new SolidMaterial(mixColor(transparentColor, colorToken('ink'), 0.13)),
+              },
+              pressed: { transform: { scale: 0.94 } },
+            },
+          }}
+        >
+          <UiIcon name={room.iconName} size={18} />
+        </Pressable>
+
+        <Box style={{ opacity: hovered || picking ? 1 : 0, transitionMs: 160 }}>
+          <Row align="center" gapPx={2}>
+            <HausButton
+              id={`room-add-devices-${room.id}`}
+              isIconOnly
+              variant="ghost"
+              size="sm"
+              aria-label={`Add devices to ${room.name}`}
+              disabled={!canManage}
+              onPress={onAddDevices}
+            >
+              <UiIcon name="plus" size={15} />
+            </HausButton>
+            <HausButton
+              id={`room-edit-${room.id}`}
+              isIconOnly
+              variant="ghost"
+              size="sm"
+              aria-label={`Settings for ${room.name}`}
+              disabled={!canManage}
+              onPress={onEditRoom}
+            >
+              <UiIcon name="more-horizontal" size={16} />
+            </HausButton>
+            <HausButton
+              id={`room-delete-${room.id}`}
+              isIconOnly
+              variant="ghost"
+              size="sm"
+              aria-label={`Remove ${room.name}`}
+              disabled={!canManage}
+              onPress={onDeleteRoom}
+            >
+              <UiIcon name="trash-2" size={15} />
+            </HausButton>
+          </Row>
+        </Box>
+      </Row>
+
+      {picking && (
+        <Row gapPx={6} wrap style={{ layout: { width: pct(100), position: 'relative', zIndex: 1 } }}>
+          {iconOptions.map((opt) => {
+            const active = room.iconId === opt.id;
+            return (
+              <Pressable
+                key={opt.id}
+                id={`room-icon-option-${room.id}-${opt.id}`}
+                ariaLabel={opt.label}
+                ariaPressed={active}
+                onActivate={() => onSelectIcon(opt.id)}
+                style={{
+                  layout: {
+                    padding: insets(5, 8),
+                    direction: 'row',
+                    alignItems: 'center',
+                    gap: px(5),
+                  },
+                  cursor: 'pointer',
+                  material: new SolidMaterial(
+                    active ? colorToken('surfaceActive') : colorToken('surface'),
+                  ),
+                  border: {
+                    width: 1,
+                    color: active ? colorToken('accent') : colorToken('border'),
+                  },
+                  corners: corners(9),
+                  transitionMs: 150,
+                  states: {
+                    hover: { material: new SolidMaterial(colorToken('surfaceHover')) },
+                    pressed: { transform: { scale: 0.96 } },
+                  },
+                }}
+              >
+                <UiIcon name={opt.iconName} size={14} />
+                <Text size={11}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </Row>
+      )}
+
+      <Pressable
+        id={`room-${room.id}`}
+        onActivate={onOpenRoom}
+        style={{
+          layout: {
+            width: pct(100),
+            direction: 'column',
+            alignItems: 'start',
+            gap: px(6),
+            position: 'relative',
+            zIndex: 1,
+          },
+          cursor: 'pointer',
+          material: new SolidMaterial(transparentColor),
+          border: { width: 0, style: 'none', color: transparentColor },
+        }}
+      >
+        <Text size={17} weight={600}>
+          {room.name}
+        </Text>
+        <Row align="center" justify="between" style={{ layout: { width: pct(100) } }}>
+          <Text size={12.5} tone="muted">
+            {`${room.deviceCount} ${room.deviceCount === 1 ? 'device' : 'devices'}`}
+          </Text>
+          <UiIcon name="arrow-up-right" size={15} />
+        </Row>
+      </Pressable>
+
+      <GlassRim preset="card" variant="card" opacity={hovered ? 0.78 : 0.54} />
+    </Box>
+  );
 }
 
 export function RoomsManagerView({
@@ -73,6 +303,7 @@ export function RoomsManagerView({
   readonly onDeleteRoom: (roomId: string) => void;
 }) {
   const [iconMenuRoomId, setIconMenuRoomId] = useState<string | null>(null);
+  const [unassignedHovered, setUnassignedHovered] = useState(false);
 
   return (
     <Stack gapPx={18} style={{ layout: { width: pct(100) } }}>
@@ -118,33 +349,49 @@ export function RoomsManagerView({
       </Row>
 
       {unassignedCount > 0 && (
-        <Pressable
-          id="rooms-unassigned"
-          onActivate={onOpenDevices}
+        <Box
+          dataAttrs={{ 'data-haus-glass-rim': 'managed' }}
+          onPointerEnter={() => setUnassignedHovered(true)}
+          onPointerLeave={() => setUnassignedHovered(false)}
           style={{
-            layout: {
-              width: pct(100),
-              direction: 'row',
-              alignItems: 'center',
-              justifyContent: 'between',
-              padding: insets(16, 18),
-            },
+            layout: { width: pct(100), position: 'relative', overflow: 'hidden' },
             material: new SolidMaterial(colorToken('surfaceSecondary')),
             border: { width: 1, color: colorToken('border') },
-            corners: corners(18),
-            states: { hover: { material: new SolidMaterial(colorToken('surfaceHover')) } },
+            corners: corners(22),
+            transitionMs: 200,
           }}
         >
-          <Stack gapPx={3}>
-            <Text size={14} weight={600}>
-              A place for everything
-            </Text>
-            <Text size={12} tone="muted">
-              {`${unassignedCount} ${unassignedCount === 1 ? 'device is' : 'devices are'} waiting for a room.`}
-            </Text>
-          </Stack>
-          <UiIcon name="arrow-up-right" size={18} />
-        </Pressable>
+          <Pressable
+            id="rooms-unassigned"
+            onActivate={onOpenDevices}
+            style={{
+              layout: {
+                width: pct(100),
+                direction: 'row',
+                alignItems: 'center',
+                justifyContent: 'between',
+                padding: insets(16, 18),
+                position: 'relative',
+                zIndex: 1,
+              },
+              cursor: 'pointer',
+              material: new SolidMaterial(transparentColor),
+              border: { width: 0, style: 'none', color: transparentColor },
+              states: { hover: { material: new SolidMaterial(colorToken('surfaceHover')) } },
+            }}
+          >
+            <Stack gapPx={3}>
+              <Text size={14} weight={600}>
+                A place for everything
+              </Text>
+              <Text size={12} tone="muted">
+                {`${unassignedCount} ${unassignedCount === 1 ? 'device is' : 'devices are'} waiting for a room.`}
+              </Text>
+            </Stack>
+            <UiIcon name="arrow-up-right" size={18} />
+          </Pressable>
+          <GlassRim preset="card" variant="card" opacity={unassignedHovered ? 0.74 : 0.5} />
+        </Box>
       )}
 
       {!canManage && (
@@ -155,132 +402,35 @@ export function RoomsManagerView({
 
       {rooms.length > 0 ? (
         <DashboardGrid columns={columns}>
-          {rooms.map((room) => {
-            const picking = iconMenuRoomId === room.id;
-            return (
-              <Stack
-                key={room.id}
-                gapPx={18}
-                style={{
-                  layout: { width: pct(100), padding: insets(18), position: 'relative' },
-                  material: new SolidMaterial(colorToken('surfaceSecondary')),
-                  border: { width: 1, color: colorToken('border') },
-                  corners: corners(22, 'superellipse', 1.4),
-                }}
-              >
-                <Row align="center" justify="between" gapPx={8} style={{ layout: { width: pct(100) } }}>
-                  <Pressable
-                    id={`room-icon-${room.id}`}
-                    ariaLabel={`Change ${room.name} icon`}
-                    ariaExpanded={picking}
-                    onActivate={() => setIconMenuRoomId((cur) => (cur === room.id ? null : room.id))}
-                    style={{
-                      layout: { width: px(38), height: px(38), alignItems: 'center', justifyContent: 'center' },
-                      material: new SolidMaterial(colorToken('surface')),
-                      border: { width: 1, color: colorToken('borderSubtle') },
-                      corners: corners(12),
-                    }}
-                  >
-                    <UiIcon name={room.iconName} size={18} />
-                  </Pressable>
-                  <Row align="center" gapPx={2} style={{ opacity: 0.78 }}>
-                    <HausButton
-                      id={`room-add-devices-${room.id}`}
-                      isIconOnly
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Add devices to ${room.name}`}
-                      disabled={!canManage}
-                      onPress={() => onAddDevices(room.id)}
-                    >
-                      <UiIcon name="plus" size={15} />
-                    </HausButton>
-                    <HausButton
-                      id={`room-edit-${room.id}`}
-                      isIconOnly
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Settings for ${room.name}`}
-                      disabled={!canManage}
-                      onPress={() => onEditRoom(room.id)}
-                    >
-                      <UiIcon name="more-horizontal" size={16} />
-                    </HausButton>
-                    <HausButton
-                      id={`room-delete-${room.id}`}
-                      isIconOnly
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Remove ${room.name}`}
-                      disabled={!canManage}
-                      onPress={() => onDeleteRoom(room.id)}
-                    >
-                      <UiIcon name="trash-2" size={15} />
-                    </HausButton>
-                  </Row>
-                </Row>
-
-                {picking && (
-                  <Row gapPx={6} wrap style={{ layout: { width: pct(100) } }}>
-                    {iconOptions.map((opt) => (
-                      <Pressable
-                        key={opt.id}
-                        id={`room-icon-option-${room.id}-${opt.id}`}
-                        ariaLabel={opt.label}
-                        ariaPressed={room.iconId === opt.id}
-                        onActivate={() => {
-                          onChangeIcon(room.id, opt.id);
-                          setIconMenuRoomId(null);
-                        }}
-                        style={{
-                          layout: {
-                            padding: insets(5, 8),
-                            direction: 'row',
-                            alignItems: 'center',
-                            gap: px(5),
-                          },
-                          material: new SolidMaterial(
-                            room.iconId === opt.id ? colorToken('surfaceActive') : colorToken('surface'),
-                          ),
-                          border: { width: 1, color: colorToken('border') },
-                          corners: corners(9),
-                        }}
-                      >
-                        <UiIcon name={opt.iconName} size={14} />
-                        <Text size={11}>{opt.label}</Text>
-                      </Pressable>
-                    ))}
-                  </Row>
-                )}
-
-                <Pressable
-                  id={`room-${room.id}`}
-                  onActivate={() => onOpenRoom(room.id)}
-                  style={{ layout: { width: pct(100), gap: px(6) } }}
-                >
-                  <Text size={17.5} weight={600}>
-                    {room.name}
-                  </Text>
-                  <Row align="center" justify="between" style={{ layout: { width: pct(100) } }}>
-                    <Text size={12.5} tone="muted">
-                      {`${room.deviceCount} ${room.deviceCount === 1 ? 'device' : 'devices'}`}
-                    </Text>
-                    <UiIcon name="arrow-up-right" size={15} />
-                  </Row>
-                </Pressable>
-              </Stack>
-            );
-          })}
+          {rooms.map((room) => (
+            <RoomManagementCard
+              key={room.id}
+              room={room}
+              picking={iconMenuRoomId === room.id}
+              canManage={canManage}
+              iconOptions={iconOptions}
+              onTogglePicker={() => setIconMenuRoomId((cur) => (cur === room.id ? null : room.id))}
+              onSelectIcon={(iconId) => {
+                onChangeIcon(room.id, iconId);
+                setIconMenuRoomId(null);
+              }}
+              onOpenRoom={() => onOpenRoom(room.id)}
+              onAddDevices={() => onAddDevices(room.id)}
+              onEditRoom={() => onEditRoom(room.id)}
+              onDeleteRoom={() => onDeleteRoom(room.id)}
+            />
+          ))}
         </DashboardGrid>
       ) : (
         <Stack
           align="center"
           gapPx={8}
+          dataAttrs={{ 'data-haus-glass-rim': 'managed' }}
           style={{
-            layout: { width: pct(100), padding: insets(34, 20) },
+            layout: { width: pct(100), padding: insets(34, 20), position: 'relative', overflow: 'hidden' },
             material: new SolidMaterial(colorToken('surfaceSecondary')),
             border: { width: 1, color: colorToken('border') },
-            corners: corners(16),
+            corners: corners(20),
           }}
         >
           <UiIcon name="search" size={26} />
@@ -290,170 +440,9 @@ export function RoomsManagerView({
           <Text size={12.5} tone="muted">
             {hasAnyRooms ? 'Try another room name.' : 'Create a room to bring its devices together.'}
           </Text>
+          <GlassRim preset="card" variant="card" opacity={0.48} />
         </Stack>
       )}
     </Stack>
-  );
-}
-
-export function RoomAddDevicesModal({
-  roomName,
-  query,
-  candidates,
-  selectedCount,
-  busy,
-  error,
-  onQueryChange,
-  onToggleCandidate,
-  onConfirm,
-  onClose,
-}: {
-  readonly roomName: string;
-  readonly query: string;
-  readonly candidates: readonly PortableRoomCandidate[];
-  readonly selectedCount: number;
-  readonly busy: boolean;
-  readonly error?: string;
-  readonly onQueryChange: (value: string) => void;
-  readonly onToggleCandidate: (deviceId: string) => void;
-  readonly onConfirm: () => void;
-  readonly onClose: () => void;
-}) {
-  return (
-    <HausDialog
-      size="md"
-      title={`Add devices to ${roomName}`}
-      subtitle="Move unassigned or other room accessories here."
-      scrollable
-      onClose={onClose}
-      footer={
-        <Row justify="end" gapPx={8} style={{ layout: { width: pct(100) } }}>
-          <HausButton variant="ghost" disabled={busy} onPress={onClose}>
-            <Text size={13}>Cancel</Text>
-          </HausButton>
-          <HausButton
-            id="room-add-devices-submit"
-            variant="primary"
-            disabled={busy || selectedCount === 0}
-            isPending={busy}
-            onPress={onConfirm}
-          >
-            <Text size={13} style={{ typography: { color: colorToken('accentForeground'), weight: 600 } }}>
-              {busy ? 'Moving…' : `Move ${selectedCount} ${selectedCount === 1 ? 'device' : 'devices'}`}
-            </Text>
-          </HausButton>
-        </Row>
-      }
-    >
-      <Stack gapPx={12} style={{ layout: { width: pct(100) } }}>
-        <TextInput
-          id="room-add-devices-search"
-          ariaLabel="Find devices"
-          placeholder="Search devices or rooms"
-          value={query}
-          onChange={onQueryChange}
-          style={{
-            layout: { width: pct(100), minHeight: px(38), padding: insets(8, 10) },
-            material: new SolidMaterial(colorToken('surfaceSecondary')),
-            border: { width: 1, color: colorToken('border') },
-            corners: corners(10),
-            typography: { size: 13, color: colorToken('textPrimary') },
-          }}
-        />
-        {error && (
-          <Text role="alert" tone="critical" size={12.5}>
-            {error}
-          </Text>
-        )}
-        <Stack gapPx={6} style={{ layout: { width: pct(100), maxHeight: px(300), overflowY: 'scroll' } }}>
-          {candidates.map((item) => (
-            <Pressable
-              key={item.id}
-              id={`room-candidate-${item.id}`}
-              ariaPressed={item.selected}
-              onActivate={() => onToggleCandidate(item.id)}
-              style={{
-                layout: {
-                  width: pct(100),
-                  direction: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'between',
-                  padding: insets(10, 12),
-                },
-                material: new SolidMaterial(
-                  item.selected ? colorToken('surfaceActive') : colorToken('surfaceSecondary'),
-                ),
-                border: { width: 1, color: item.selected ? colorToken('accent') : colorToken('border') },
-                corners: corners(10),
-              }}
-            >
-              <Stack gapPx={2} style={{ layout: { flexGrow: 1, minWidth: px(0) } }}>
-                <Text size={13} weight={600}>
-                  {item.name}
-                </Text>
-                <Text size={11} tone="muted">
-                  {item.detail ? `${item.detail} · ${item.currentRoomName}` : item.currentRoomName}
-                </Text>
-              </Stack>
-              {item.selected && <UiIcon name="check" size={16} />}
-            </Pressable>
-          ))}
-          {!candidates.length && (
-            <Text size={12.5} tone="muted">
-              All matching devices are already in this room.
-            </Text>
-          )}
-        </Stack>
-      </Stack>
-    </HausDialog>
-  );
-}
-
-export function RoomDeleteModal({
-  roomName,
-  busy,
-  error,
-  onConfirm,
-  onClose,
-}: {
-  readonly roomName: string;
-  readonly busy: boolean;
-  readonly error?: string;
-  readonly onConfirm: () => void;
-  readonly onClose: () => void;
-}) {
-  return (
-    <HausDialog
-      size="sm"
-      title={`Remove ${roomName}?`}
-      onClose={onClose}
-      footer={
-        <Row justify="end" gapPx={8} style={{ layout: { width: pct(100) } }}>
-          <HausButton variant="ghost" disabled={busy} onPress={onClose}>
-            <Text size={13}>Cancel</Text>
-          </HausButton>
-          <HausButton
-            id="room-delete-confirm"
-            variant="danger"
-            disabled={busy}
-            isPending={busy}
-            onPress={onConfirm}
-          >
-            <Text size={13}>{busy ? 'Removing…' : 'Remove room'}</Text>
-          </HausButton>
-        </Row>
-      }
-    >
-      <Stack gapPx={10}>
-        <Text size={13} tone="muted" style={{ typography: { lineHeight: 1.5 } }}>
-          Devices in this room will stay connected and become unassigned.
-        </Text>
-        {error && (
-          <Text role="alert" tone="critical" size={12.5}>
-            {error}
-          </Text>
-        )}
-      </Stack>
-    </HausDialog>
   );
 }

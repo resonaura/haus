@@ -10,13 +10,13 @@ import {
   Box,
   CheckboxInput,
   HausButton,
-  HausCode,
   HausForm,
   Heading,
   Pressable,
   Text,
   TextInput,
 } from '@haus/ui';
+import { ColoredLogViewer, OperationProgressPanel } from '@haus/ui/components';
 import { LoaderCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import type { Snapshot } from '../../model';
 import { humanize, nativeApi, rest, supervisor, type AddonInfo } from '../../ha/management';
@@ -91,7 +91,9 @@ export function AddonDetails({
       );
       setText(
         typeof result === 'string'
-          ? result.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')
+          ? tab === 'logs'
+            ? result
+            : result.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')
           : JSON.stringify(result, null, 2),
       );
     } catch (e) {
@@ -255,6 +257,19 @@ export function AddonDetails({
               </HausButton>
             )}
           </Box>
+          {busy && (
+            <OperationProgressPanel
+              id="supervisor-addon-progress"
+              title={installed ? `Updating ${current.name}…` : `Installing ${current.name}…`}
+              detail="Supervisor is downloading container layers and preparing runtime…"
+              percent={52}
+              state="running"
+              logs={[
+                `[PULL] Requesting Supervisor operation for ${addon.slug}…`,
+                `[INFO] Downloading container image & verifying add-on manifest…`,
+              ]}
+            />
+          )}
           {installed && !current.system_managed && (
             <Pressable
               className="management-remove"
@@ -373,9 +388,12 @@ export function AddonDetails({
             </Pressable>
           </Box>
           {tab === 'logs' ? (
-            <HausCode block className="management-server-text is-log">
-              {text || (reading ? 'Loading…' : 'No content reported.')}
-            </HausCode>
+            <ColoredLogViewer
+              id="supervisor-addon-logs"
+              text={text}
+              maxHeight={380}
+              emptyLabel={reading ? 'Loading…' : 'No content reported.'}
+            />
           ) : (
             <ServerMarkdown text={text || (reading ? 'Loading…' : 'No content reported.')} />
           )}
